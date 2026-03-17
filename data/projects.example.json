@@ -1,0 +1,56 @@
+[
+  {
+    "id": "proj_example_bulletin",
+    "name": "Sample Bulletin",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "updatedAt": "2026-01-01T00:00:00.000Z",
+    "state": {
+      "svcTitle": "Sample Service Title",
+      "svcDate": "January 4, 2026",
+      "svcChurch": "Example Church",
+      "optCover": true,
+      "optFooter": false,
+      "optCal": false,
+      "optBookletSize": "auto",
+      "optAnnouncements": true,
+      "optVolunteers": false,
+      "optStaff": true,
+      "announcements": [
+        {
+          "title": "",
+          "body": "**Sample Announcement** | Replace this with your local content.",
+          "url": "",
+          "_breakBefore": false,
+          "_noBreakBefore": false
+        }
+      ],
+      "items": [
+        {
+          "type": "section",
+          "title": "GATHERING",
+          "detail": ""
+        },
+        {
+          "type": "label",
+          "title": "Welcome",
+          "detail": ""
+        },
+        {
+          "type": "section",
+          "title": "WORD",
+          "detail": ""
+        },
+        {
+          "type": "label",
+          "title": "Scripture Reading",
+          "detail": "John 3:16-17"
+        }
+      ],
+      "coverImageUrl": null,
+      "staffLogoUrl": null,
+      "giveOnlineUrl": "https://example.org/give",
+      "servingSchedule": null,
+      "calEvents": null
+    }
+  }
+]

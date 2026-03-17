@@ -1,0 +1,14 @@
+.git
+.gitignore
+.DS_Store
+__MACOSX
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+.env
+.env.*
+data/*.json
+!data/*.example.json
+song-database.json
+song-database-*.json

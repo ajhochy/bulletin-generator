@@ -1,0 +1,25 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local app data
+data/*.json
+!data/*.example.json
+song-database.json
+song-database-*.json
+
+# Editor and OS artifacts
+.DS_Store
+__MACOSX/
+.idea/
+.vscode/
+.claude/
+
+# Runtime noise
+*.log
+*.tmp

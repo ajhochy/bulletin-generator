@@ -1,0 +1,25 @@
+{
+  "typeFormats": {},
+  "staffData": [
+    {
+      "name": "Jane Example",
+      "role": "Office Administrator",
+      "email": "office@example.org"
+    },
+    {
+      "name": "John Example",
+      "role": "Pastor",
+      "email": "pastor@example.org"
+    }
+  ],
+  "songDb": [
+    {
+      "title": "Sample Song",
+      "author": "Example Author",
+      "lyrics": "Verse 1\nSample lyrics go here.\nChorus\nReplace this entry with your local song database.",
+      "copyright": "Replace with your local copyright details.",
+      "date_added": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "giveOnlineUrl": "https://example.org/give"
+}

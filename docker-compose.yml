@@ -1,0 +1,13 @@
+version: "3"
+
+services:
+  worship-booklet:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persists local working data outside the image
+      - ./data:/app/data
+    restart: unless-stopped

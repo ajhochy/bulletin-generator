@@ -1,0 +1,16 @@
+[
+  {
+    "title": "",
+    "body": "**Welcome** | Replace this sample announcement with your local church or organization content.",
+    "url": "",
+    "_breakBefore": false,
+    "_noBreakBefore": false
+  },
+  {
+    "title": "",
+    "body": "**Volunteer Signup** | Add a local contact method here after copying this example file into your working data.",
+    "url": "https://example.org/signup",
+    "_breakBefore": false,
+    "_noBreakBefore": false
+  }
+]
