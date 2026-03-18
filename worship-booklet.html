@@ -2250,11 +2250,34 @@
     <div class="stg-group">
       <div class="stg-group-heading" id="stg-calendar">Google Calendar</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Calendar Feed URLs</div>
-        <p class="section-hint">One iCal URL per line. These Google Calendar feeds are fetched each week to populate the "This Week" page.</p>
+      <!-- OAuth connect card -->
+      <div class="stg-card" id="google-connect-card">
+        <div class="stg-card-label">Connect Account</div>
+        <p class="section-hint" id="google-creds-hint"></p>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
+          <button class="btn-sm" id="google-disconnect-btn" style="display:none;">Disconnect</button>
+        </div>
+        <div id="google-oauth-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+      </div>
+
+      <!-- Calendar picker (shown after connecting) -->
+      <div class="stg-card" id="google-cal-picker-card" style="display:none;">
+        <div class="stg-card-label">Select Calendars</div>
+        <p class="section-hint">Choose which calendars to include in the "This Week" page.</p>
+        <div id="google-cal-list" style="margin-bottom:0.5rem;"></div>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="google-cal-save-btn">Save Selection</button>
+          <button class="btn-sm" id="google-cal-refresh-list-btn">↺ Refresh List</button>
+        </div>
+      </div>
+
+      <!-- iCal fallback (shown when not connected via OAuth) -->
+      <div class="stg-card" id="google-ical-card">
+        <div class="stg-card-label">Manual iCal Feed URLs</div>
+        <p class="section-hint">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
         <label>iCal Feed URLs (one per line):</label>
-        <textarea id="cal-urls-input" rows="6"></textarea>
+        <textarea id="cal-urls-input" rows="4"></textarea>
         <label style="margin-top:0.3rem;">Exclude event titles (one per line, case-insensitive):</label>
         <textarea id="cal-excl-input" rows="3"></textarea>
         <div class="stg-btn-row">
@@ -8086,6 +8109,87 @@ function initPco() {
   }
 }
 
+function initGoogle() {
+  const hint        = document.getElementById('google-creds-hint');
+  const connectBtn  = document.getElementById('google-connect-btn');
+  const disconnBtn  = document.getElementById('google-disconnect-btn');
+  const msgEl       = document.getElementById('google-oauth-msg');
+  const pickerCard  = document.getElementById('google-cal-picker-card');
+  const icalCard    = document.getElementById('google-ical-card');
+
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('google_connected')) {
+    msgEl.textContent = 'Google Calendar connected!';
+    msgEl.className = 'pco-msg success';
+    window.history.replaceState({}, '', '/');
+  } else if (params.has('google_error')) {
+    const err = params.get('google_error');
+    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed. Please try again.';
+    msgEl.className = 'pco-msg error';
+    window.history.replaceState({}, '', '/');
+  }
+
+  if (_publicConfig.googleConfigured) {
+    hint.textContent = 'Connected to Google Calendar.';
+    connectBtn.style.display = 'none';
+    disconnBtn.style.display = '';
+    pickerCard.style.display = '';
+    icalCard.style.display = 'none';
+    googleLoadCalendarList();
+  } else {
+    hint.textContent = 'Sign in with Google to automatically populate the "This Week" calendar page.';
+    connectBtn.style.display = '';
+    disconnBtn.style.display = 'none';
+    pickerCard.style.display = 'none';
+    icalCard.style.display = '';
+  }
+
+  connectBtn.addEventListener('click', () => {
+    window.location.href = '/oauth/google/start';
+  });
+
+  disconnBtn.addEventListener('click', async () => {
+    await apiFetch('/api/google-disconnect', 'POST', {});
+    _publicConfig.googleConfigured = false;
+    initGoogle();
+  });
+
+  document.getElementById('google-cal-save-btn').addEventListener('click', async () => {
+    const checks = document.querySelectorAll('#google-cal-list input[type=checkbox]');
+    const ids = [...checks].filter(c => c.checked).map(c => c.value);
+    await apiFetch('/api/settings', 'POST', { googleCalendarIds: ids });
+    setStatus('Calendar selection saved.', 'success');
+  });
+
+  document.getElementById('google-cal-refresh-list-btn').addEventListener('click', googleLoadCalendarList);
+}
+
+async function googleLoadCalendarList() {
+  const listEl = document.getElementById('google-cal-list');
+  listEl.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">Loading…</span>';
+  try {
+    const data = await apiFetch('/api/google-calendars');
+    const savedIds = new Set(_serverSettings.googleCalendarIds || []);
+    listEl.innerHTML = '';
+    (data.calendars || []).forEach(cal => {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex;align-items:center;gap:0.4rem;font-size:0.82rem;margin-bottom:0.25rem;cursor:pointer;';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = cal.id;
+      cb.checked = savedIds.has(cal.id) || (cal.primary && savedIds.size === 0);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(cal.summary + (cal.primary ? ' (primary)' : '')));
+      listEl.appendChild(label);
+    });
+    if (!data.calendars || data.calendars.length === 0) {
+      listEl.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">No calendars found.</span>';
+    }
+  } catch (e) {
+    listEl.innerHTML = `<span style="font-size:0.78rem;color:var(--danger);">${e.message}</span>`;
+  }
+}
+
 // Desktop: clicking Connect Planning Center navigates to OAuth start
 // Server: clicking Retry Connection checks if credentials are now working
 document.getElementById('pco-connect-btn').addEventListener('click', async () => {
@@ -8126,6 +8230,7 @@ document.getElementById('pco-disconnect-btn').addEventListener('click', async ()
 
 restoreOnStartup().then(() => {
   initPco();
+  initGoogle();
 });
 
 // ─── Calendar button listeners ────────────────────────────────────────────────

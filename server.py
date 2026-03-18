@@ -50,6 +50,8 @@ ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
 
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
+GOOGLE_CAL_API  = 'https://www.googleapis.com/calendar/v3'
+GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service']
 
 # Deployment mode: 'server' (shared/hosted) or 'desktop' (local packaged install).
@@ -153,10 +155,53 @@ def _refresh_pco_token():
         return None
 
 
+def _google_auth_header():
+    settings = _read_json(SETTINGS_FILE, {})
+    token = settings.get('googleAccessToken', '').strip()
+    return f'Bearer {token}' if token else None
+
+
+def _refresh_google_token():
+    """Exchange stored refresh_token for a new Google access_token."""
+    settings = _read_json(SETTINGS_FILE, {})
+    refresh_token = settings.get('googleRefreshToken', '').strip()
+    client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
+    client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+    if not refresh_token or not client_id or not client_secret:
+        return None
+    try:
+        token_data = urllib.parse.urlencode({
+            'grant_type':    'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id':     client_id,
+            'client_secret': client_secret,
+        }).encode()
+        req = urllib.request.Request(
+            GOOGLE_TOKEN_URL, data=token_data,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp_data = json.loads(resp.read())
+        new_token = resp_data.get('access_token', '').strip()
+        if not new_token:
+            return None
+        with _lock:
+            s = _read_json(SETTINGS_FILE, {})
+            s['googleAccessToken'] = new_token
+            _write_json(SETTINGS_FILE, s)
+        print('  [google] Access token refreshed.')
+        return f'Bearer {new_token}'
+    except Exception as e:
+        print(f'  [google] Token refresh failed: {e}')
+        return None
+
+
 def _public_config():
     return {
         "appMode": APP_MODE,
         "pcoConfigured": _pco_auth_header() is not None,
+        "googleConfigured": _google_auth_header() is not None,
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
             "exclude": _parse_list_env("CALENDAR_EXCLUDE_TITLES") or DEFAULT_EXCLUDE[:],
@@ -395,6 +440,70 @@ def fetch_and_parse_calendars(urls, exclude_titles):
     return deduped
 
 
+def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles):
+    """Fetch this week's events from Google Calendar API for given calendar IDs."""
+    start_date, end_date = get_week_window()
+    time_min = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    time_max = datetime.combine(end_date,   datetime.max.time().replace(microsecond=0)).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    exclude_lower = {t.strip().lower() for t in exclude_titles}
+    all_events = []
+
+    for cal_id in calendar_ids:
+        encoded_id = urllib.parse.quote(cal_id, safe='')
+        params = urllib.parse.urlencode({
+            'timeMin': time_min,
+            'timeMax': time_max,
+            'singleEvents': 'true',
+            'orderBy': 'startTime',
+            'maxResults': '100',
+        })
+        url = f'{GOOGLE_CAL_API}/calendars/{encoded_id}/events?{params}'
+        req = urllib.request.Request(url, headers={
+            'Authorization': auth_header,
+            'Accept': 'application/json',
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+        except Exception as e:
+            print(f'  [google-cal] Failed to fetch calendar {cal_id}: {e}')
+            continue
+
+        for item in data.get('items', []):
+            title = (item.get('summary') or '').strip()
+            if not title or title.lower() in exclude_lower:
+                continue
+            start_raw = item.get('start', {})
+            end_raw   = item.get('end',   {})
+            if start_raw.get('date'):
+                all_day = True
+                iso_start = start_raw['date'] + 'T00:00:00'
+                iso_end   = end_raw.get('date', start_raw['date']) + 'T00:00:00' if end_raw else None
+            else:
+                all_day = False
+                iso_start = start_raw.get('dateTime', '')
+                iso_end   = end_raw.get('dateTime')  if end_raw else None
+            if not iso_start:
+                continue
+            all_events.append({
+                'title':       title,
+                'start':       {'iso': iso_start, 'allDay': all_day},
+                'end':         {'iso': iso_end,   'allDay': all_day} if iso_end else None,
+                'location':    (item.get('location') or '').strip(),
+                'description': (item.get('description') or '').split('\n')[0].strip(),
+            })
+
+    seen = set()
+    deduped = []
+    for ev in all_events:
+        key = ev['title'].lower() + '|' + ev['start']['iso']
+        if key not in seen:
+            seen.add(key)
+            deduped.append(ev)
+    deduped.sort(key=lambda e: e['start']['iso'])
+    return deduped
+
+
 # ─── HTTP handler ──────────────────────────────────────────────────────────────
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -485,6 +594,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if path == "/oauth/pco/callback":
             self._handle_pco_oauth_callback()
+            return
+
+        if path == "/oauth/google/start":
+            self._handle_google_oauth_start()
+            return
+
+        if path == "/oauth/google/callback":
+            self._handle_google_oauth_callback()
+            return
+
+        if path == "/api/google-calendars":
+            self._handle_google_calendars()
             return
 
         if self.path.startswith("/pco-proxy/"):
@@ -591,6 +712,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
             return
 
+        if path == "/api/google-disconnect":
+            with _lock:
+                settings = _read_json(SETTINGS_FILE, {})
+                settings.pop('googleAccessToken', None)
+                settings.pop('googleRefreshToken', None)
+                settings.pop('googleCalendarIds', None)
+                _write_json(SETTINGS_FILE, settings)
+            self._send_json({"ok": True})
+            return
+
         self._send_json({"error": "not found"}, 404)
 
     def do_DELETE(self):
@@ -681,6 +812,124 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', '/?pco_error=token')
             self.end_headers()
+
+    # ── Google Calendar OAuth ──────────────────────────────────────────────────
+
+    def _handle_google_oauth_start(self):
+        client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
+        if not client_id:
+            self._send_json({'error': 'Google OAuth credentials not configured in desktop build.'}, 503)
+            return
+        port = self.server.server_address[1]
+        redirect_uri = f'http://localhost:{port}/oauth/google/callback'
+        params = urllib.parse.urlencode({
+            'client_id':     client_id,
+            'redirect_uri':  redirect_uri,
+            'response_type': 'code',
+            'scope':         'https://www.googleapis.com/auth/calendar.readonly',
+            'access_type':   'offline',
+            'prompt':        'consent',
+        })
+        self.send_response(302)
+        self.send_header('Location', f'https://accounts.google.com/o/oauth2/v2/auth?{params}')
+        self.end_headers()
+
+    def _handle_google_oauth_callback(self):
+        qs     = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+        code   = params.get('code', [None])[0]
+        if params.get('error') or not code:
+            self.send_response(302)
+            self.send_header('Location', '/?google_error=denied')
+            self.end_headers()
+            return
+
+        client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
+        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+        port          = self.server.server_address[1]
+        redirect_uri  = f'http://localhost:{port}/oauth/google/callback'
+
+        try:
+            token_data = urllib.parse.urlencode({
+                'grant_type':    'authorization_code',
+                'code':          code,
+                'client_id':     client_id,
+                'client_secret': client_secret,
+                'redirect_uri':  redirect_uri,
+            }).encode()
+            req = urllib.request.Request(
+                GOOGLE_TOKEN_URL, data=token_data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                token_resp = json.loads(resp.read())
+
+            access_token  = token_resp.get('access_token',  '').strip()
+            refresh_token = token_resp.get('refresh_token', '').strip()
+            if not access_token:
+                raise ValueError('No access token returned by Google.')
+
+            with _lock:
+                s = _read_json(SETTINGS_FILE, {})
+                s['googleAccessToken']  = access_token
+                if refresh_token:
+                    s['googleRefreshToken'] = refresh_token
+                _write_json(SETTINGS_FILE, s)
+
+            self.send_response(302)
+            self.send_header('Location', '/?google_connected=1')
+            self.end_headers()
+
+        except Exception as e:
+            print(f'  [google] Token exchange failed: {e}')
+            self.send_response(302)
+            self.send_header('Location', '/?google_error=token')
+            self.end_headers()
+
+    def _handle_google_calendars(self):
+        """Return the user's Google Calendar list."""
+        auth = _google_auth_header()
+        if not auth:
+            self._send_json({'error': 'Not connected to Google Calendar.'}, 401)
+            return
+
+        def _do_fetch(a):
+            url = 'https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50'
+            req = urllib.request.Request(url, headers={'Authorization': a, 'Accept': 'application/json'})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read())
+
+        try:
+            data = _do_fetch(auth)
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                new_auth = _refresh_google_token()
+                if new_auth:
+                    try:
+                        data = _do_fetch(new_auth)
+                    except Exception as e2:
+                        self._send_json({'error': str(e2)}, 500)
+                        return
+                else:
+                    self._send_json({'error': 'Google token expired. Please reconnect.'}, 401)
+                    return
+            else:
+                self._send_json({'error': f'Google API error {e.code}'}, e.code)
+                return
+        except Exception as e:
+            self._send_json({'error': str(e)}, 500)
+            return
+
+        calendars = [
+            {
+                'id':      c['id'],
+                'summary': c.get('summary', c['id']),
+                'primary': c.get('primary', False),
+            }
+            for c in data.get('items', [])
+        ]
+        self._send_json({'calendars': calendars})
 
     # ── PDF generation ─────────────────────────────────────────────────────────
 
@@ -851,7 +1100,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
-            result = fetch_and_parse_calendars(urls, exclude)
+            # Prefer Google Calendar API if the user is connected and has selected calendars
+            google_cal_ids = _read_json(SETTINGS_FILE, {}).get('googleCalendarIds', [])
+            google_auth = _google_auth_header()
+            if google_auth and google_cal_ids:
+                result = fetch_google_cal_events(google_auth, google_cal_ids, exclude)
+                if result is None or (isinstance(result, list) and len(result) == 0 and google_cal_ids):
+                    # On 401 try refreshing once
+                    new_auth = _refresh_google_token()
+                    if new_auth:
+                        result = fetch_google_cal_events(new_auth, google_cal_ids, exclude)
+            else:
+                result = fetch_and_parse_calendars(urls, exclude)
 
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')

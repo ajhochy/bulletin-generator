@@ -26,6 +26,10 @@ def _load_desktop_config():
         import desktop_config
         os.environ.setdefault('PCO_CLIENT_ID',     desktop_config.PCO_CLIENT_ID)
         os.environ.setdefault('PCO_CLIENT_SECRET', desktop_config.PCO_CLIENT_SECRET)
+        if hasattr(desktop_config, 'GOOGLE_CLIENT_ID'):
+            os.environ.setdefault('GOOGLE_CLIENT_ID',     desktop_config.GOOGLE_CLIENT_ID)
+        if hasattr(desktop_config, 'GOOGLE_CLIENT_SECRET'):
+            os.environ.setdefault('GOOGLE_CLIENT_SECRET', desktop_config.GOOGLE_CLIENT_SECRET)
     except ImportError:
         pass  # Credentials not bundled — OAuth connect will show an error
 
