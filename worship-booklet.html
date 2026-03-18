@@ -2324,6 +2324,40 @@
   </div>
 </div><!-- #page-format -->
 
+<!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
+<div id="import-review-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box">
+    <div class="irm-header">
+      <div class="irm-title">Review Imported Songs</div>
+      <button class="irm-close-btn" id="irm-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="irm-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="irm-cancel-btn">Skip All</button>
+      <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box" style="max-width:580px;">
+    <div class="irm-header">
+      <div class="irm-title">Import from ProPresenter</div>
+      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="pro-import-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
 
 <script>
 
@@ -8225,39 +8259,5 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   titleIn.focus();
 });
 </script>
-<!-- ═══ Import Review Modal (FIX 7 & 8) ═══════════════════════════════════ -->
-<div id="import-review-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box">
-    <div class="irm-header">
-      <div class="irm-title">Review Imported Songs</div>
-      <button class="irm-close-btn" id="irm-close-btn" title="Close">✕</button>
-    </div>
-    <div class="irm-body" id="irm-body">
-      <!-- populated by JS -->
-    </div>
-    <div class="irm-footer">
-      <button class="btn" id="irm-cancel-btn">Skip All</button>
-      <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
-    </div>
-  </div>
-</div>
-
-<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:580px;">
-    <div class="irm-header">
-      <div class="irm-title">Import from ProPresenter</div>
-      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
-    </div>
-    <div class="irm-body" id="pro-import-body">
-      <!-- populated by JS -->
-    </div>
-    <div class="irm-footer">
-      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
-    </div>
-  </div>
-</div>
-
-<div id="toast-container"></div>
 </body>
 </html>
