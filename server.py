@@ -524,6 +524,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         filename     = re.sub(r'[^\w\s\-.]', '', raw_name).strip() or "bulletin"
         if not filename.lower().endswith(".pdf"):
             filename += ".pdf"
+        page_w = float(body.get("pageWidth",  5.5))
+        page_h = float(body.get("pageHeight", 8.5))
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -542,8 +544,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "--run-all-compositor-stages-before-draw",
                     f"--print-to-pdf={pdf_path}",
                     "--print-to-pdf-no-header",
-                    "--paper-width=5.5",
-                    "--paper-height=8.5",
+                    f"--paper-width={page_w}",
+                    f"--paper-height={page_h}",
                     "--no-margins",
                     "--disable-extensions",
                     "--disable-background-networking",

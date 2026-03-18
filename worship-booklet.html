@@ -21,6 +21,8 @@
       --radius: 5px;
       --font-serif: 'Georgia', 'Times New Roman', serif;
       --font-sans: system-ui, -apple-system, sans-serif;
+      --doc-page-w: 5.5in;
+      --doc-page-h: 8.5in;
     }
 
     html {
@@ -622,8 +624,8 @@
 
     /* ─── Booklet Page ───────────────────────────────────────────────────────── */
     .booklet-page {
-      width: 5.5in;
-      min-height: 8.5in;
+      width: var(--doc-page-w);
+      min-height: var(--doc-page-h);
       background: #fff;
       box-shadow: 0 4px 28px rgba(0,0,0,0.2);
       padding: 0.35in 0.32in 0.45in;
@@ -889,7 +891,7 @@
 
     /* ─── Interactive page-break controls (screen-only) ─────────────────────── */
     .pg-break-ctrl {
-      width: 5.5in;
+      width: var(--doc-page-w);
       display: flex;
       align-items: center;
       gap: 0.5rem;
@@ -987,7 +989,7 @@
     /* pg-break-ctrl can appear inside a booklet-page when a bottom section is merged */
     .booklet-page > .pg-break-ctrl {
       margin-left: -0.32in;
-      width: 5.5in;
+      width: var(--doc-page-w);
     }
     /* "Push up" button is disabled/grayed when content won't fit on previous page */
     .pg-break-remove-btn:disabled {
@@ -1702,14 +1704,12 @@
       .preview-page-num { display: none !important; }
       .booklet-page {
         box-shadow: none !important; margin: 0 !important;
-        width: 5.5in !important; min-height: 0 !important;
+        width: var(--doc-page-w) !important; min-height: 0 !important;
         break-after: page; page-break-after: always;
         overflow: visible !important;
       }
       .booklet-page:last-child { break-after: avoid; page-break-after: avoid; }
     }
-
-    @page { size: 5.5in 8.5in; margin: 0; }
 
     /* ─── Item Formatting Toolbar ──────────────────────────────────────────── */
     .item-fmt-toolbar {
@@ -2272,6 +2272,16 @@
 <!-- ═══ PAGE: Format ═════════════════════════════════════════════════════════ -->
 <div class="app-page" id="page-format">
   <div class="fmt-page-inner">
+    <h2 class="fmt-page-title">Document Size</h2>
+    <div class="fmt-template-row" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.4rem;">
+      <label for="doc-page-size-sel" style="font-size:0.82rem;white-space:nowrap;">Page size</label>
+      <select id="doc-page-size-sel" style="font-size:0.82rem;">
+        <option value="5.5x8.5">5.5 × 8.5 in — half-letter (default)</option>
+        <option value="8.5x11">8.5 × 11 in — letter</option>
+        <option value="5.5x4.25">5.5 × 4.25 in — quarter-letter landscape</option>
+        <option value="4.25x5.5">4.25 × 5.5 in — quarter-letter portrait</option>
+      </select>
+    </div>
     <h2 class="fmt-page-title">Item Type Formatting</h2>
     <p class="fmt-page-hint">
       Set default formatting for each item type.
@@ -2360,6 +2370,10 @@ async function loadAllFromServer() {
       : [];
     _calUrls = Array.isArray(_serverSettings.calUrls) ? _serverSettings.calUrls : null;
     _calExclude = Array.isArray(_serverSettings.calExclude) ? _serverSettings.calExclude : null;
+    if (_serverSettings.docTemplate && typeof _serverSettings.docTemplate === 'object') {
+      activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, _serverSettings.docTemplate);
+    }
+    applyDocTemplate();
   } catch (e) {
     setStatus('Could not reach server. Working offline.', 'error');
   }
@@ -2392,6 +2406,37 @@ const TYPE_FORMATS_KEY = 'worshipTypeFormatsV1';
 
 // Per-type default formatting (keyed by item type, value is an _fmt-shaped object)
 let typeFormats = {};
+
+// ─── Document template (page size + future typography/spacing) ─────────────
+const PAGE_SIZE_PRESETS = {
+  '5.5x8.5':  { label: '5.5 × 8.5 in — half-letter (default)', w: 5.5,  h: 8.5  },
+  '8.5x11':   { label: '8.5 × 11 in — letter',                 w: 8.5,  h: 11   },
+  '5.5x4.25': { label: '5.5 × 4.25 in — quarter-letter landscape', w: 5.5, h: 4.25 },
+  '4.25x5.5': { label: '4.25 × 5.5 in — quarter-letter portrait',  w: 4.25, h: 5.5 },
+};
+
+let activeDocTemplate = { pageSize: '5.5x8.5' };
+
+function getPageDims() {
+  return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];
+}
+
+function applyDocTemplate() {
+  const { w, h } = getPageDims();
+  document.documentElement.style.setProperty('--doc-page-w', w + 'in');
+  document.documentElement.style.setProperty('--doc-page-h', h + 'in');
+  // Inject @page size — CSS variables cannot be used inside @page size
+  let pageStyle = document.getElementById('doc-page-style');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'doc-page-style';
+    document.head.appendChild(pageStyle);
+  }
+  pageStyle.textContent = `@page { size: ${w}in ${h}in; margin: 0; }`;
+  // Sync the page size picker if it exists
+  const sel = document.getElementById('doc-page-size-sel');
+  if (sel) sel.value = activeDocTemplate.pageSize;
+}
 
 function saveTypeFormats() {
   apiFetch('/api/settings', 'POST', { typeFormats }).catch(() => {});
@@ -5015,7 +5060,7 @@ function renderPreview() {
   // Announcements are measured and packed like order-of-worship chunks so the
   // preview and PDF always match — no more overflow-only-in-print surprises.
   {
-    const annAvailH = Math.round((8.5 - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
+    const annAvailH = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
 
     // Build the welcome section (always on the first page)
     const welcomeSection = document.createElement('div');
@@ -5193,8 +5238,8 @@ function renderPreview() {
   // the auto overflow-break before a specific chunk.
   if (items.length > 0) {
     // Available content height per CSS px (96 px/in).
-    // Page 8.5in − 0.35in top pad − 0.45in bottom pad − optional 0.55in footer.
-    const AVAIL_H = Math.round((8.5 - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
+    // Page height − 0.35in top pad − 0.45in bottom pad − optional 0.55in footer.
+    const AVAIL_H = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
     const OOW_SEP_H = 16; // approximate height of the ann/OOW separator rule
 
     // Build all display chunks from items
@@ -5392,7 +5437,7 @@ function renderPreview() {
   // page (if merge is enabled and the content fits) or a new booklet-page.
   // Inserts a pg-break-ctrl so the user can toggle between merged / own-page.
   function appendBottomSection(contentEl, mergeKey) {
-    const AVAIL_H  = Math.round((8.5 - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
+    const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
     const contentH = measureBottomContent(contentEl);
     const fits     = lastRenderedPageEl !== null && (lastPageUsedH + contentH <= AVAIL_H);
     const doMerge  = bottomMerge[mergeKey] && fits;
@@ -5506,7 +5551,7 @@ function renderPreview() {
     // regardless of how many staff rows there are or how tall the logo is.
     const hasGive = !!(giveOnlineUrl && giveOnlineUrl.trim());
     const footerAdj = optFooter.checked ? 0.55 : 0;
-    const innerH    = (8.5 - 0.35 - 0.45 - footerAdj).toFixed(3);
+    const innerH    = (getPageDims().h - 0.35 - 0.45 - footerAdj).toFixed(3);
     staffContent.className   = 'staff-flex-wrap preview-linkable';
     staffContent.dataset.previewSection = 'staff';
     staffContent.style.height = innerH + 'in';
@@ -6511,11 +6556,14 @@ function downloadProjectJson(id) {
 function buildPrintDocHtml(pagesHtml, title) {
   const css = document.querySelector('style')?.textContent || '';
   const safeTitle = escAttr(title || 'Bulletin');
+  const { w, h } = getPageDims();
   return `<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8">
 <title>${safeTitle}</title>
 <style>
+:root { --doc-page-w: ${w}in; --doc-page-h: ${h}in; }
+@page { size: ${w}in ${h}in; margin: 0; }
 ${css}
 /* Headless PDF overrides */
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
@@ -6527,7 +6575,7 @@ header, aside, .tab-bar, .pg-break-ctrl,
      box-sizing: border-box makes height 8.5in include the padding,
      overflow: hidden prevents minor headless font-metric differences
      from spilling content onto a new auto-generated PDF page. */
-  height: 8.5in !important; box-sizing: border-box !important;
+  height: var(--doc-page-h) !important; box-sizing: border-box !important;
   overflow: hidden !important;
   break-after: page; page-break-after: always;
 }
@@ -6572,7 +6620,7 @@ async function generateAndDownloadPdf(pagesHtml, filename) {
     resp = await fetch('/api/pdf', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html, filename }),
+      body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
     });
   } catch (e) {
     setStatus('PDF generation failed — network error.', 'error');
@@ -7046,6 +7094,14 @@ document.getElementById('fmt-reset-btn').addEventListener('click', () => {
   typeFormats = {};
   saveTypeFormats();
   renderFormatPage();
+  schedulePreviewUpdate();
+});
+
+// ─── Page size selector ───────────────────────────────────────────────────────
+document.getElementById('doc-page-size-sel').addEventListener('change', e => {
+  activeDocTemplate = Object.assign({}, activeDocTemplate, { pageSize: e.target.value });
+  applyDocTemplate();
+  apiFetch('/api/settings', 'POST', { docTemplate: activeDocTemplate }).catch(() => {});
   schedulePreviewUpdate();
 });
 
