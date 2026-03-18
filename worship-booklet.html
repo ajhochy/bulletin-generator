@@ -7184,11 +7184,12 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
   btn.textContent = 'Importing…';
   pcoSetMsg('pco-import-msg', '');
   try {
-    const [planResp, itemsResp] = await Promise.all([
+    const [planResp, itemsResp, notesResp] = await Promise.all([
       pcoGet(`/service_types/${stId}/plans/${planId}`),
       pcoGet(`/service_types/${stId}/plans/${planId}/items?include=song&per_page=100`),
+      pcoGet(`/service_types/${stId}/plans/${planId}/notes`).catch(() => ({ data: [] })),
     ]);
-    applyPcoData(planResp, itemsResp);
+    applyPcoData(planResp, itemsResp, notesResp);
     const planLabel = document.getElementById('pco-plan-sel').selectedOptions[0]?.text || planId;
     pcoSaveLastImport(stId, planId, planLabel);
     pcoShowLastImport(planLabel);
@@ -7205,7 +7206,7 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
   }
 });
 
-function applyPcoData(planResp, itemsResp) {
+function applyPcoData(planResp, itemsResp, notesResp) {
   const planAttrs = planResp.data.attributes;
 
   // Snapshot current items so user edits can be preserved on re-sync
@@ -7268,6 +7269,12 @@ function applyPcoData(planResp, itemsResp) {
   items = pcoDeduplicateItems(items);
   const enrichResult = enrichItemsFromDb(items);
 
+  // Map plan-level notes onto matching items (fill blank detail only).
+  if (notesResp) {
+    const normalizedNotes = normalizePlanNotes(notesResp);
+    mapPlanNotesToItems(items, normalizedNotes);
+  }
+
   // Re-sync merge: for items that existed before, restore the user's edited detail.
   // New items (not in prevItems) keep their freshly-enriched detail from above.
   if (prevItems.length > 0) {
@@ -7297,6 +7304,29 @@ function applyPcoData(planResp, itemsResp) {
       showImportReviewDialog(enrichResult.withNotes, enrichResult.unmatched);
     }
   }
+}
+
+// ─── PCO Plan Notes ───────────────────────────────────────────────────────────
+
+// Convert raw PCO notes response into a flat normalized array.
+function normalizePlanNotes(notesResp) {
+  return (notesResp.data || []).map(note => {
+    const a = note.attributes || {};
+    const title = (a.category_name || '').trim();
+    const body  = (a.content      || '').trim();
+    return { title, normalizedTitle: normTitle(title), body };
+  }).filter(n => n.title && n.body);
+}
+
+// Fill blank item.detail from matching plan notes (fill-if-blank only,
+// so user-edited detail is never overwritten).
+function mapPlanNotesToItems(items, normalizedNotes) {
+  normalizedNotes.forEach(note => {
+    const match = items.find(item =>
+      normTitle(item.title) === note.normalizedTitle && !item.detail
+    );
+    if (match) match.detail = note.body;
+  });
 }
 
 // ─── Import Review Dialog (FIX 7 & 8) ────────────────────────────────────────
@@ -7628,11 +7658,12 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
   btn.textContent = 'Refreshing…';
   pcoSetMsg('pco-refresh-msg', '');
   try {
-    const [planResp, itemsResp] = await Promise.all([
+    const [planResp, itemsResp, notesResp] = await Promise.all([
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}`),
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/items?include=song&per_page=100`),
+      pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/notes`).catch(() => ({ data: [] })),
     ]);
-    applyPcoData(planResp, itemsResp);
+    applyPcoData(planResp, itemsResp, notesResp);
     pcoSetMsg('pco-refresh-msg', `Updated — ${items.length} items refreshed.`, 'success');
     setStatus(`Refreshed from Planning Center (${items.length} items).`, 'success');
     document.querySelector('.tab-btn[data-tab="page-editor"]').click();
