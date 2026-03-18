@@ -36,6 +36,14 @@ SETTINGS_EXAMPLE_FILE      = DATA_DIR / "settings.example.json"
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service']
 
+# Deployment mode: 'server' (shared/hosted) or 'desktop' (local packaged install).
+# Desktop mode disables multi-user collaboration features.
+# Server mode disables desktop-only packaging/update features.
+APP_MODE = os.environ.get("APP_MODE", "server").strip().lower()
+if APP_MODE not in ("server", "desktop"):
+    print(f"  [config] Unknown APP_MODE '{APP_MODE}', defaulting to 'server'")
+    APP_MODE = "server"
+
 
 def _load_dotenv(path):
     if not path.exists():
@@ -85,6 +93,7 @@ def _pco_auth_header():
 
 def _public_config():
     return {
+        "appMode": APP_MODE,
         "pcoConfigured": _pco_auth_header() is not None,
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
@@ -678,6 +687,7 @@ if __name__ == '__main__':
     print(f'  http://localhost:{port}/')
     print(f'  Data directory: {DATA_DIR}')
     print(f'  PCO configured: {"yes" if _public_config()["pcoConfigured"] else "no"}')
+    print(f'  App mode: {APP_MODE}')
     print(f'\n  Press Ctrl+C to stop.\n')
     try:
         server.serve_forever()

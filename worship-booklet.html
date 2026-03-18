@@ -2313,9 +2313,14 @@ async function apiFetch(path, method = 'GET', body = null) {
 // Cache loaded from server at startup (replaces localStorage reads for these keys)
 let _serverSettings = {};
 let _publicConfig = {
+  appMode: 'server',
   pcoConfigured: false,
   calendarDefaults: { urls: [], exclude: [] },
 };
+
+// Convenience accessors — use these instead of reading _publicConfig directly
+function isDesktopMode() { return _publicConfig.appMode === 'desktop'; }
+function isServerMode()  { return _publicConfig.appMode === 'server';  }
 
 async function loadAllFromServer() {
   try {
