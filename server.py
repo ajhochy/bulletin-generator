@@ -630,7 +630,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_cal()
             return
 
-        super().do_GET()
+        self._send_json({"error": f"Not found: {path}"}, 404)
 
     def do_POST(self):
         path = self.path.split("?")[0]
