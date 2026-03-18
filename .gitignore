@@ -2,6 +2,12 @@
 .env
 .env.*
 !.env.example
+desktop_config.py
+
+# PyInstaller build output
+dist/
+build/
+*.spec.bak
 
 # Python
 __pycache__/

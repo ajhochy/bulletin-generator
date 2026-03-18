@@ -1,0 +1,8 @@
+# Copy this file to desktop_config.py and fill in your PCO OAuth credentials.
+# desktop_config.py is gitignored — never commit your real credentials.
+#
+# Register this redirect URI in your PCO developer app:
+#   http://localhost:8765/oauth/pco/callback
+
+PCO_CLIENT_ID = "your_pco_client_id_here"
+PCO_CLIENT_SECRET = "your_pco_client_secret_here"

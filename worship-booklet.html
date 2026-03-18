@@ -1922,17 +1922,20 @@
 
       <!-- Credentials view -->
       <div id="pco-creds-view">
-        <p class="section-hint">Planning Center access is configured server-side with <code>PCO_APP_ID</code> and <code>PCO_SECRET</code>. Add them to your local environment, restart the server, then retry.</p>
-        <button class="btn btn-primary btn-full" id="pco-connect-btn" style="margin-top:0.4rem;">Retry Connection</button>
+        <p class="section-hint" id="pco-creds-hint"></p>
+        <button class="btn btn-primary btn-full" id="pco-connect-btn" style="margin-top:0.4rem;">Connect Planning Center</button>
         <div id="pco-creds-msg" class="pco-msg"></div>
       </div>
 
       <!-- Connected / import view -->
       <div id="pco-import-view" style="display:none;">
         <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-top: 0.5rem;">
-          <div class="pco-status-row">
-            <span style="color: #2a6e2a; font-size: 0.9rem; line-height: 1;">●</span>
-            <span class="pco-connected-badge">Server Configured</span>
+          <div class="pco-status-row" style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:0.4rem;">
+              <span style="color: #2a6e2a; font-size: 0.9rem; line-height: 1;">●</span>
+              <span class="pco-connected-badge" id="pco-connected-badge">Connected</span>
+            </div>
+            <button class="btn-sm" id="pco-disconnect-btn" style="display:none;font-size:0.72rem;">Disconnect</button>
           </div>
           <div class="field-row">
             <label for="pco-service-type-sel">Service Type</label>
@@ -7833,23 +7836,6 @@ function pcoMapItemType(attrs) {
   return 'label';
 }
 
-document.getElementById('pco-connect-btn').addEventListener('click', async () => {
-  const btn = document.getElementById('pco-connect-btn');
-  btn.disabled = true;
-  btn.textContent = 'Checking…';
-  pcoSetMsg('pco-creds-msg', '');
-  try {
-    await pcoGet('/service_types?per_page=1');
-    _publicConfig.pcoConfigured = true;
-    pcoShowImportView();
-    pcoLoadServiceTypes();
-  } catch (err) {
-    pcoSetMsg('pco-creds-msg', err.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Retry Connection';
-  }
-});
 
 // ─── Serving schedule fetch ───────────────────────────────────────────────────
 
@@ -8015,6 +8001,23 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
 });
 
 function initPco() {
+  const hint    = document.getElementById('pco-creds-hint');
+  const connBtn = document.getElementById('pco-connect-btn');
+  const discBtn = document.getElementById('pco-disconnect-btn');
+  const badge   = document.getElementById('pco-connected-badge');
+
+  if (isDesktopMode()) {
+    connBtn.textContent = 'Connect Planning Center';
+    if (badge) badge.textContent = 'Connected';
+    if (discBtn) discBtn.style.display = '';
+    if (hint) hint.textContent = 'Sign in to Planning Center to import your service plans.';
+  } else {
+    connBtn.textContent = 'Retry Connection';
+    if (badge) badge.textContent = 'Server Configured';
+    if (discBtn) discBtn.style.display = 'none';
+    if (hint) hint.textContent = 'Planning Center access is configured server-side with PCO_APP_ID and PCO_SECRET. Add them to your local environment, restart the server, then retry.';
+  }
+
   if (_publicConfig.pcoConfigured) {
     pcoShowImportView();
     pcoLoadServiceTypes();
@@ -8022,9 +8025,61 @@ function initPco() {
     if (last) pcoShowLastImport(last.planLabel || last.planId);
   } else {
     pcoShowCredsView();
-    pcoSetMsg('pco-creds-msg', 'Planning Center is not configured on this machine yet.', 'error');
+    if (!isDesktopMode()) {
+      pcoSetMsg('pco-creds-msg', 'Planning Center is not configured on this machine yet.', 'error');
+    }
+  }
+
+  // Handle OAuth redirect-back query params
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('pco_connected') === '1') {
+    _publicConfig.pcoConfigured = true;
+    pcoShowImportView();
+    pcoLoadServiceTypes();
+    setStatus('Planning Center connected successfully.', 'success');
+    window.history.replaceState({}, '', window.location.pathname);
+  } else if (urlParams.get('pco_error')) {
+    pcoSetMsg('pco-creds-msg', 'Planning Center sign-in failed or was cancelled. Please try again.', 'error');
+    window.history.replaceState({}, '', window.location.pathname);
   }
 }
+
+// Desktop: clicking Connect Planning Center navigates to OAuth start
+// Server: clicking Retry Connection checks if credentials are now working
+document.getElementById('pco-connect-btn').addEventListener('click', async () => {
+  if (isDesktopMode()) {
+    window.location.href = '/oauth/pco/start';
+    return;
+  }
+  // Server mode — retry Basic auth check
+  const btn = document.getElementById('pco-connect-btn');
+  btn.disabled = true;
+  btn.textContent = 'Checking…';
+  pcoSetMsg('pco-creds-msg', '');
+  try {
+    await pcoGet('/service_types?per_page=1');
+    _publicConfig.pcoConfigured = true;
+    pcoShowImportView();
+    pcoLoadServiceTypes();
+  } catch (err) {
+    pcoSetMsg('pco-creds-msg', err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Retry Connection';
+  }
+});
+
+document.getElementById('pco-disconnect-btn').addEventListener('click', async () => {
+  if (!confirm('Disconnect Planning Center? You can reconnect any time.')) return;
+  try {
+    await apiFetch('/api/pco-disconnect', 'POST', {});
+    _publicConfig.pcoConfigured = false;
+    pcoShowCredsView();
+    setStatus('Planning Center disconnected.', 'success');
+  } catch (e) {
+    setStatus('Could not disconnect — try again.', 'error');
+  }
+});
 
 
 restoreOnStartup().then(() => {

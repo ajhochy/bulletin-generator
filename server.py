@@ -16,15 +16,29 @@ import base64
 import re
 import os
 import sys
+import platform
 import threading
 import subprocess
 import tempfile
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-BASE_DIR  = Path(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR  = BASE_DIR / "data"
-DATA_DIR.mkdir(exist_ok=True)
+# ── Directory setup ────────────────────────────────────────────────────────────
+if getattr(sys, 'frozen', False):
+    # Running as a PyInstaller bundle — static files are in _MEIPASS (read-only)
+    BASE_DIR = Path(sys._MEIPASS)
+    # Writable user data lives in the platform app-data directory
+    if platform.system() == 'Darwin':
+        DATA_DIR = Path.home() / 'Library' / 'Application Support' / 'BulletinGenerator'
+    elif platform.system() == 'Windows':
+        DATA_DIR = Path(os.environ.get('APPDATA', str(Path.home()))) / 'BulletinGenerator'
+    else:
+        DATA_DIR = Path.home() / '.bulletin-generator'
+else:
+    BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
+    DATA_DIR = BASE_DIR / "data"
+
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PROJECTS_FILE      = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
@@ -83,6 +97,12 @@ def _parse_list_env(name):
 
 
 def _pco_auth_header():
+    # Desktop mode: use stored OAuth access token if available
+    settings = _read_json(SETTINGS_FILE, {})
+    access_token = settings.get('pcoAccessToken', '').strip()
+    if access_token:
+        return f'Bearer {access_token}'
+    # Server mode fallback: Basic auth from environment
     app_id = os.environ.get("PCO_APP_ID", "").strip()
     secret = os.environ.get("PCO_SECRET", "").strip()
     if not app_id or not secret:
@@ -417,6 +437,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             })
             return
 
+        if path == "/oauth/pco/start":
+            self._handle_pco_oauth_start()
+            return
+
+        if path == "/oauth/pco/callback":
+            self._handle_pco_oauth_callback()
+            return
+
         if self.path.startswith("/pco-proxy/"):
             self._proxy_pco()
             return
@@ -512,6 +540,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_pdf()
             return
 
+        if path == "/api/pco-disconnect":
+            with _lock:
+                settings = _read_json(SETTINGS_FILE, {})
+                settings.pop('pcoAccessToken', None)
+                settings.pop('pcoRefreshToken', None)
+                _write_json(SETTINGS_FILE, settings)
+            self._send_json({"ok": True})
+            return
+
         self._send_json({"error": "not found"}, 404)
 
     def do_DELETE(self):
@@ -530,6 +567,78 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         self._send_json({"error": "not found"}, 404)
+
+    # ── PCO OAuth (desktop mode) ───────────────────────────────────────────────
+
+    def _handle_pco_oauth_start(self):
+        client_id = os.environ.get('PCO_CLIENT_ID', '').strip()
+        if not client_id:
+            self._send_json({'error': 'PCO OAuth credentials not configured in desktop build.'}, 503)
+            return
+        port = self.server.server_address[1]
+        redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
+        params = urllib.parse.urlencode({
+            'client_id':     client_id,
+            'redirect_uri':  redirect_uri,
+            'response_type': 'code',
+            'scope':         'services',
+        })
+        self.send_response(302)
+        self.send_header('Location', f'https://api.planningcenteronline.com/oauth/authorize?{params}')
+        self.end_headers()
+
+    def _handle_pco_oauth_callback(self):
+        qs     = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+        code   = params.get('code', [None])[0]
+        if not code:
+            self.send_response(302)
+            self.send_header('Location', '/?pco_error=denied')
+            self.end_headers()
+            return
+
+        client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
+        client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
+        port          = self.server.server_address[1]
+        redirect_uri  = f'http://localhost:{port}/oauth/pco/callback'
+
+        try:
+            token_data = urllib.parse.urlencode({
+                'grant_type':    'authorization_code',
+                'code':          code,
+                'client_id':     client_id,
+                'client_secret': client_secret,
+                'redirect_uri':  redirect_uri,
+            }).encode()
+            req = urllib.request.Request(
+                'https://api.planningcenteronline.com/oauth/token',
+                data=token_data,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                token_resp = json.loads(resp.read())
+
+            access_token  = token_resp.get('access_token', '').strip()
+            refresh_token = token_resp.get('refresh_token', '').strip()
+            if not access_token:
+                raise ValueError('No access token returned by PCO.')
+
+            with _lock:
+                settings = _read_json(SETTINGS_FILE, {})
+                settings['pcoAccessToken']  = access_token
+                settings['pcoRefreshToken'] = refresh_token
+                _write_json(SETTINGS_FILE, settings)
+
+            self.send_response(302)
+            self.send_header('Location', '/?pco_connected=1')
+            self.end_headers()
+
+        except Exception as e:
+            print(f'  [oauth] PCO token exchange failed: {e}')
+            self.send_response(302)
+            self.send_header('Location', '/?pco_error=token')
+            self.end_headers()
 
     # ── PDF generation ─────────────────────────────────────────────────────────
 
@@ -702,21 +811,28 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 # ─── Entry point ───────────────────────────────────────────────────────────────
 
-if __name__ == '__main__':
+def run_server(port=8080):
+    """Start the HTTP server. Called directly by launcher.py in desktop mode."""
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
     os.chdir(str(BASE_DIR))
-    server = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
+    httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
     print(f'  Worship Booklet Generator running at:')
     print(f'  http://localhost:{port}/')
     print(f'  Data directory: {DATA_DIR}')
     print(f'  PCO configured: {"yes" if _public_config()["pcoConfigured"] else "no"}')
     print(f'  App mode: {APP_MODE}')
+    if APP_MODE == 'desktop':
+        print(f'  PCO OAuth redirect: http://localhost:{port}/oauth/pco/callback')
     print(f'\n  Press Ctrl+C to stop.\n')
     try:
-        server.serve_forever()
+        httpd.serve_forever()
     except KeyboardInterrupt:
         print('Server stopped.')
-        server.server_close()
+        httpd.server_close()
+
+
+if __name__ == '__main__':
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+    run_server(port)
