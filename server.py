@@ -443,11 +443,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 projects = _read_json(PROJECTS_FILE, [])
                 idx = next((i for i, p in enumerate(projects) if p.get("id") == project["id"]), -1)
                 if idx >= 0:
+                    stored = projects[idx]
+                    stored_rev = stored.get("revision")
+                    client_rev = project.pop("_clientRevision", None)
+                    # Conflict detection: reject if client is editing an older revision
+                    if (APP_MODE == "server"
+                            and stored_rev is not None
+                            and client_rev is not None
+                            and int(client_rev) < int(stored_rev)):
+                        self._send_json({
+                            "error": "conflict",
+                            "projectId": project["id"],
+                            "serverRevision": stored_rev,
+                            "serverUpdatedAt": stored.get("updatedAt"),
+                            "serverUpdatedBy": stored.get("updatedBy"),
+                        }, 409)
+                        return
+                    # Increment revision and stamp server-side metadata
+                    new_rev = int(stored_rev or 0) + 1
+                    project["revision"] = new_rev
+                    project["createdAt"] = stored.get("createdAt") or project.get("createdAt")
+                    project["createdBy"] = stored.get("createdBy") or project.get("createdBy")
                     projects[idx] = project
                 else:
+                    project.pop("_clientRevision", None)
+                    project.setdefault("revision", 1)
                     projects.append(project)
                 _write_json(PROJECTS_FILE, projects)
-            self._send_json({"ok": True})
+                saved = projects[idx] if idx >= 0 else projects[-1]
+            self._send_json({"ok": True, "revision": saved.get("revision")})
             return
 
         if path == "/api/announcements":

@@ -1972,6 +1972,8 @@
         <button class="btn-sm btn-sm-danger" id="project-delete-btn" type="button">Delete</button>
       </div>
       <div class="project-meta" id="project-meta">Unsaved draft autosaves in this browser.</div>
+      <div id="stale-banner" style="display:none;font-size:0.75rem;color:#7a5c45;margin-top:0.2rem;"></div>
+      <div id="conflict-banner" style="display:none;font-size:0.75rem;color:#8b2020;margin-top:0.2rem;"></div>
       <button class="btn-sm files-browse-btn" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
       <!-- Hidden select kept for internal JS state tracking -->
       <select id="project-select" style="display:none;">
@@ -2193,11 +2195,24 @@
     <div class="stg-page-title">Settings</div>
 
     <div class="stg-anchor-nav">
+      <a href="#" class="stg-anchor-link" data-target="stg-identity">Identity</a>
+      <span class="stg-anchor-sep">·</span>
       <a href="#" class="stg-anchor-link" data-target="stg-branding">Branding</a>
       <span class="stg-anchor-sep">·</span>
       <a href="#" class="stg-anchor-link" data-target="stg-calendar">Calendar</a>
       <span class="stg-anchor-sep">·</span>
       <a href="#" class="stg-anchor-link" data-target="stg-songdb">Song Database</a>
+    </div>
+
+    <!-- ── Editor Identity (server mode) ────────────────────────────────── -->
+    <div class="stg-group" id="stg-identity-group">
+      <div class="stg-group-heading" id="stg-identity">Editor Identity</div>
+      <div class="stg-card">
+        <div class="stg-card-label">Display Name</div>
+        <p class="section-hint">Your name is attached to project saves so others can see who last edited each bulletin.</p>
+        <input type="text" id="editor-display-name-input" placeholder="e.g. Alex"
+               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      </div>
     </div>
 
     <!-- ── Church Branding ──────────────────────────────────────────────── -->
@@ -2375,6 +2390,9 @@ async function loadAllFromServer() {
       activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, _serverSettings.docTemplate);
     }
     applyDocTemplate();
+    if (typeof _serverSettings.editorDisplayName === 'string') {
+      _editorDisplayName = _serverSettings.editorDisplayName;
+    }
   } catch (e) {
     setStatus('Could not reach server. Working offline.', 'error');
   }
@@ -2399,6 +2417,11 @@ const selectedProjectIds = new Set();
 let applyingProjectState = false;
 let linkedPreviewTimer = null;
 let suppressLinkedFocusSync = false;
+
+// ─── Collaboration state (server mode) ────────────────────────────────────────
+let _loadedRevision = null;   // revision of the project as loaded from server
+let _editorDisplayName = '';  // local editor identity
+let _staleCheckTimer = null;
 
 const PROJECTS_STORAGE_KEY = 'worshipProjectsV1';
 const ACTIVE_PROJECT_STORAGE_KEY = 'worshipActiveProjectId';
@@ -2630,6 +2653,11 @@ function restoreGiveOnlineUrl() {
   if (saved) { giveOnlineUrl = saved; giveOnlineUrlInput.value = saved; }
 }
 
+function restoreEditorIdentity() {
+  if (_editorDisplayName) editorDisplayNameInput.value = _editorDisplayName;
+  applyIdentitySectionVisibility();
+}
+
 // ─── Cover image ──────────────────────────────────────────────────────────────
 coverImgZone.addEventListener('click', () => coverImgInput.click());
 coverImgZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') coverImgInput.click(); });
@@ -2659,6 +2687,17 @@ giveOnlineUrlInput.addEventListener('input', () => {
   giveOnlineUrl = giveOnlineUrlInput.value;
   apiFetch('/api/settings', 'POST', { giveOnlineUrl }).catch(() => {});
   schedulePreviewUpdate();
+});
+
+// ─── Editor identity (server mode) ───────────────────────────────────────────
+const editorDisplayNameInput = document.getElementById('editor-display-name-input');
+// Hide identity section in desktop mode (will be applied after bootstrap loads)
+function applyIdentitySectionVisibility() {
+  document.getElementById('stg-identity-group').style.display = isServerMode() ? '' : 'none';
+}
+editorDisplayNameInput.addEventListener('input', () => {
+  _editorDisplayName = editorDisplayNameInput.value.trim();
+  apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {});
 });
 
 // ─── PDF text extraction ──────────────────────────────────────────────────────
@@ -3590,9 +3629,37 @@ function applyProjectState(state) {
   renderPreview();
 }
 
-function saveProjectToServer(project) {
-  apiFetch('/api/projects', 'POST', project)
-    .catch(() => setStatus('Could not save project to server.', 'error'));
+async function saveProjectToServer(project) {
+  if (isServerMode() && _editorDisplayName) {
+    project.updatedBy = _editorDisplayName;
+  }
+  if (isServerMode() && _loadedRevision !== null) {
+    project._clientRevision = _loadedRevision;
+  }
+  try {
+    const result = await apiFetch('/api/projects', 'POST', project);
+    // Server returns canonical revision — update local tracking
+    if (isServerMode() && result && typeof result.revision === 'number') {
+      _loadedRevision = result.revision;
+      const stored = projectById(project.id);
+      if (stored) stored.revision = result.revision;
+    }
+    document.getElementById('conflict-banner').style.display = 'none';
+  } catch (err) {
+    if (err.message && err.message.includes('409')) {
+      const banner = document.getElementById('conflict-banner');
+      banner.textContent = 'This bulletin was updated by someone else. Reload to get the latest version, or continue saving to overwrite.';
+      banner.style.display = '';
+      const reloadLink = document.createElement('a');
+      reloadLink.href = '#';
+      reloadLink.textContent = ' Reload latest';
+      reloadLink.style.marginLeft = '0.4rem';
+      reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
+      banner.appendChild(reloadLink);
+    } else {
+      setStatus('Could not save project to server.', 'error');
+    }
+  }
 }
 
 function deleteProjectFromServer(projectId) {
@@ -3608,7 +3675,9 @@ function updateProjectMeta() {
   if (activeProjectId) {
     const project = projectById(activeProjectId);
     if (project) {
-      projectMeta.textContent = `Last saved: ${shortTimestamp(project.updatedAt) || 'just now'}`;
+      let meta = `Last saved: ${shortTimestamp(project.updatedAt) || 'just now'}`;
+      if (isServerMode() && project.updatedBy) meta += ` by ${project.updatedBy}`;
+      projectMeta.textContent = meta;
       bulletinTitleInput.value = project.name;
       updateSectionPreviews();
       return;
@@ -3634,7 +3703,8 @@ function renderProjectSelect() {
     .forEach(project => {
       const opt = document.createElement('option');
       opt.value = project.id;
-      opt.textContent = `${project.name} \u2022 ${shortTimestamp(project.updatedAt) || 'saved'}`;
+      const byStr = isServerMode() && project.updatedBy ? ` · ${project.updatedBy}` : '';
+      opt.textContent = `${project.name} \u2022 ${shortTimestamp(project.updatedAt) || 'saved'}${byStr}`;
       projectSelect.appendChild(opt);
     });
 
@@ -3702,8 +3772,10 @@ function saveCurrentProject(saveAs = false) {
       name: nameToUse,
       createdAt: ts,
       updatedAt: ts,
+      createdBy: isServerMode() ? (_editorDisplayName || '') : undefined,
       state,
     };
+    _loadedRevision = null;
     projects.unshift(project);
     activeProjectId = project.id;
   } else {
@@ -3781,6 +3853,9 @@ function loadProjectById(id) {
     return;
   }
   activeProjectId = project.id;
+  _loadedRevision = typeof project.revision === 'number' ? project.revision : null;
+  document.getElementById('stale-banner').style.display = 'none';
+  document.getElementById('conflict-banner').style.display = 'none';
   applyProjectState(project.state || {});
   bulletinTitleInput.value = project.name;
   updateSectionPreviews();
@@ -3788,6 +3863,42 @@ function loadProjectById(id) {
   storeActiveProjectId();
   renderProjectSelect();
   setStatus(`Loaded "${project.name}".`, 'success');
+  startStaleCheck();
+}
+
+function startStaleCheck() {
+  if (!isServerMode()) return;
+  clearInterval(_staleCheckTimer);
+  _staleCheckTimer = setInterval(async () => {
+    if (!activeProjectId) return;
+    try {
+      const data = await apiFetch('/api/projects');
+      const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
+      if (!serverProject) return;
+      // Update local copy with latest metadata
+      const local = projectById(activeProjectId);
+      if (local) {
+        local.updatedAt = serverProject.updatedAt;
+        local.updatedBy = serverProject.updatedBy;
+        local.revision  = serverProject.revision;
+      }
+      const serverRev = serverProject.revision;
+      if (typeof serverRev === 'number' && _loadedRevision !== null && serverRev > _loadedRevision) {
+        const banner = document.getElementById('stale-banner');
+        const by = serverProject.updatedBy ? ` by ${serverProject.updatedBy}` : '';
+        const when = shortTimestamp(serverProject.updatedAt) || '';
+        banner.innerHTML = `This bulletin was updated${by}${when ? ' at ' + when : ''}. <a href="#" style="color:inherit">Reload latest</a>`;
+        banner.querySelector('a').addEventListener('click', e => {
+          e.preventDefault();
+          apiFetch('/api/projects').then(d => {
+            const fresh = (d.projects || []).find(p => p.id === activeProjectId);
+            if (fresh) { projects = projects.map(p => p.id === fresh.id ? fresh : p); loadProjectById(fresh.id); }
+          }).catch(() => {});
+        });
+        banner.style.display = '';
+      }
+    } catch (e) { /* ignore poll errors */ }
+  }, 30000);
 }
 
 function clearEditorForNewProject() {
@@ -3852,6 +3963,7 @@ async function restoreOnStartup() {
   // Always restore global logo from server settings first
   restoreDefaultStaffLogo();
   restoreGiveOnlineUrl();
+  restoreEditorIdentity();
 
   let restored = false;
 
@@ -3861,9 +3973,11 @@ async function restoreOnStartup() {
     const activeProject = projectById(rememberedActive);
     if (activeProject) {
       activeProjectId = activeProject.id;
+      _loadedRevision = typeof activeProject.revision === 'number' ? activeProject.revision : null;
       applyProjectState(activeProject.state || {});
       restored = true;
       setStatus(`Loaded "${activeProject.name}".`, 'success');
+      startStaleCheck();
     }
   }
 
@@ -3874,9 +3988,11 @@ async function restoreOnStartup() {
       .slice()
       .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
     activeProjectId = newest.id;
+    _loadedRevision = typeof newest.revision === 'number' ? newest.revision : null;
     applyProjectState(newest.state || {});
     restored = true;
     setStatus(`Loaded "${newest.name}".`, 'success');
+    startStaleCheck();
   }
 
   // 3. Fall back to unsaved local draft
