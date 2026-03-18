@@ -2695,7 +2695,16 @@ function renderItemList() {
     itemList.appendChild(card);
     // Auto-size the detail textarea to its content
     const ta = card.querySelector('.item-detail-input');
-    if (ta) autoResize(ta);
+    if (ta) {
+      autoResize(ta);
+      // Track last selection so toolbar buttons can restore it after focus moves
+      const saveSelection = () => {
+        ta._savedSel = { start: ta.selectionStart, end: ta.selectionEnd };
+      };
+      ta.addEventListener('select', saveSelection);
+      ta.addEventListener('mouseup', saveSelection);
+      ta.addEventListener('keyup', saveSelection);
+    }
     // Append per-item formatting toolbar (not for break cards or section cards — still show for section)
     card.appendChild(buildItemFmtToolbar(item, idx));
   });
@@ -3204,6 +3213,10 @@ function annMove(idx, dir) {
 }
 
 function annFmtBold(ta) {
+  if (ta._savedSel) {
+    ta.selectionStart = ta._savedSel.start;
+    ta.selectionEnd = ta._savedSel.end;
+  }
   const start = ta.selectionStart, end = ta.selectionEnd;
   const sel = ta.value.slice(start, end);
   if (!sel) {
@@ -3232,11 +3245,14 @@ function annFmtBullet(ta) {
 
 // Insert *italic* markers around selected text in a textarea
 function fmtItalic(ta) {
+  if (ta._savedSel) {
+    ta.selectionStart = ta._savedSel.start;
+    ta.selectionEnd = ta._savedSel.end;
+  }
   const start = ta.selectionStart, end = ta.selectionEnd;
   const sel = ta.value.slice(start, end);
   if (!sel) {
-    ta.setRangeText('**', start, end, 'end');
-    ta.selectionStart = ta.selectionEnd = start + 1;
+    ta.setRangeText('*italic*', start, end, 'select');
   } else {
     ta.setRangeText(`*${sel}*`, start, end, 'select');
   }
