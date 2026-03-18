@@ -43,9 +43,11 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_FILE      = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
 SETTINGS_FILE      = DATA_DIR / "settings.json"
-PROJECTS_EXAMPLE_FILE      = DATA_DIR / "projects.example.json"
-ANNOUNCEMENTS_EXAMPLE_FILE = DATA_DIR / "announcements.example.json"
-SETTINGS_EXAMPLE_FILE      = DATA_DIR / "settings.example.json"
+# Example/seed files always live alongside the app code (read-only in frozen builds)
+_EXAMPLE_DIR = BASE_DIR / "data"
+PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
+ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
+SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
 
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service']
