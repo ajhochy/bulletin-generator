@@ -2321,8 +2321,8 @@
       <select id="doc-page-size-sel" style="font-size:0.82rem;">
         <option value="5.5x8.5">5.5 × 8.5 in — half-letter (default)</option>
         <option value="8.5x11">8.5 × 11 in — letter</option>
-        <option value="5.5x4.25">5.5 × 4.25 in — quarter-letter landscape</option>
-        <option value="4.25x5.5">4.25 × 5.5 in — quarter-letter portrait</option>
+        <option value="8.5x14">8.5 × 14 in — legal</option>
+        <option value="11x17">11 × 17 in — tabloid / ledger</option>
       </select>
     </div>
     <h2 class="fmt-page-title">Item Type Formatting</h2>
@@ -2496,8 +2496,8 @@ let typeFormats = {};
 const PAGE_SIZE_PRESETS = {
   '5.5x8.5':  { label: '5.5 × 8.5 in — half-letter (default)', w: 5.5,  h: 8.5  },
   '8.5x11':   { label: '8.5 × 11 in — letter',                 w: 8.5,  h: 11   },
-  '5.5x4.25': { label: '5.5 × 4.25 in — quarter-letter landscape', w: 5.5, h: 4.25 },
-  '4.25x5.5': { label: '4.25 × 5.5 in — quarter-letter portrait',  w: 4.25, h: 5.5 },
+  '8.5x14':   { label: '8.5 × 14 in — legal',                  w: 8.5,  h: 14   },
+  '11x17':    { label: '11 × 17 in — tabloid / ledger',         w: 11,   h: 17   },
 };
 
 let activeDocTemplate = { pageSize: '5.5x8.5' };
@@ -6629,43 +6629,108 @@ document.getElementById('song-db-sort').addEventListener('change', renderSongDb)
 
 // ─── ProPresenter Import ───────────────────────────────────────────────────────
 
-async function parsePropresenterFile(file) {
-  const text = await file.text();
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(text, 'text/xml');
-  const root = doc.documentElement;
+// ─── ProPresenter Import Helpers ─────────────────────────────────────────────
 
+const SONG_GROUP_RE = /^(verse|chorus|bridge|pre.?chorus|refrain|tag\b|intro|outro|hook)/i;
+
+/**
+ * Strip RTF markup from a single RTF block string, returning plain text.
+ * Works with ProPresenter-generated RTF (cocoartf2577 style).
+ */
+function _stripRtf(rtf) {
+  let s = rtf.trim();
+  // Remove outer braces
+  if (s.startsWith('{') && s.endsWith('}')) s = s.slice(1, -1);
+  // Iteratively remove inner {groups} (fonttbl, colortbl, expandedcolortbl, etc.)
+  let prev;
+  do { prev = s; s = s.replace(/\{[^{}]*\}/g, ''); } while (s !== prev);
+  // Unicode escape \uN? → character (8232/8233 are line separators → newline)
+  s = s.replace(/\\u(\d+)\??/g, (_, n) => {
+    const c = parseInt(n, 10);
+    return (c === 8232 || c === 8233) ? '\n' : String.fromCharCode(c);
+  });
+  // Backslash + newline in RTF source = line break
+  s = s.replace(/\\\n/g, '\n');
+  // Remove all RTF control words (\word or \word123)
+  s = s.replace(/\\[a-zA-Z]+\d*\*?\s?/g, '');
+  // Remove remaining braces and backslashes
+  s = s.replace(/[{}\\]/g, '');
+  // Normalize whitespace
+  s = s.replace(/[ \t]+/g, ' ');
+  s = s.replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n');
+  s = s.replace(/\n{3,}/g, '\n\n');
+  return s.trim();
+}
+
+/**
+ * Extract all top-level {\rtf1 ...} blocks from a string using brace counting.
+ */
+function _extractRtfBlocks(text) {
+  const blocks = [];
+  let i = 0;
+  while (true) {
+    const start = text.indexOf('{\\rtf1', i);
+    if (start === -1) break;
+    let depth = 0, j = start;
+    while (j < text.length) {
+      if (text[j] === '{') depth++;
+      else if (text[j] === '}') { depth--; if (depth === 0) { blocks.push(text.slice(start, j + 1)); i = j + 1; break; } }
+      j++;
+    }
+    if (depth !== 0) break;
+  }
+  return blocks;
+}
+
+/**
+ * Extract readable group/section label strings from a PP7 protobuf binary.
+ * In PP7 files, group names appear as readable strings immediately after a UUID.
+ */
+function _extractProto7GroupNames(text) {
+  const names = [];
+  // UUID pattern: $XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX followed by a short readable string
+  const re = /\$[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}([ -~]{2,50}?)(?=[&\x00-\x1F\x7F-\x9F$]|$)/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const label = m[1].trim();
+    if (label && !/^[0-9A-F-]+$/i.test(label)) names.push(label);
+  }
+  return names;
+}
+
+/**
+ * Parse a ProPresenter 6 XML file (.pro6 or XML-based .pro).
+ */
+function _parsePropresenterXml(filename, xmlText) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'text/xml');
+  const root = doc.documentElement;
   if (root.nodeName === 'parseerror' || root.tagName === 'html') {
-    throw new Error(`${file.name}: not valid XML`);
+    throw new Error(`${filename}: unrecognized ProPresenter XML format`);
   }
 
-  // Title — try CCLI title attr, then generic title attr, then filename
-  const title = (
-    root.getAttribute('CCLISongTitle') ||
-    root.getAttribute('title') ||
-    file.name.replace(/\.(pro[67]?|propresenter)$/i, '')
-  ).trim();
-
-  const author    = (root.getAttribute('CCLIArtistCredits') || root.getAttribute('artist') || '').trim();
-  const ccliSong  = (root.getAttribute('CCLISongNumber') || '').trim();
-  const ccliYear  = (root.getAttribute('CCLICopyrightYear') || '').trim();
-  const ccliPub   = (root.getAttribute('CCLIPublisher') || '').trim();
-  const ccliLic   = (root.getAttribute('CCLILicenseNumber') || '').trim();
-
-  let copyright = (root.getAttribute('CCLICopyrightInfo') || '').trim();
+  const title = (root.getAttribute('CCLISongTitle') || root.getAttribute('title') ||
+    filename.replace(/\.(pro[67]?|propresenter)$/i, '')).trim();
+  const author   = (root.getAttribute('CCLIArtistCredits') || root.getAttribute('artist') || '').trim();
+  const ccliSong = (root.getAttribute('CCLISongNumber') || '').trim();
+  const ccliYear = (root.getAttribute('CCLICopyrightYear') || '').trim();
+  const ccliPub  = (root.getAttribute('CCLIPublisher') || '').trim();
+  const ccliLic  = (root.getAttribute('CCLILicenseNumber') || '').trim();
+  let copyright  = (root.getAttribute('CCLICopyrightInfo') || '').trim();
   if (!copyright) {
     const parts = [];
     if (ccliSong) parts.push(`CCLI Song # ${ccliSong}`);
     if (ccliYear && author) parts.push(`© ${ccliYear} ${author}`);
     else if (ccliYear) parts.push(`© ${ccliYear}`);
-    if (ccliPub)  parts.push(ccliPub);
-    if (ccliLic)  parts.push(`CCLI License # ${ccliLic}`);
+    if (ccliPub) parts.push(ccliPub);
+    if (ccliLic) parts.push(`CCLI License # ${ccliLic}`);
     copyright = parts.join(' ');
   }
 
-  // Extract lyrics from slide groups
+  const groupEls = [...root.querySelectorAll('RVSlideGrouping')];
+  const groupNames = groupEls.map(g => g.getAttribute('name') || '');
   const lyricSections = [];
-  root.querySelectorAll('RVSlideGrouping').forEach(group => {
+  groupEls.forEach(group => {
     const sectionName = group.getAttribute('name') || '';
     const slideTexts = [];
     group.querySelectorAll('RVDisplaySlide').forEach(slide => {
@@ -6676,19 +6741,53 @@ async function parsePropresenterFile(file) {
       });
       if (lines.length) slideTexts.push(lines.join('\n'));
     });
-    if (slideTexts.length) {
-      lyricSections.push((sectionName ? sectionName + '\n' : '') + slideTexts.join('\n'));
-    }
+    if (slideTexts.length) lyricSections.push((sectionName ? sectionName + '\n' : '') + slideTexts.join('\n'));
   });
 
   return {
-    title: title.toUpperCase(),
-    author,
-    lyrics: lyricSections.join('\n'),
-    copyright,
-    ccli_number: ccliSong,
-    date_added: new Date().toISOString(),
+    title: title.toUpperCase(), author, lyrics: lyricSections.join('\n'),
+    copyright, ccli_number: ccliSong, date_added: new Date().toISOString(),
+    _isSong: !!ccliSong || groupNames.some(n => SONG_GROUP_RE.test(n)),
   };
+}
+
+/**
+ * Parse a ProPresenter 7 protobuf binary file by extracting embedded RTF blocks.
+ */
+function _parsePropresenterProto7(filename, rawText) {
+  const title = filename.replace(/\.(pro[67]?|propresenter)$/i, '').trim();
+  const rtfBlocks = _extractRtfBlocks(rawText);
+  if (!rtfBlocks.length) throw new Error(`${filename}: no slide content found`);
+
+  const slideTexts = rtfBlocks.map(_stripRtf).filter(t => t.length > 0);
+  const groupNames = _extractProto7GroupNames(rawText);
+
+  return {
+    title: title.toUpperCase(), author: '', lyrics: slideTexts.join('\n'),
+    copyright: '', ccli_number: '', date_added: new Date().toISOString(),
+    _isSong: groupNames.some(n => SONG_GROUP_RE.test(n)),
+  };
+}
+
+async function parsePropresenterFile(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+
+  // Binary plist (ProPresenter 4/5) — starts with "bplist"
+  if (bytes[0] === 0x62 && bytes[1] === 0x70) {
+    throw new Error(`${file.name}: binary plist format (ProPresenter 4/5) — re-save in ProPresenter 6 or 7 to import`);
+  }
+
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  const trimmed = text.trimStart();
+
+  // XML format (ProPresenter 5/6: .pro5, .pro6, or XML-based .pro)
+  if (trimmed.startsWith('<?xml') || trimmed.startsWith('<RV')) {
+    return _parsePropresenterXml(file.name, text);
+  }
+
+  // ProPresenter 7 protobuf format
+  return _parsePropresenterProto7(file.name, text);
 }
 
 // State for the ProPresenter import flow
@@ -6715,7 +6814,7 @@ document.getElementById('pro-import-input').addEventListener('change', async e =
     return;
   }
 
-  // Classify each parsed song: new / duplicate
+  // Classify each parsed file: new / duplicate
   const results = parsed.map(song => {
     const existing = songDb.find(s => normTitle(s.title) === normTitle(song.title));
     return { song, status: existing ? 'duplicate' : 'new' };
@@ -6734,12 +6833,27 @@ document.getElementById('pro-import-input').addEventListener('change', async e =
     body.appendChild(errNote);
   }
 
+  const songResults    = results.filter(r => r.song._isSong);
+  const nonSongResults = results.filter(r => !r.song._isSong);
+  const newSongCount   = songResults.filter(r => r.status === 'new').length;
+  const dupSongCount   = songResults.filter(r => r.status === 'duplicate').length;
+
   const summary = document.createElement('p');
-  summary.style.cssText = 'font-size:0.82rem;margin-bottom:0.8rem;';
-  const newCount = results.filter(r => r.status === 'new').length;
-  const dupCount = results.filter(r => r.status === 'duplicate').length;
-  summary.textContent = `${results.length} song(s) parsed — ${newCount} new, ${dupCount} duplicate title(s).`;
+  summary.style.cssText = 'font-size:0.82rem;margin-bottom:0.4rem;';
+  let summaryText = `${songResults.length} song(s) detected — ${newSongCount} new, ${dupSongCount} duplicate.`;
+  if (nonSongResults.length) summaryText += ` ${nonSongResults.length} non-song file(s) unchecked by default.`;
+  summary.textContent = summaryText;
   body.appendChild(summary);
+
+  const hint = document.createElement('p');
+  hint.style.cssText = 'font-size:0.74rem;color:#777;margin-bottom:0.8rem;';
+  hint.textContent = 'Review below — uncheck anything you don\'t want to import, or check non-songs to import them too.';
+  body.appendChild(hint);
+
+  function updateConfirmBtn() {
+    const n = document.querySelectorAll('#pro-import-body input[type=checkbox]:checked').length;
+    document.getElementById('pro-import-confirm-btn').textContent = `Import ${n} Item${n !== 1 ? 's' : ''}`;
+  }
 
   results.forEach(({ song, status }) => {
     const row = document.createElement('div');
@@ -6747,16 +6861,24 @@ document.getElementById('pro-import-input').addEventListener('change', async e =
 
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.checked = status === 'new';
+    // Songs: check new ones; non-songs: unchecked by default
+    cb.checked = song._isSong && status === 'new';
     cb.dataset.songTitle = song.title;
+    cb.addEventListener('change', updateConfirmBtn);
     row.appendChild(cb);
 
     const label = document.createElement('span');
     label.style.flex = '1';
     label.textContent = song.title;
+    if (!song._isSong) label.style.color = '#888';
     row.appendChild(label);
 
-    if (status === 'duplicate') {
+    if (!song._isSong) {
+      const badge = document.createElement('span');
+      badge.style.cssText = 'font-size:0.72rem;background:#f0ede8;color:#7a6e62;padding:0.1em 0.4em;border-radius:3px;white-space:nowrap;';
+      badge.textContent = 'non-song';
+      row.appendChild(badge);
+    } else if (status === 'duplicate') {
       const badge = document.createElement('span');
       badge.style.cssText = 'font-size:0.72rem;color:#7a6e62;white-space:nowrap;';
       badge.textContent = 'duplicate — will replace';
@@ -6766,7 +6888,7 @@ document.getElementById('pro-import-input').addEventListener('change', async e =
     body.appendChild(row);
   });
 
-  document.getElementById('pro-import-confirm-btn').textContent = `Import ${newCount} New Song${newCount !== 1 ? 's' : ''}`;
+  updateConfirmBtn();
   document.getElementById('pro-import-modal').style.display = '';
 });
 
@@ -6780,9 +6902,10 @@ document.getElementById('pro-import-confirm-btn').addEventListener('click', () =
   let imported = 0, replaced = 0;
   _proImportParsed.forEach(({ song, status }) => {
     if (!checked.has(song.title)) return;
-    const idx = songDb.findIndex(s => normTitle(s.title) === normTitle(song.title));
-    if (idx >= 0) { songDb[idx] = song; replaced++; }
-    else           { songDb.push(song); imported++; }
+    const { _isSong: _, ...clean } = song;  // strip internal flag before storing
+    const idx = songDb.findIndex(s => normTitle(s.title) === normTitle(clean.title));
+    if (idx >= 0) { songDb[idx] = clean; replaced++; }
+    else           { songDb.push(clean); imported++; }
   });
   saveSongDb();
   renderSongDb();
@@ -7904,10 +8027,11 @@ const SERVING_EXCLUDED_TEAMS = /^(audio\s*\/?\s*visual(\s+team)?|vocals?|brass\s
 // Each returned team object carries a `serviceTime` string (from PCO's service_time_name
 // attribute) so the bulletin can show "8:00a" / "10:30a" subheadings.
 async function pcoFetchPlanTeamMembers(stId, planId) {
-  // Fetch plan times (to get "8:00a" / "10:30a" labels) and team members in parallel
+  // Fetch plan times (to get "8:00a" / "10:30a" labels) and team members in parallel.
+  // Include plan_person_times so we can map each team member → their assigned PlanTime.
   const [timesResp, resp] = await Promise.all([
     pcoGet(`/service_types/${stId}/plans/${planId}/plan_times`).catch(() => ({ data: [] })),
-    pcoGet(`/service_types/${stId}/plans/${planId}/team_members?include=team&per_page=200`),
+    pcoGet(`/service_types/${stId}/plans/${planId}/team_members?include=team,plan_person_times&per_page=200`),
   ]);
 
   // Build PlanTime ID → short display label  (e.g. "8:00a", "10:30a")
@@ -7925,8 +8049,14 @@ async function pcoFetchPlanTeamMembers(stId, planId) {
   });
 
   const teamNames = {};
+  // PlanPersonTime ID → PlanTime ID (the actual service time slot)
+  const pptToPlanTimeId = {};
   (resp.included || []).forEach(inc => {
     if (inc.type === 'Team') teamNames[inc.id] = inc.attributes.name;
+    if (inc.type === 'PlanPersonTime') {
+      const ptId = inc.relationships?.plan_time?.data?.id;
+      if (ptId) pptToPlanTimeId[inc.id] = ptId;
+    }
   });
 
   // Three-level map: svcTime → teamName → positionName → [names]
@@ -7943,11 +8073,10 @@ async function pcoFetchPlanTeamMembers(stId, planId) {
     const position = (tm.attributes.team_position_name || 'Volunteer').toUpperCase();
     const name     = (tm.attributes.name || '').trim();
 
-    // plan_times is an array of PlanTime IDs — use the first one as the label
-    const svcTimeIds = (tm.relationships?.plan_times?.data || []).map(d => d.id);
-    const svcTime = svcTimeIds.length > 0
-      ? (planTimeLabels[svcTimeIds[0]] || svcTimeIds[0])
-      : '';
+    // Resolve service time: PlanPerson → plan_person_times → PlanPersonTime → plan_time → label
+    const pptIds = (tm.relationships?.plan_person_times?.data || []).map(d => d.id);
+    const planTimeId = pptIds.length > 0 ? pptToPlanTimeId[pptIds[0]] : null;
+    const svcTime = planTimeId ? (planTimeLabels[planTimeId] || planTimeId) : '';
 
     if (!data[svcTime]) {
       data[svcTime] = {};
