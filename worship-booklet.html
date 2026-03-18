@@ -2071,6 +2071,7 @@
       <div id="vol-empty" style="font-size:0.78rem; color:var(--muted); font-style:italic; padding:0.3rem 0;">
         Import a plan from Planning Center to populate volunteer assignments.
       </div>
+      <div id="vol-error" style="display:none; font-size:0.78rem; color:var(--danger); padding:0.3rem 0;"></div>
     </div>
 
     <!-- Church Staff & Contact -->
@@ -7919,8 +7920,8 @@ async function pcoFetchPlanTeamMembers(stId, planId) {
     const position = (tm.attributes.team_position_name || 'Volunteer').toUpperCase();
     const name     = (tm.attributes.name || '').trim();
 
-    // service_times is an array of PlanTime IDs — use the first one as the label
-    const svcTimeIds = (tm.relationships?.service_times?.data || []).map(d => d.id);
+    // plan_times is an array of PlanTime IDs — use the first one as the label
+    const svcTimeIds = (tm.relationships?.plan_times?.data || []).map(d => d.id);
     const svcTime = svcTimeIds.length > 0
       ? (planTimeLabels[svcTimeIds[0]] || svcTimeIds[0])
       : '';
@@ -7986,11 +7987,18 @@ async function pcoFetchAndApplyServing(stId, planId, planSortDate, planDate) {
       thisWeek: { date: planDate || planSortDate || '', planId, teams: thisWeekTeams },
       nextWeek,
     };
+    const errEl = document.getElementById('vol-error');
+    if (errEl) errEl.style.display = 'none';
     volRender();
     renderPreview();
     scheduleProjectPersist();
   } catch (e) {
     console.warn('Could not fetch serving schedule:', e);
+    const errEl = document.getElementById('vol-error');
+    if (errEl) {
+      errEl.textContent = `Could not load volunteers: ${e.message}`;
+      errEl.style.display = '';
+    }
   }
 }
 

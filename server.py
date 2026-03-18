@@ -111,6 +111,46 @@ def _pco_auth_header():
     return f"Basic {token}"
 
 
+def _refresh_pco_token():
+    """Exchange refresh_token for a new access_token. Returns new Bearer header or None."""
+    settings = _read_json(SETTINGS_FILE, {})
+    refresh_token = settings.get('pcoRefreshToken', '').strip()
+    client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
+    client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
+    if not refresh_token or not client_id or not client_secret:
+        return None
+    try:
+        token_data = urllib.parse.urlencode({
+            'grant_type':    'refresh_token',
+            'refresh_token': refresh_token,
+            'client_id':     client_id,
+            'client_secret': client_secret,
+        }).encode()
+        req = urllib.request.Request(
+            'https://api.planningcenteronline.com/oauth/token',
+            data=token_data,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            token_resp = json.loads(resp.read())
+        new_access  = token_resp.get('access_token', '').strip()
+        new_refresh = token_resp.get('refresh_token', '').strip()
+        if not new_access:
+            return None
+        with _lock:
+            s = _read_json(SETTINGS_FILE, {})
+            s['pcoAccessToken']  = new_access
+            if new_refresh:
+                s['pcoRefreshToken'] = new_refresh
+            _write_json(SETTINGS_FILE, s)
+        print('  [oauth] PCO access token refreshed.')
+        return f'Bearer {new_access}'
+    except Exception as e:
+        print(f'  [oauth] PCO token refresh failed: {e}')
+        return None
+
+
 def _public_config():
     return {
         "appMode": APP_MODE,
@@ -733,15 +773,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'User-Agent': 'WorshipBulletinProxy/1.0',
         })
 
+        def _do_request(r):
+            with urllib.request.urlopen(r) as resp:
+                return resp.read()
+
         try:
-            with urllib.request.urlopen(req) as resp:
-                data = resp.read()
+            data = _do_request(req)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self._cors_headers()
             self.end_headers()
             self.wfile.write(data)
         except urllib.error.HTTPError as e:
+            if e.code == 401:
+                # Token may be expired — attempt a silent refresh and retry once
+                new_auth = _refresh_pco_token()
+                if new_auth:
+                    req2 = urllib.request.Request(url, headers={
+                        'Authorization': new_auth,
+                        'Accept': 'application/json',
+                        'User-Agent': 'WorshipBulletinProxy/1.0',
+                    })
+                    try:
+                        data = _do_request(req2)
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json')
+                        self._cors_headers()
+                        self.end_headers()
+                        self.wfile.write(data)
+                        return
+                    except urllib.error.HTTPError as e2:
+                        e = e2
+                    except Exception as e2:
+                        self.send_response(500)
+                        self.send_header('Content-Type', 'application/json')
+                        self._cors_headers()
+                        self.end_headers()
+                        self.wfile.write(f'{{"errors":[{{"detail":"{e2}"}}]}}'.encode())
+                        return
             self.send_response(e.code)
             self.send_header('Content-Type', 'application/json')
             self._cors_headers()
