@@ -560,9 +560,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
 
-        if path == "/":
-            self.path = "/worship-booklet.html"
-            super().do_GET()
+        if path == "/" or path == "/worship-booklet.html":
+            try:
+                content = (BASE_DIR / "worship-booklet.html").read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(f"Error loading app: {e}".encode())
+            return
+
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
             return
 
         if path == "/api/projects":
