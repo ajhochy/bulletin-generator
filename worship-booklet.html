@@ -2129,6 +2129,7 @@
       <div class="sdb-page-actions">
         <button class="btn-sm btn-sm-primary" id="song-db-add-btn">+ Add Song</button>
         <button class="btn-sm" id="song-db-paste-btn">⎘ Paste from Clipboard</button>
+        <label class="btn-sm" style="cursor:pointer;" title="Import songs from ProPresenter .pro/.pro6/.pro7 files">⬆ Import from ProPresenter<input type="file" id="pro-import-input" accept=".pro,.pro6,.pro7,.propresenter" multiple style="display:none"></label>
       </div>
     </div>
 
@@ -6449,6 +6450,169 @@ document.getElementById('song-db-clear-btn').addEventListener('click', () => {
 document.getElementById('song-db-search').addEventListener('input', renderSongDb);
 document.getElementById('song-db-sort').addEventListener('change', renderSongDb);
 
+// ─── ProPresenter Import ───────────────────────────────────────────────────────
+
+async function parsePropresenterFile(file) {
+  const text = await file.text();
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(text, 'text/xml');
+  const root = doc.documentElement;
+
+  if (root.nodeName === 'parseerror' || root.tagName === 'html') {
+    throw new Error(`${file.name}: not valid XML`);
+  }
+
+  // Title — try CCLI title attr, then generic title attr, then filename
+  const title = (
+    root.getAttribute('CCLISongTitle') ||
+    root.getAttribute('title') ||
+    file.name.replace(/\.(pro[67]?|propresenter)$/i, '')
+  ).trim();
+
+  const author    = (root.getAttribute('CCLIArtistCredits') || root.getAttribute('artist') || '').trim();
+  const ccliSong  = (root.getAttribute('CCLISongNumber') || '').trim();
+  const ccliYear  = (root.getAttribute('CCLICopyrightYear') || '').trim();
+  const ccliPub   = (root.getAttribute('CCLIPublisher') || '').trim();
+  const ccliLic   = (root.getAttribute('CCLILicenseNumber') || '').trim();
+
+  let copyright = (root.getAttribute('CCLICopyrightInfo') || '').trim();
+  if (!copyright) {
+    const parts = [];
+    if (ccliSong) parts.push(`CCLI Song # ${ccliSong}`);
+    if (ccliYear && author) parts.push(`© ${ccliYear} ${author}`);
+    else if (ccliYear) parts.push(`© ${ccliYear}`);
+    if (ccliPub)  parts.push(ccliPub);
+    if (ccliLic)  parts.push(`CCLI License # ${ccliLic}`);
+    copyright = parts.join(' ');
+  }
+
+  // Extract lyrics from slide groups
+  const lyricSections = [];
+  root.querySelectorAll('RVSlideGrouping').forEach(group => {
+    const sectionName = group.getAttribute('name') || '';
+    const slideTexts = [];
+    group.querySelectorAll('RVDisplaySlide').forEach(slide => {
+      const lines = [];
+      slide.querySelectorAll('NSString').forEach(ns => {
+        const txt = (ns.textContent || '').replace(/\r\n|\r/g, '\n').trim();
+        if (txt) lines.push(txt);
+      });
+      if (lines.length) slideTexts.push(lines.join('\n'));
+    });
+    if (slideTexts.length) {
+      lyricSections.push((sectionName ? sectionName + '\n' : '') + slideTexts.join('\n'));
+    }
+  });
+
+  return {
+    title: title.toUpperCase(),
+    author,
+    lyrics: lyricSections.join('\n'),
+    copyright,
+    ccli_number: ccliSong,
+    date_added: new Date().toISOString(),
+  };
+}
+
+// State for the ProPresenter import flow
+let _proImportParsed = [];
+
+document.getElementById('pro-import-input').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if (!files.length) return;
+
+  const parsed = [];
+  const errors = [];
+  for (const file of files) {
+    try {
+      const song = await parsePropresenterFile(file);
+      parsed.push(song);
+    } catch (err) {
+      errors.push({ file: file.name, msg: err.message });
+    }
+  }
+
+  if (!parsed.length && errors.length) {
+    alert('Could not parse any of the selected files:\n' + errors.map(e => e.msg).join('\n'));
+    return;
+  }
+
+  // Classify each parsed song: new / duplicate
+  const results = parsed.map(song => {
+    const existing = songDb.find(s => normTitle(s.title) === normTitle(song.title));
+    return { song, status: existing ? 'duplicate' : 'new' };
+  });
+
+  _proImportParsed = results;
+
+  // Build summary UI
+  const body = document.getElementById('pro-import-body');
+  body.innerHTML = '';
+
+  if (errors.length) {
+    const errNote = document.createElement('p');
+    errNote.style.cssText = 'font-size:0.78rem;color:#8b2020;margin-bottom:0.8rem;';
+    errNote.textContent = `${errors.length} file(s) could not be parsed and were skipped.`;
+    body.appendChild(errNote);
+  }
+
+  const summary = document.createElement('p');
+  summary.style.cssText = 'font-size:0.82rem;margin-bottom:0.8rem;';
+  const newCount = results.filter(r => r.status === 'new').length;
+  const dupCount = results.filter(r => r.status === 'duplicate').length;
+  summary.textContent = `${results.length} song(s) parsed — ${newCount} new, ${dupCount} duplicate title(s).`;
+  body.appendChild(summary);
+
+  results.forEach(({ song, status }) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:0.6rem;padding:0.3rem 0;border-bottom:1px solid #eee;font-size:0.8rem;';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = status === 'new';
+    cb.dataset.songTitle = song.title;
+    row.appendChild(cb);
+
+    const label = document.createElement('span');
+    label.style.flex = '1';
+    label.textContent = song.title;
+    row.appendChild(label);
+
+    if (status === 'duplicate') {
+      const badge = document.createElement('span');
+      badge.style.cssText = 'font-size:0.72rem;color:#7a6e62;white-space:nowrap;';
+      badge.textContent = 'duplicate — will replace';
+      row.appendChild(badge);
+    }
+
+    body.appendChild(row);
+  });
+
+  document.getElementById('pro-import-confirm-btn').textContent = `Import ${newCount} New Song${newCount !== 1 ? 's' : ''}`;
+  document.getElementById('pro-import-modal').style.display = '';
+});
+
+document.getElementById('pro-import-close-btn').addEventListener('click',  () => { document.getElementById('pro-import-modal').style.display = 'none'; });
+document.getElementById('pro-import-cancel-btn').addEventListener('click', () => { document.getElementById('pro-import-modal').style.display = 'none'; });
+
+document.getElementById('pro-import-confirm-btn').addEventListener('click', () => {
+  const checked = new Set(
+    [...document.querySelectorAll('#pro-import-body input[type=checkbox]:checked')].map(cb => cb.dataset.songTitle)
+  );
+  let imported = 0, replaced = 0;
+  _proImportParsed.forEach(({ song, status }) => {
+    if (!checked.has(song.title)) return;
+    const idx = songDb.findIndex(s => normTitle(s.title) === normTitle(song.title));
+    if (idx >= 0) { songDb[idx] = song; replaced++; }
+    else           { songDb.push(song); imported++; }
+  });
+  saveSongDb();
+  renderSongDb();
+  document.getElementById('pro-import-modal').style.display = 'none';
+  setStatus(`ProPresenter import complete — ${imported} added, ${replaced} replaced.`, 'success');
+});
+
 // ─── Files page ───────────────────────────────────────────────────────────────
 function updateBulkBar() {
   const bar      = document.getElementById('bulk-bar');
@@ -7903,6 +8067,22 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
     <div class="irm-footer">
       <button class="btn" id="irm-cancel-btn">Skip All</button>
       <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box" style="max-width:580px;">
+    <div class="irm-header">
+      <div class="irm-title">Import from ProPresenter</div>
+      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="pro-import-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
     </div>
   </div>
 </div>
