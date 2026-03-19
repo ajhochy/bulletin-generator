@@ -832,10 +832,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_google_oauth_start(self):
         client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
         if not client_id:
-            self._send_json({'error': 'Google OAuth credentials not configured in desktop build.'}, 503)
+            self._send_json({'error': 'Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.'}, 503)
             return
         port = self.server.server_address[1]
-        redirect_uri = f'http://localhost:{port}/oauth/google/callback'
+        app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
+        redirect_uri = f'{app_url}/oauth/google/callback' if app_url else f'http://localhost:{port}/oauth/google/callback'
         params = urllib.parse.urlencode({
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
@@ -861,7 +862,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
         client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
         port          = self.server.server_address[1]
-        redirect_uri  = f'http://localhost:{port}/oauth/google/callback'
+        app_url       = os.environ.get('APP_URL', '').strip().rstrip('/')
+        redirect_uri  = f'{app_url}/oauth/google/callback' if app_url else f'http://localhost:{port}/oauth/google/callback'
 
         try:
             token_data = urllib.parse.urlencode({
