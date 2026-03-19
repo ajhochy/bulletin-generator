@@ -1,15 +1,16 @@
-# Copy this file to desktop_config.py and fill in your credentials.
-# desktop_config.py is gitignored — never commit your real credentials.
+# Copy this file to desktop_config.py and fill in the app-owned credentials
+# that should be bundled into the packaged desktop build.
+# desktop_config.py is gitignored — never commit production credentials to Git.
 #
 # Planning Center OAuth
 # Register this redirect URI in your PCO developer app:
 #   http://localhost:8765/oauth/pco/callback
-PCO_CLIENT_ID = "your_pco_client_id_here"
-PCO_CLIENT_SECRET = "your_pco_client_secret_here"
+PCO_CLIENT_ID = "your_app_pco_client_id_here"
+PCO_CLIENT_SECRET = "your_app_pco_client_secret_here"
 #
 # Google Calendar OAuth
-# Create a Web application OAuth client in Google Cloud Console.
+# Create a Web application OAuth client in Google Cloud Console for the app.
 # Enable the Google Calendar API, then add this authorized redirect URI:
 #   http://localhost:8765/oauth/google/callback
-GOOGLE_CLIENT_ID = "your_google_client_id_here"
-GOOGLE_CLIENT_SECRET = "your_google_client_secret_here"
+GOOGLE_CLIENT_ID = "your_app_google_client_id_here"
+GOOGLE_CLIENT_SECRET = "your_app_google_client_secret_here"

@@ -29,3 +29,5 @@ __MACOSX/
 # Runtime noise
 *.log
 *.tmp
+output/
+tmp/

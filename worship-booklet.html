@@ -8075,12 +8075,12 @@ function initPco() {
     connBtn.textContent = 'Connect Planning Center';
     if (badge) badge.textContent = 'Connected';
     if (discBtn) discBtn.style.display = '';
-    if (hint) hint.textContent = 'Sign in to Planning Center to import your service plans.';
+    if (hint) hint.textContent = 'Sign in to Planning Center using the app connection to import your service plans.';
   } else {
     connBtn.textContent = 'Retry Connection';
     if (badge) badge.textContent = 'Server Configured';
     if (discBtn) discBtn.style.display = 'none';
-    if (hint) hint.textContent = 'Planning Center access is configured server-side with PCO_APP_ID and PCO_SECRET. Add them to your local environment, restart the server, then retry.';
+    if (hint) hint.textContent = 'Planning Center access is configured on the local server with PCO_APP_ID and PCO_SECRET. Update the server environment, restart it, then retry.';
   }
 
   if (_publicConfig.pcoConfigured) {
@@ -8137,7 +8137,9 @@ function initGoogle() {
     icalCard.style.display = 'none';
     googleLoadCalendarList();
   } else {
-    hint.textContent = 'Sign in with Google to automatically populate the "This Week" calendar page.';
+    hint.textContent = isDesktopMode()
+      ? 'Sign in with Google using the app connection to automatically populate the "This Week" calendar page.'
+      : 'Sign in with Google to automatically populate the "This Week" calendar page.';
     connectBtn.style.display = '';
     disconnBtn.style.display = 'none';
     pickerCard.style.display = 'none';

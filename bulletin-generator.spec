@@ -3,7 +3,8 @@
 # PyInstaller spec for Bulletin Generator desktop app.
 #
 # Before building:
-#   1. Copy desktop_config.py.example to desktop_config.py and fill in credentials
+#   1. Copy desktop_config.py.example to desktop_config.py and fill in the
+#      app-owned OAuth credentials that should ship with the desktop build
 #   2. Install PyInstaller:  pip install pyinstaller
 #   3. Build:                pyinstaller bulletin-generator.spec
 #
