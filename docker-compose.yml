@@ -5,23 +5,9 @@ services:
     build: .
     env_file:
       - .env
-    # No longer exposed directly — nginx handles inbound traffic
-    expose:
-      - "8080"
+    ports:
+      - "8080:8080"
     volumes:
       # Persists local working data outside the image
       - ./data:/app/data
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - /etc/ssl/vcrcvault.tail97af2d.ts.net.crt:/etc/ssl/certs/vcrcvault.tail97af2d.ts.net.crt:ro
-      - /etc/ssl/vcrcvault.tail97af2d.ts.net.key:/etc/ssl/private/vcrcvault.tail97af2d.ts.net.key:ro
-    depends_on:
-      - worship-booklet
     restart: unless-stopped
