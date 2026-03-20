@@ -2190,6 +2190,18 @@
 
     </div>
   </div>
+
+  <!-- Paste fallback dialog (shown when clipboard API is unavailable or denied) -->
+  <dialog id="sdb-paste-dialog" style="border:1px solid #ccc;border-radius:8px;padding:1.2rem;max-width:480px;width:90%;">
+    <h3 style="margin:0 0 0.5rem;">Paste Song Lyrics</h3>
+    <p style="font-size:0.85rem;color:#555;margin:0 0 0.6rem;">Clipboard access was denied or unavailable. Paste your copied text below:</p>
+    <textarea id="sdb-paste-fallback-ta" rows="10" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:0.9rem;" placeholder="Paste lyrics here (Ctrl+V / Cmd+V)…"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.6rem;justify-content:flex-end;">
+      <button type="button" class="btn-sm" id="sdb-paste-dialog-cancel">Cancel</button>
+      <button type="button" class="btn-sm btn-sm-primary" id="sdb-paste-dialog-ok">Import</button>
+    </div>
+  </dialog>
+
 </div><!-- #page-songdb -->
 
 <!-- ═══ PAGE: Settings ═══════════════════════════════════════════════════════ -->
@@ -3272,6 +3284,7 @@ function annRender() {
     toolbar.className = 'ann-card-toolbar';
 
     const boldBtn = document.createElement('button');
+    boldBtn.type = 'button';
     boldBtn.className = 'ann-fmt-btn ann-fmt-bold';
     boldBtn.title = 'Bold — select text then click';
     boldBtn.textContent = 'B';
@@ -3279,6 +3292,7 @@ function annRender() {
     boldBtn.addEventListener('click', () => annFmtBold(bodyTA));
 
     const bulletBtn = document.createElement('button');
+    bulletBtn.type = 'button';
     bulletBtn.className = 'ann-fmt-btn';
     bulletBtn.title = 'Toggle bullet point on current line';
     bulletBtn.textContent = '•';
@@ -3301,6 +3315,11 @@ function annRender() {
       schedulePreviewUpdate();
       scheduleProjectPersist();
     });
+    // Track selection so Bold/Bullet buttons can restore it after mousedown steals focus
+    const saveAnnSel = () => { bodyTA._savedSel = { start: bodyTA.selectionStart, end: bodyTA.selectionEnd }; };
+    bodyTA.addEventListener('select', saveAnnSel);
+    bodyTA.addEventListener('mouseup', saveAnnSel);
+    bodyTA.addEventListener('keyup', saveAnnSel);
 
     // URL input for QR code (Feature 6)
     const urlRow = document.createElement('div');
@@ -3709,7 +3728,7 @@ async function saveProjectToServer(project) {
   } catch (err) {
     if (err.message && err.message.includes('409')) {
       const banner = document.getElementById('conflict-banner');
-      banner.textContent = 'This bulletin was updated by someone else. Reload to get the latest version, or continue saving to overwrite.';
+      banner.textContent = 'This bulletin was updated by someone else.';
       banner.style.display = '';
       const reloadLink = document.createElement('a');
       reloadLink.href = '#';
@@ -6526,30 +6545,49 @@ function parseClipboardSong(raw) {
   return { lyrics, copyright, ccli };
 }
 
-document.getElementById('song-db-paste-btn').addEventListener('click', async () => {
-  let text = '';
-  try {
-    text = await navigator.clipboard.readText();
-  } catch (e) {
-    alert('Could not read clipboard. Make sure you\'ve copied some text first.');
-    return;
-  }
+function _applyClipboardText(text) {
   if (!text.trim()) { alert('Clipboard is empty.'); return; }
-
   const parsed = parseClipboardSong(text);
-
   closeSdbForm();
   document.getElementById('sdb-form-heading').textContent = 'Add Song (from clipboard)';
   document.getElementById('sdb-title').value     = '';
   document.getElementById('sdb-author').value    = '';
   document.getElementById('sdb-lyrics').value    = parsed.lyrics;
-  // Merge CCLI number into copyright string if not already present
   let cr = parsed.copyright;
   if (parsed.ccli && !cr.includes(parsed.ccli)) {
     cr = (cr ? cr + '  ' : '') + `CCLI #${parsed.ccli}`;
   }
   document.getElementById('sdb-copyright').value = cr;
+}
 
+// Paste dialog fallback
+document.getElementById('sdb-paste-dialog-cancel').addEventListener('click', () => {
+  document.getElementById('sdb-paste-dialog').close();
+});
+document.getElementById('sdb-paste-dialog-ok').addEventListener('click', () => {
+  const text = document.getElementById('sdb-paste-fallback-ta').value;
+  document.getElementById('sdb-paste-dialog').close();
+  _applyClipboardText(text);
+  document.getElementById('sdb-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('sdb-title').focus();
+});
+
+document.getElementById('song-db-paste-btn').addEventListener('click', async () => {
+  let text = '';
+  try {
+    if (!navigator.clipboard || !navigator.clipboard.readText) throw new Error('unavailable');
+    text = await navigator.clipboard.readText();
+  } catch (e) {
+    // Clipboard API unavailable or permission denied — show manual paste dialog
+    const dialog = document.getElementById('sdb-paste-dialog');
+    document.getElementById('sdb-paste-fallback-ta').value = '';
+    dialog.showModal();
+    setTimeout(() => document.getElementById('sdb-paste-fallback-ta').focus(), 50);
+    return;
+  }
+  if (!text.trim()) { alert('Clipboard is empty.'); return; }
+
+  _applyClipboardText(text);
   document.getElementById('sdb-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('sdb-title').focus();
 });
@@ -6781,9 +6819,16 @@ async function parsePropresenterFile(file) {
   const text = new TextDecoder('utf-8', { fatal: false }).decode(buf);
   const trimmed = text.trimStart();
 
-  // XML format (ProPresenter 5/6: .pro5, .pro6, or XML-based .pro)
-  if (trimmed.startsWith('<?xml') || trimmed.startsWith('<RV')) {
-    return _parsePropresenterXml(file.name, text);
+  // XML format — try any file that looks like XML (starts with < or <?xml)
+  // Covers ProPresenter 5/6 .pro5/.pro6 and XML-based .pro files with various root elements
+  if (trimmed.startsWith('<')) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'text/xml');
+    const root = doc.documentElement;
+    if (root.nodeName !== 'parseerror' && root.tagName !== 'html') {
+      return _parsePropresenterXml(file.name, text);
+    }
+    // Fell through — XML parse failed, try proto7 before giving up
   }
 
   // ProPresenter 7 protobuf format
@@ -7026,10 +7071,10 @@ function buildPrintDocHtml(pagesHtml, title) {
 <meta charset="UTF-8">
 <title>${safeTitle}</title>
 <style>
+${css}
+/* Headless PDF overrides — placed after embedded CSS so page-size variables win */
 :root { --doc-page-w: ${w}in; --doc-page-h: ${h}in; }
 @page { size: ${w}in ${h}in; margin: 0; }
-${css}
-/* Headless PDF overrides */
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
 header, aside, .tab-bar, .pg-break-ctrl,
 .preview-page-num, .item-insert-zone { display: none !important; }

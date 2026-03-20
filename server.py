@@ -560,6 +560,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
 
+        # Block direct access to raw data files — always serve via /api/* endpoints
+        if path.startswith("/data/"):
+            self._send_json({"error": "Forbidden"}, 403)
+            return
+
         if path == "/" or path == "/worship-booklet.html":
             try:
                 content = (BASE_DIR / "worship-booklet.html").read_bytes()
