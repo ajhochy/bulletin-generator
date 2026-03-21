@@ -11,11 +11,56 @@ Register this in your PCO developer app:
 import os
 import sys
 import time
+import signal
 import socket
 import threading
 import webbrowser
 
 DESKTOP_PORT = 8765
+
+
+def _kill_stale_server(port):
+    """Kill any leftover process holding our port from a previous run."""
+    # First check if anything is listening
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=1):
+            pass  # Something is listening — need to kill it
+    except OSError:
+        return  # Port is free, nothing to do
+
+    # Find and kill the process using lsof (use full path for .app bundles)
+    import subprocess
+    my_pid = os.getpid()
+    for lsof_path in ['/usr/sbin/lsof', '/usr/bin/lsof', 'lsof']:
+        try:
+            result = subprocess.run(
+                [lsof_path, '-ti', f':{port}'],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode != 0:
+                continue
+            for pid_str in result.stdout.strip().split('\n'):
+                if not pid_str:
+                    continue
+                pid = int(pid_str)
+                if pid != my_pid:
+                    os.kill(pid, signal.SIGTERM)
+            # Wait for port to free up
+            for _ in range(20):
+                time.sleep(0.2)
+                try:
+                    with socket.create_connection(('127.0.0.1', port), timeout=0.3):
+                        continue  # Still listening
+                except OSError:
+                    return  # Port freed
+            # Force kill if SIGTERM didn't work
+            for pid_str in result.stdout.strip().split('\n'):
+                if pid_str and int(pid_str) != my_pid:
+                    os.kill(int(pid_str), signal.SIGKILL)
+            time.sleep(0.5)
+            return
+        except Exception:
+            continue
 
 # Set desktop mode before importing server
 os.environ.setdefault('APP_MODE', 'desktop')
@@ -48,6 +93,9 @@ def _wait_for_server(port, timeout=15):
 
 
 def main():
+    # Kill any leftover server from a previous run
+    _kill_stale_server(DESKTOP_PORT)
+
     import server
 
     t = threading.Thread(target=server.run_server, args=(DESKTOP_PORT,), daemon=True)

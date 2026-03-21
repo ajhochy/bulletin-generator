@@ -537,6 +537,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._cors_headers()
         self.end_headers()
 
+    def do_HEAD(self):
+        # Block direct access to data files — same rule as do_GET
+        path = self.path.split("?")[0]
+        if path.startswith("/data/"):
+            self._send_json({"error": "Forbidden"}, 403)
+            return
+        super().do_HEAD()
+
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _send_json(self, data, status=200):
@@ -1169,6 +1177,7 @@ def run_server(port=8080):
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     os.chdir(str(BASE_DIR))
+    http.server.ThreadingHTTPServer.allow_reuse_address = True
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
     print(f'  Worship Booklet Generator running at:')
     print(f'  http://localhost:{port}/')
