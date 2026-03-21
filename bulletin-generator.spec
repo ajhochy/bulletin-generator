@@ -23,7 +23,7 @@ a = Analysis(
         ('data/settings.example.json',        'data'),
         ('desktop_config.py',                 '.'),
     ],
-    hiddenimports=[],
+    hiddenimports=['encodings.idna'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -67,7 +67,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Bulletin Generator.app',
-    icon=None,
+    icon='Bulletin Generator.icns',
     bundle_identifier='com.bulletingenerator.app',
     info_plist={
         'CFBundleName':             'Bulletin Generator',
