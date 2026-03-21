@@ -7567,7 +7567,8 @@ function buildPrintDocHtml(pagesHtml, title) {
 <title>${safeTitle}</title>
 <style>
 ${css}
-/* Headless PDF overrides */
+/* Headless PDF overrides — placed after embedded CSS so page-size variables win */
+:root { --doc-page-w: ${w}in; --doc-page-h: ${h}in; }
 @page { size: ${w}in ${h}in; margin: 0; }
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
 header, aside, .tab-bar, .pg-break-ctrl,
