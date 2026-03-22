@@ -1,0 +1,200 @@
+// ─── State ────────────────────────────────────────────────────────────────────
+let items = [];
+let annData = []; // [{ title: string, body: string, _breakBefore?: bool, _noBreakBefore?: bool }]
+let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
+let giveOnlineUrl = '';
+let servingSchedule = null; // { weeks: [{date, planId, teams:[{name,serviceTime,positions:[{role,names[]}]}]}, ...] }
+let servingTeamFilter = {}; // { teamName: true/false } — persisted in settings.json
+let calEvents = null;  // array from /cal endpoint, null = not yet fetched, false = fetch failed
+let calLastFetch = 0;  // ms timestamp of last successful fetch
+let coverImageUrl = null;
+let staffLogoUrl  = null;
+let debounceTimer = null;
+let persistTimer  = null;
+let projects = [];
+let activeProjectId = '';
+const selectedProjectIds = new Set();
+let applyingProjectState = false;
+let linkedPreviewTimer = null;
+let suppressLinkedFocusSync = false;
+
+// ─── Collaboration state (server mode) ────────────────────────────────────────
+let _loadedRevision = null;   // revision of the project as loaded from server
+let _editorDisplayName = '';  // local editor identity
+let _staleCheckTimer = null;
+
+const PROJECTS_STORAGE_KEY = 'worshipProjectsV1';
+const ACTIVE_PROJECT_STORAGE_KEY = 'worshipActiveProjectId';
+const DRAFT_STORAGE_KEY = 'worshipProjectDraftV1';
+const TYPE_FORMATS_KEY = 'worshipTypeFormatsV1';
+
+// Per-type default formatting (keyed by item type, value is an _fmt-shaped object)
+let typeFormats = {};
+
+// ─── Document template (page size + future typography/spacing) ─────────────
+const PAGE_SIZE_PRESETS = {
+  '5.5x8.5':  { label: '5.5 × 8.5 in — half-letter (default)', w: 5.5,  h: 8.5  },
+  '8.5x11':   { label: '8.5 × 11 in — letter',                 w: 8.5,  h: 11   },
+  '8.5x14':   { label: '8.5 × 14 in — legal',                  w: 8.5,  h: 14   },
+  '11x17':    { label: '11 × 17 in — tabloid / ledger',         w: 11,   h: 17   },
+};
+
+let activeDocTemplate = { pageSize: '5.5x8.5' };
+
+function getPageDims() {
+  return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];
+}
+
+function applyDocTemplate() {
+  const { w, h } = getPageDims();
+  document.documentElement.style.setProperty('--doc-page-w', w + 'in');
+  document.documentElement.style.setProperty('--doc-page-h', h + 'in');
+  // Inject @page size — CSS variables cannot be used inside @page size
+  let pageStyle = document.getElementById('doc-page-style');
+  if (!pageStyle) {
+    pageStyle = document.createElement('style');
+    pageStyle.id = 'doc-page-style';
+    document.head.appendChild(pageStyle);
+  }
+  pageStyle.textContent = `@page { size: ${w}in ${h}in; margin: 0; }`;
+  // Sync the page size picker if it exists
+  const sel = document.getElementById('doc-page-size-sel');
+  if (sel) sel.value = activeDocTemplate.pageSize;
+}
+
+function saveTypeFormats() {
+  apiFetch('/api/settings', 'POST', { typeFormats }).catch(() => {});
+}
+
+// Merge per-type default with per-item override (_fmt); item-level wins
+function getEffectiveFmt(item) {
+  const base = typeFormats[item.type] || {};
+  const over = item._fmt || {};
+  return {
+    titleBold:   over.titleBold   !== undefined ? over.titleBold   : (base.titleBold   || false),
+    titleItalic: over.titleItalic !== undefined ? over.titleItalic : (base.titleItalic || false),
+    titleAlign:  over.titleAlign  !== undefined ? over.titleAlign  : (base.titleAlign  || ''),
+    titleSize:   over.titleSize   !== undefined ? over.titleSize   : (base.titleSize   || ''),
+    titleColor:  over.titleColor  !== undefined ? over.titleColor  : (base.titleColor  || ''),
+    bodyAlign:   over.bodyAlign   !== undefined ? over.bodyAlign   : (base.bodyAlign   || ''),
+    bodySize:    over.bodySize    !== undefined ? over.bodySize    : (base.bodySize    || ''),
+    bodyColor:   over.bodyColor   !== undefined ? over.bodyColor   : (base.bodyColor   || ''),
+  };
+}
+const CAL_CACHE_MS   = 15 * 60 * 1000;
+const CAL_URLS_KEY   = 'worshipCalUrls';
+const ANN_GLOBAL_KEY = 'worshipAnnouncementsGlobal';
+const CAL_EXCL_KEY   = 'worshipCalExclude';
+const CAL_DEFAULT_EXCL = ['Sunday Morning Worship', 'Sunday Service', 'Worship Service'];
+const DRAFT_OPTION_VALUE = '__draft__';
+
+// Calendar settings cache (populated from server at startup)
+let _calUrls = null;
+let _calExclude = null;
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+const statusEl             = null; // replaced by toast notifications
+const bulletinTitleInput   = document.getElementById('bulletin-title');
+const svcTitle             = document.getElementById('svc-title');
+const svcDate              = document.getElementById('svc-date');
+const svcChurch            = document.getElementById('svc-church');
+const giveOnlineUrlInput   = document.getElementById('give-online-url-input');
+const logoImgZone          = document.getElementById('logo-img-zone');
+const logoImgInput         = document.getElementById('logo-img-input');
+const logoImgLabel         = document.getElementById('logo-img-label');
+const logoImgPreviewWrap   = document.getElementById('logo-img-preview-wrap');
+const logoImgThumb         = document.getElementById('logo-img-thumb');
+const logoImgName          = document.getElementById('logo-img-name');
+const logoImgClear         = document.getElementById('logo-img-clear');
+const coverImgZone         = document.getElementById('cover-img-zone');
+const coverImgInput        = document.getElementById('cover-img-input');
+const coverImgLabel        = document.getElementById('cover-img-label');
+const coverImgPreviewWrap  = document.getElementById('cover-img-preview-wrap');
+const coverImgThumb        = document.getElementById('cover-img-thumb');
+const coverImgName         = document.getElementById('cover-img-name');
+const coverImgClear        = document.getElementById('cover-img-clear');
+const optCover             = document.getElementById('opt-cover');
+const optFooter            = document.getElementById('opt-footer');
+const optCal               = document.getElementById('opt-cal');
+const optBookletSize       = document.getElementById('opt-booklet-size');
+const optAnnouncements     = document.getElementById('opt-announcements');
+const optVolunteers        = document.getElementById('opt-volunteers');
+const optStaff             = document.getElementById('opt-staff');
+const pageCountDisplay     = document.getElementById('page-count-display');
+const itemList             = document.getElementById('item-list');
+const addItemBtn           = document.getElementById('add-item-btn');
+const addBreakBtn          = document.getElementById('add-break-btn');
+const annList              = document.getElementById('ann-list');
+const annAddBtn            = document.getElementById('ann-add-btn');
+const previewPane          = document.getElementById('preview-pane');
+const previewEmpty         = document.getElementById('preview-empty');
+const btnPrint             = document.getElementById('btn-print');
+const projectSelect        = document.getElementById('project-select');
+const projectSaveBtn       = document.getElementById('project-save-btn');
+const projectSaveAsBtn     = document.getElementById('project-save-as-btn');
+const projectNewBtn        = document.getElementById('project-new-btn');
+const projectDeleteBtn     = document.getElementById('project-delete-btn');
+const projectMeta          = document.getElementById('project-meta');
+const projectBrowseBtn     = document.getElementById('project-browse-btn');
+
+// ─── Type options ─────────────────────────────────────────────────────────────
+// Types starting with 'section:' render as large section headings with a rule.
+const TYPE_OPTIONS = [
+  ['section',    '— Section Heading —'],
+  ['song',       'Song / Hymn / Psalm'],
+  ['liturgy',    'Liturgy (spoken/read)'],
+  ['label',      'Label (title only)'],
+  ['note',       '— PCO Note (hidden) —'],
+  ['media',      '— PCO Media (hidden) —'],
+];
+
+// Migrate a legacy item type string to the new 6-type system.
+// Safe to call on already-migrated types — they pass through unchanged.
+function migrateItemType(type) {
+  switch (type) {
+    // Already valid new types — pass through
+    case 'section':
+    case 'song':
+    case 'liturgy':
+    case 'label':
+    case 'note':
+    case 'media':
+    case 'page-break':
+      return type;
+    // Old song variants → song
+    case 'hymn':
+    case 'psalm':
+      return 'song';
+    // Old liturgical types with body text → liturgy
+    case 'creed':
+    case 'prayer':
+    case 'confession':
+    case 'assurance':
+    case 'law':
+    case 'scripture':
+    case 'responsive-reading':
+    case 'call-to-worship':
+    case 'doxology':
+    case 'benediction':
+      return 'liturgy';
+    // Old title-only / structural types → label
+    case 'sermon':
+    case 'offering':
+    case 'prelude':
+    case 'postlude':
+    case 'announcements':
+    case 'other':
+    default:
+      return 'label';
+  }
+}
+
+function typeLabel(type) {
+  return (TYPE_OPTIONS.find(([k]) => k === type) || ['', type.replace(/-/g, ' ')])[1];
+}
+function typeSelectHTML(selected) {
+  return TYPE_OPTIONS.map(([val, label]) =>
+    `<option value="${val}"${val === selected ? ' selected' : ''}>${label}</option>`
+  ).join('');
+}
+

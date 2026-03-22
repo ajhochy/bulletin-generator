@@ -573,9 +573,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "Forbidden"}, 403)
             return
 
-        if path == "/" or path == "/worship-booklet.html":
+        if path == "/" or path == "/index.html" or path == "/worship-booklet.html":
             try:
-                content = (BASE_DIR / "worship-booklet.html").read_bytes()
+                content = (BASE_DIR / "index.html").read_bytes()
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(content)))
@@ -641,6 +641,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if self.path.startswith("/cal"):
             self._handle_cal()
+            return
+
+        # Serve static files (CSS, JS, images) from BASE_DIR via SimpleHTTPRequestHandler
+        if path.startswith("/src/"):
+            super().do_GET()
             return
 
         self._send_json({"error": f"Not found: {path}"}, 404)

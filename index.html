@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bulletin Generator</title>
+  <link rel="stylesheet" href="src/css/base.css" />
+  <link rel="stylesheet" href="src/css/editor.css" />
+  <link rel="stylesheet" href="src/css/preview.css" />
+  <link rel="stylesheet" href="src/css/pages.css" />
+  <link rel="stylesheet" href="src/css/print.css" />
+</head>
+<body>
+
+
+<header>
+  <h1>Bulletin Generator</h1>
+  <p>Import from PCO &mdash; edit items &mdash; download PDF</p>
+</header>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="page-editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M12.854 0.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zM9.793 2.5L2 10.293V14h3.707L13.5 6.207 9.793 2.5zM1 11.707V15h3.293L1 11.707z"/></svg>Booklet Editor</button>
+  <button class="tab-btn" data-tab="page-files"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/></svg>Projects</button>
+  <button class="tab-btn" data-tab="page-songdb"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M9 3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V3zm-5 0a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3zm2 10.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/></svg>Song Database</button>
+  <button class="tab-btn" data-tab="page-format"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm4 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5 6.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm.5 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M16 8c0 3.15-1.866 2.585-3.567 2.07C11.42 9.763 10.465 9.5 10 9.5c-.944 0-1.98.37-2.80.956C6.354 11.1 5.556 11.5 5 11.5c-2.207 0-4-1.794-4-4 0-4.418 3.582-8 8-8s8 3.582 8 8z"/></svg>Format</button>
+  <button class="tab-btn" data-tab="page-settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.474l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/></svg>Settings</button>
+  <div class="tab-bar-right">
+    <div id="page-count-display"></div>
+    <button class="btn btn-primary" id="btn-print" disabled>Download PDF</button>
+  </div>
+</div>
+
+<!-- ═══ PAGE: Booklet Editor ════════════════════════════════════════════════ -->
+<div class="app-page active" id="page-editor" style="flex-direction:column; height:calc(100vh - 88px);">
+<main>
+  <aside>
+
+    <!-- Import from Planning Center -->
+    <div class="panel-section" id="pco-section">
+      <div class="section-label">Import from Planning Center</div>
+
+      <!-- Credentials view -->
+      <div id="pco-creds-view">
+        <p class="section-hint" id="pco-creds-hint"></p>
+        <button class="btn btn-primary btn-full" id="pco-connect-btn" style="margin-top:0.4rem;">Connect Planning Center</button>
+        <div id="pco-creds-msg" class="pco-msg"></div>
+      </div>
+
+      <!-- Connected / import view -->
+      <div id="pco-import-view" style="display:none;">
+        <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-top: 0.5rem;">
+          <div class="pco-status-row" style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:0.4rem;">
+              <span style="color: #2a6e2a; font-size: 0.9rem; line-height: 1;">●</span>
+              <span class="pco-connected-badge" id="pco-connected-badge">Connected</span>
+            </div>
+            <button class="btn-sm" id="pco-disconnect-btn" style="display:none;font-size:0.72rem;">Disconnect</button>
+          </div>
+          <div class="field-row">
+            <label for="pco-service-type-sel">Service Type</label>
+            <select id="pco-service-type-sel"><option value="">Loading…</option></select>
+          </div>
+          <div class="field-row" id="pco-plan-field" style="display:none;">
+            <label for="pco-plan-sel">Plan</label>
+            <select id="pco-plan-sel"><option value="">— Select plan —</option></select>
+            <label class="opt-row" style="margin-top:0.35rem;">
+              <input type="checkbox" id="pco-show-past" />
+              Show previous plans
+            </label>
+          </div>
+          <button class="btn btn-primary btn-full" id="pco-import-btn" disabled style="margin-top:0.4rem;">Import Plan</button>
+          <div id="pco-import-msg" class="pco-msg"></div>
+          <div id="pco-last-import-wrap" style="display:none; margin-top:0.65rem; padding-top:0.65rem; border-top:1px solid var(--border);">
+            <div style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.4rem;">Last Imported</div>
+            <div id="pco-last-plan-label" style="font-size:0.78rem; color:var(--text); margin-bottom:0.4rem;"></div>
+            <button class="btn btn-full" id="pco-refresh-btn">↺ Refresh from PCO</button>
+            <div id="pco-refresh-msg" class="pco-msg"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- File (project management) -->
+    <div class="panel-section">
+      <div class="section-label">File</div>
+      <div class="field-row">
+        <label for="bulletin-title">Bulletin Title</label>
+        <input type="text" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
+      </div>
+      <div class="projects-actions" style="margin-top:0.35rem;">
+        <button class="btn-sm btn-sm-primary" id="project-save-btn" type="button">Save</button>
+        <button class="btn-sm" id="project-save-as-btn" type="button">Save New Version</button>
+        <button class="btn-sm" id="project-new-btn" type="button">New</button>
+        <button class="btn-sm btn-sm-danger" id="project-delete-btn" type="button">Delete</button>
+      </div>
+      <div class="project-meta" id="project-meta">Unsaved draft autosaves in this browser.</div>
+      <div id="stale-banner" style="display:none;font-size:0.75rem;color:#7a5c45;margin-top:0.2rem;"></div>
+      <div id="conflict-banner" style="display:none;font-size:0.75rem;color:#8b2020;margin-top:0.2rem;"></div>
+      <button class="btn-sm files-browse-btn" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
+      <!-- Hidden select kept for internal JS state tracking -->
+      <select id="project-select" style="display:none;">
+        <option value="__draft__">Unsaved Draft</option>
+      </select>
+    </div>
+
+    <!-- Service Details -->
+    <div class="panel-section">
+      <div class="section-label">Service Details</div>
+      <div class="field-row">
+        <label for="svc-title">Service Title</label>
+        <input type="text" id="svc-title" placeholder="e.g. Morning Worship" />
+      </div>
+      <div class="field-row">
+        <label for="svc-date">Date</label>
+        <input type="text" id="svc-date" placeholder="e.g. January 5, 2025" />
+      </div>
+      <div class="field-row">
+        <label for="svc-church">Church Name</label>
+        <input type="text" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church" />
+      </div>
+    </div>
+
+    <!-- Cover Image -->
+    <div class="panel-section">
+      <div class="section-label">Cover Image</div>
+      <p class="section-hint">Displayed on the cover page in place of the cross symbol.</p>
+      <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
+        <input type="file" id="cover-img-input" accept="image/*" />
+        <div id="cover-img-label">Click to select an image</div>
+      </div>
+      <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
+        <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
+        <span class="img-preview-name" id="cover-img-name"></span>
+        <button class="img-clear-btn" id="cover-img-clear">Remove</button>
+      </div>
+    </div>
+
+    <!-- Options -->
+    <div class="panel-section">
+      <div class="section-label">Options</div>
+      <label class="opt-row"><input type="checkbox" id="opt-cover" checked /> Include cover page</label>
+      <label class="opt-row"><input type="checkbox" id="opt-footer" /> Include page footer</label>
+      <label class="opt-row"><input type="checkbox" id="opt-announcements" checked /> Include announcements</label>
+      <label class="opt-row"><input type="checkbox" id="opt-cal" checked /> Include "This Week" calendar page</label>
+      <label class="opt-row"><input type="checkbox" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
+      <label class="opt-row"><input type="checkbox" id="opt-staff" checked /> Include staff &amp; contact page</label>
+      <div style="margin-top:0.45rem;">
+        <div style="font-size:0.73rem;color:var(--muted);margin-bottom:0.2rem;">Booklet size target</div>
+        <select id="opt-booklet-size" style="font-size:0.76rem;padding:0.18rem 0.3rem;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);width:100%;cursor:pointer;">
+          <option value="auto">Auto (no target)</option>
+          <option value="8">8 pages</option>
+          <option value="12">12 pages</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Announcements -->
+    <div class="panel-section" id="panel-section-announcements">
+      <div class="section-label">Announcements</div>
+      <p class="section-hint">Persists week-to-week — edit, remove, or add entries as needed. Appears on its own page in the bulletin.</p>
+      <div id="ann-list"></div>
+      <button class="btn-sm btn-sm-primary" id="ann-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Announcement</button>
+    </div>
+
+    <!-- Order of Worship items -->
+    <div class="panel-section">
+      <div class="section-label">Order of Worship</div>
+      <div id="item-list"></div>
+      <button id="add-item-btn">+ Add Item</button>
+      <button id="add-break-btn">⊞ Add Page Break</button>
+    </div>
+
+    <!-- Calendar -->
+    <div class="panel-section" id="panel-section-calendar">
+      <div class="section-label">Calendar</div>
+      <p class="section-hint">Fetches events from Google Calendar for the "This Week" page. Configure feeds in <strong>Settings</strong>.</p>
+      <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-bottom:0.4rem;">
+        <button class="btn-sm btn-sm-primary" id="cal-refresh-btn">↺ Refresh Calendar</button>
+        <span id="cal-status-text" style="font-size:0.72rem; color:var(--muted);"></span>
+      </div>
+      <div id="cal-event-editor"></div>
+      <button class="btn-sm" id="cal-add-event-btn" style="display:none; margin-top:0.4rem; width:100%;">+ Add Event</button>
+    </div>
+
+    <!-- Volunteers / Serving Schedule editor -->
+    <div class="panel-section" id="panel-section-volunteers">
+      <div class="section-label">Volunteers</div>
+      <p class="section-hint">Auto-populated from Planning Center. Edit names or add entries manually.</p>
+      <div id="vol-editor"></div>
+      <div id="vol-empty" style="font-size:0.78rem; color:var(--muted); font-style:italic; padding:0.3rem 0;">
+        Import a plan from Planning Center to populate volunteer assignments.
+      </div>
+      <div id="vol-error" style="display:none; font-size:0.78rem; color:var(--danger); padding:0.3rem 0;"></div>
+    </div>
+
+    <!-- Church Staff & Contact -->
+    <div class="panel-section" id="panel-section-staff">
+      <div class="section-label">Church Staff &amp; Contact</div>
+      <p class="section-hint">These entries appear on the last page of every bulletin. Changes are saved automatically.</p>
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto auto auto; gap:0.25rem; margin-bottom:0.3rem; padding-bottom:0.2rem; border-bottom:1px solid var(--border);">
+        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Name</span>
+        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Role / Title</span>
+        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Email</span>
+        <span></span><span></span><span></span>
+      </div>
+      <div id="staff-editor"></div>
+      <button class="btn-sm btn-sm-primary" id="staff-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Person</button>
+    </div>
+
+  </aside>
+
+  <!-- Preview -->
+  <div id="preview-pane">
+    <div id="preview-empty">
+      <h2>Booklet Preview</h2>
+      <p>Upload a PDF or fill in the service details — the preview will appear here.</p>
+    </div>
+  </div>
+</main>
+</div><!-- #page-editor -->
+
+<!-- ═══ PAGE: Files ══════════════════════════════════════════════════════════ -->
+<div class="app-page" id="page-files" style="height:calc(100vh - 88px);">
+  <div class="files-inner">
+    <div class="files-hdr">
+      <div>
+        <h2 class="files-title">Saved Projects</h2>
+        <p id="files-count" class="files-subtitle">Loading…</p>
+      </div>
+      <div class="files-toolbar">
+        <button class="btn-sm btn-sm-primary" id="files-new-btn" type="button">+ New Project</button>
+        <label class="btn-sm" for="files-import-input" style="cursor:pointer;">↑ Import JSON</label>
+        <input type="file" id="files-import-input" accept=".json" style="display:none;">
+      </div>
+    </div>
+    <div id="bulk-bar" class="bulk-bar">
+      <span class="bulk-bar-count" id="bulk-count">0 selected</span>
+      <button class="bulk-bar-btn" id="bulk-select-all">Select All</button>
+      <button class="bulk-bar-btn" id="bulk-download-json">↓ Download JSON</button>
+      <button class="bulk-bar-btn" id="bulk-download-pdf">↓ Download PDFs</button>
+      <button class="bulk-bar-btn bulk-danger" id="bulk-delete">Delete Selected</button>
+      <button class="bulk-bar-clear" id="bulk-clear">✕ Clear</button>
+    </div>
+    <div id="files-list"></div>
+  </div>
+</div><!-- #page-files -->
+
+<!-- ═══ PAGE: Song Database ══════════════════════════════════════════════════ -->
+<div class="app-page" id="page-songdb" style="height:calc(100vh - 88px);">
+  <div class="sdb-page-inner">
+
+    <div class="sdb-page-header">
+      <div class="sdb-page-title">Song Database</div>
+    </div>
+
+    <div class="sdb-page-cols">
+
+      <!-- Left: search + list -->
+      <div class="sdb-list-col">
+        <div id="sdb-controls-page">
+          <input type="text" id="song-db-search" placeholder="Search title, author, CCLI, lyrics…" />
+          <div class="sdb-sort-row">
+            <span>Sort by:</span>
+            <select id="song-db-sort">
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+              <option value="used">Most Used</option>
+              <option value="lastused">Last Used</option>
+              <option value="added">Recently Added</option>
+            </select>
+            <span style="margin-left:0.8rem;">Show:</span>
+            <select id="song-db-source-filter">
+              <option value="all">All Songs</option>
+              <option value="propresenter">ProPresenter Imports</option>
+              <option value="manual">Manually Added</option>
+            </select>
+          </div>
+        </div>
+        <div class="sdb-count" id="sdb-count"></div>
+        <div id="song-db-list"></div>
+        <div id="song-db-empty">No songs yet — add your first song above.</div>
+      </div>
+
+      <!-- Right: add/edit form -->
+      <div class="sdb-form-col">
+        <div class="sdb-form-sticky">
+          <div class="sdb-panel-actions">
+            <button class="btn-sm btn-sm-primary" id="song-db-paste-btn" style="flex:1;">⎘ Paste from Clipboard</button>
+            <button class="btn-sm" id="pro-import-btn" title="Import songs from ProPresenter .pro/.pro6/.pro7 files" style="flex:1;">⬆ Import ProPresenter</button>
+            <input type="file" id="pro-import-input" accept=".pro,.pro6,.pro7,.propresenter" multiple style="display:none">
+          </div>
+          <div class="sdb-panel-divider"></div>
+          <h3 id="sdb-form-heading">Add Song Manually</h3>
+          <div class="field-row">
+            <label for="sdb-title">Song Title</label>
+            <input type="text" id="sdb-title" placeholder="e.g. Holy Holy Holy" />
+          </div>
+          <div class="field-row">
+            <label for="sdb-author">Author / Composer</label>
+            <input type="text" id="sdb-author" placeholder="e.g. Reginald Heber" />
+          </div>
+          <div class="field-row">
+            <label for="sdb-lyrics">Lyrics</label>
+            <textarea id="sdb-lyrics" rows="12" placeholder="Enter lyrics here — line breaks and blank lines are preserved.&#10;&#10;Label sections with Verse 1, Chorus, Bridge, etc. on their own line to display them in italics.&#10;&#10;Use ALL: at the start of a line to bold a congregational response."></textarea>
+          </div>
+          <div class="field-row">
+            <label for="sdb-copyright">Copyright</label>
+            <input type="text" id="sdb-copyright" placeholder="e.g. © 2001 Integrity Music | CCLI #1234567" />
+          </div>
+          <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+            <button class="btn-sm btn-sm-primary" id="sdb-save-btn" style="flex:1;">Add Song</button>
+            <button class="btn-sm" id="sdb-cancel-btn" style="flex:1;">Clear</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Paste fallback dialog (shown when clipboard API is unavailable or denied) -->
+  <dialog id="sdb-paste-dialog" style="border:1px solid #ccc;border-radius:8px;padding:1.2rem;max-width:480px;width:90%;">
+    <h3 style="margin:0 0 0.5rem;">Paste Song Lyrics</h3>
+    <p style="font-size:0.85rem;color:#555;margin:0 0 0.6rem;">Clipboard access was denied or unavailable. Paste your copied text below:</p>
+    <textarea id="sdb-paste-fallback-ta" rows="10" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:0.9rem;" placeholder="Paste lyrics here (Ctrl+V / Cmd+V)…"></textarea>
+    <div style="display:flex;gap:0.5rem;margin-top:0.6rem;justify-content:flex-end;">
+      <button type="button" class="btn-sm" id="sdb-paste-dialog-cancel">Cancel</button>
+      <button type="button" class="btn-sm btn-sm-primary" id="sdb-paste-dialog-ok">Import</button>
+    </div>
+  </dialog>
+
+</div><!-- #page-songdb -->
+
+<!-- ═══ PAGE: Settings ═══════════════════════════════════════════════════════ -->
+<div class="app-page" id="page-settings" style="height:calc(100vh - 88px);">
+  <div class="stg-inner">
+
+    <div class="stg-page-title">Settings</div>
+
+    <div class="stg-anchor-nav">
+      <a href="#" class="stg-anchor-link" data-target="stg-identity">Identity</a>
+      <span class="stg-anchor-sep">·</span>
+      <a href="#" class="stg-anchor-link" data-target="stg-branding">Branding</a>
+      <span class="stg-anchor-sep">·</span>
+      <a href="#" class="stg-anchor-link" data-target="stg-calendar">Calendar</a>
+      <span class="stg-anchor-sep">·</span>
+      <a href="#" class="stg-anchor-link" data-target="stg-serving">Serving Teams</a>
+      <span class="stg-anchor-sep">·</span>
+      <a href="#" class="stg-anchor-link" data-target="stg-songdb">Song Database</a>
+    </div>
+
+    <!-- ── Editor Identity (server mode) ────────────────────────────────── -->
+    <div class="stg-group" id="stg-identity-group">
+      <div class="stg-group-heading" id="stg-identity">Editor Identity</div>
+      <div class="stg-card">
+        <div class="stg-card-label">Display Name</div>
+        <p class="section-hint">Your name is attached to project saves so others can see who last edited each bulletin.</p>
+        <input type="text" id="editor-display-name-input" placeholder="e.g. Alex"
+               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      </div>
+    </div>
+
+    <!-- ── Church Branding ──────────────────────────────────────────────── -->
+    <div class="stg-group">
+      <div class="stg-group-heading" id="stg-branding">Church Branding</div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Give Online URL</div>
+        <p class="section-hint">URL for your church's online giving page. If set, a QR code and "Give Online" label appear above the logo on the staff/contact page.</p>
+        <input type="url" id="give-online-url-input" placeholder="https://your-giving-link.com"
+               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      </div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Church Logo</div>
+        <p class="section-hint">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
+        <div class="img-zone" id="logo-img-zone" role="button" tabindex="0">
+          <input type="file" id="logo-img-input" accept="image/*" />
+          <div id="logo-img-label">Click to upload church logo</div>
+        </div>
+        <div class="img-preview-wrap" id="logo-img-preview-wrap" style="display:none;">
+          <img class="img-preview-thumb" id="logo-img-thumb" src="" alt="" />
+          <span class="img-preview-name" id="logo-img-name"></span>
+          <button class="img-clear-btn" id="logo-img-clear">Remove</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Google Calendar ──────────────────────────────────────────────── -->
+    <div class="stg-group">
+      <div class="stg-group-heading" id="stg-calendar">Google Calendar</div>
+
+      <!-- OAuth connect card -->
+      <div class="stg-card" id="google-connect-card">
+        <div class="stg-card-label">Connect Account</div>
+        <p class="section-hint" id="google-creds-hint"></p>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
+          <button class="btn-sm" id="google-disconnect-btn" style="display:none;">Disconnect</button>
+        </div>
+        <div id="google-oauth-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+      </div>
+
+      <!-- Calendar picker (shown after connecting) -->
+      <div class="stg-card" id="google-cal-picker-card" style="display:none;">
+        <div class="stg-card-label">Select Calendars</div>
+        <p class="section-hint">Choose which calendars to include in the "This Week" page.</p>
+        <div id="google-cal-list" style="margin-bottom:0.5rem;"></div>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="google-cal-save-btn">Save Selection</button>
+          <button class="btn-sm" id="google-cal-refresh-list-btn">↺ Refresh List</button>
+        </div>
+      </div>
+
+      <!-- iCal fallback (shown when not connected via OAuth) -->
+      <div class="stg-card" id="google-ical-card">
+        <div class="stg-card-label">Manual iCal Feed URLs</div>
+        <p class="section-hint">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
+        <label>iCal Feed URLs (one per line):</label>
+        <textarea id="cal-urls-input" rows="4"></textarea>
+        <label style="margin-top:0.3rem;">Exclude event titles (one per line, case-insensitive):</label>
+        <textarea id="cal-excl-input" rows="3"></textarea>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
+          <button class="btn-sm" id="cal-settings-reset-btn">Reset to Defaults</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Serving Teams ──────────────────────────────────────────────── -->
+    <div class="stg-group">
+      <div class="stg-group-heading" id="stg-serving">Serving Teams</div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Teams Shown in Bulletin</div>
+        <p class="section-hint">Choose which Planning Center teams appear on the serving schedule page. New teams are included automatically on first import.</p>
+        <div id="serving-team-filter-list" style="margin-bottom:0.5rem;">
+          <span style="font-size:0.78rem;color:var(--muted);">No teams discovered yet. Import a plan from Planning Center to populate this list.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Song Database ────────────────────────────────────────────────── -->
+    <div class="stg-group">
+      <div class="stg-group-heading" id="stg-songdb">Song Database</div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Import / Export</div>
+        <p class="section-hint">Back up your song database or restore it from a previously exported file.</p>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="song-db-export-btn">Export JSON</button>
+          <label class="btn-sm" style="cursor:pointer;">Import JSON<input type="file" id="song-db-import-input" accept=".json" style="display:none"></label>
+        </div>
+      </div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Clear Database</div>
+        <p class="section-hint">Permanently removes all songs from the local database. This cannot be undone — export a backup first.</p>
+        <div class="stg-btn-row">
+          <button class="btn-sm" id="song-db-clear-btn" style="color:#c0392b;">Clear All Songs</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- #page-settings -->
+
+<!-- ═══ PAGE: Format ═════════════════════════════════════════════════════════ -->
+<div class="app-page" id="page-format">
+  <div class="fmt-page-inner">
+    <h2 class="fmt-page-title">Document Size</h2>
+    <div class="fmt-template-row" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.4rem;">
+      <label for="doc-page-size-sel" style="font-size:0.82rem;white-space:nowrap;">Page size</label>
+      <select id="doc-page-size-sel" style="font-size:0.82rem;">
+        <option value="5.5x8.5">5.5 × 8.5 in — half-letter (default)</option>
+        <option value="8.5x11">8.5 × 11 in — letter</option>
+        <option value="8.5x14">8.5 × 14 in — legal</option>
+        <option value="11x17">11 × 17 in — tabloid / ledger</option>
+      </select>
+    </div>
+    <h2 class="fmt-page-title">Item Type Formatting</h2>
+    <p class="fmt-page-hint">
+      Set default formatting for each item type.
+      <strong>Song</strong> controls all songs and hymns.
+      <strong>Liturgy</strong> controls spoken/read items (prayers,
+      scripture, creeds, responsive readings, etc.).
+      <strong>Label</strong> controls title-only items (sermon,
+      offering, prelude, etc.). Per-item overrides in the editor
+      always take precedence.
+    </p>
+    <div class="fmt-filter-wrap">
+      <input type="text" id="fmt-filter" placeholder="Filter types…" autocomplete="off" />
+    </div>
+    <div class="fmt-types-grid" id="fmt-types-grid">
+      <!-- populated by renderFormatPage() -->
+    </div>
+    <div class="fmt-page-btns">
+      <button class="btn btn-primary" id="fmt-save-btn">Save Type Formats</button>
+      <button class="btn" id="fmt-reset-btn">Reset All to Defaults</button>
+    </div>
+  </div>
+</div><!-- #page-format -->
+
+<!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
+<div id="import-review-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box">
+    <div class="irm-header">
+      <div class="irm-title" id="irm-title">Review Imported Songs</div>
+      <button class="irm-close-btn" id="irm-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="irm-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="irm-cancel-btn">Skip All</button>
+      <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="pro-disclaimer-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box" style="max-width:460px;">
+    <div class="irm-header">
+      <div class="irm-title">ProPresenter Import (Beta)</div>
+      <button class="irm-close-btn" id="pro-disclaimer-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" style="font-size:0.84rem;line-height:1.5;">
+      <p style="margin:0 0 0.6rem;">This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
+      <p style="margin:0;">You will be able to preview a sample of the results before anything is saved.</p>
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="pro-disclaimer-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="pro-disclaimer-continue-btn">Continue</button>
+    </div>
+  </div>
+</div>
+
+<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box" style="max-width:580px;">
+    <div class="irm-header">
+      <div class="irm-title">Import from ProPresenter</div>
+      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="pro-import-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer">
+      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
+    </div>
+  </div>
+</div>
+
+<div id="pro-preview-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
+  <div class="irm-box" style="max-width:680px;">
+    <div class="irm-header">
+      <div class="irm-title">Preview Import Results</div>
+      <button class="irm-close-btn" id="pro-preview-close-btn" title="Close">✕</button>
+    </div>
+    <div class="irm-body" id="pro-preview-body" style="max-height:60vh;overflow-y:auto;">
+      <!-- populated by JS -->
+    </div>
+    <div class="irm-footer" style="justify-content:space-between;align-items:center;">
+      <span style="font-size:0.74rem;color:#888;" id="pro-preview-hint">Scroll to review sample imports</span>
+      <div style="display:flex;gap:0.5rem;">
+        <button class="btn" id="pro-preview-cancel-btn">Cancel Import</button>
+        <button class="btn btn-primary" id="pro-preview-continue-btn">Looks Good — Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+
+<script src="src/js/state.js"></script>
+<script src="src/js/utils.js"></script>
+<script src="src/js/api.js"></script>
+<script src="src/js/formatting.js"></script>
+<script src="src/js/text-renderer.js"></script>
+<script src="src/js/staff.js"></script>
+<script src="src/js/editor.js"></script>
+<script src="src/js/announcements.js"></script>
+<script src="src/js/calendar.js"></script>
+<script src="src/js/preview.js"></script>
+<script src="src/js/songs.js"></script>
+<script src="src/js/propresenter.js"></script>
+<script src="src/js/projects.js"></script>
+<script src="src/js/pco.js"></script>
+<script src="src/js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,393 @@
+    /* ─── Preview Pane ───────────────────────────────────────────────────────── */
+    #preview-pane {
+      background: #c8c0b5;
+      overflow-y: scroll;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 2rem 1.5rem; gap: 1.5rem;
+    }
+
+    #preview-empty {
+      margin: auto; text-align: center; color: #8a7e72;
+      font-size: 0.88rem; max-width: 260px; line-height: 1.6;
+    }
+    #preview-empty h2 { font-family: var(--font-serif); font-size: 1.15rem; margin-bottom: 0.5rem; font-weight: normal; }
+
+    /* ─── Booklet Page ───────────────────────────────────────────────────────── */
+    .booklet-page {
+      width: var(--doc-page-w);
+      min-height: var(--doc-page-h);
+      background: #fff;
+      box-shadow: 0 4px 28px rgba(0,0,0,0.2);
+      padding: 0.35in 0.32in 0.45in;
+      font-family: var(--font-serif);
+      color: #111;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    /* ── Cover ─────────────────────────────────────────────────────────────── */
+    .booklet-page.cover {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      text-align: center; padding: 0.5in 0.32in;
+    }
+    /* Full-bleed cover when an image is supplied — no text, no padding */
+    .booklet-page.cover.cover-image-full {
+      padding: 0;
+      overflow: hidden;
+      display: block;
+    }
+    .cover-full-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+    .cover-cross { font-size: 2rem; color: #333; margin-bottom: 1.1rem; }
+    .cover-church {
+      font-size: 0.68rem; text-transform: uppercase;
+      letter-spacing: 0.18em; color: #555; margin-bottom: 1.1rem;
+      font-family: var(--font-sans);
+    }
+    .cover-rule { width: 2rem; height: 1.5px; background: #333; margin: 0 auto 1.1rem; }
+    .cover-title { font-size: 1.5rem; font-weight: bold; line-height: 1.25; margin-bottom: 0.5rem; font-family: var(--font-serif); }
+    .cover-date  { font-size: 0.85rem; color: #444; font-style: italic; }
+
+    /* ── Interior: Section heading (GATHERING, WORD, etc.) ─────────────────── */
+    .liturgy-section {
+      margin-top: 1.1rem;
+      margin-bottom: 0.5rem;
+      break-inside: avoid;
+      break-after: avoid;
+    }
+    .liturgy-section:first-child { margin-top: 0; }
+
+    .section-heading {
+      font-size: 1.35rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      line-height: 1.1;
+      border-bottom: 1.5px solid #111;
+      padding-bottom: 0.18rem;
+      margin-bottom: 0;
+    }
+    .section-sub {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #444;
+      margin-top: 0.2rem;
+    }
+
+    /* ── Interior: Regular order items ─────────────────────────────────────── */
+    .order-item {
+      margin-bottom: 0.65rem;
+      break-inside: avoid;
+    }
+    .preview-linkable {
+      cursor: pointer;
+      border-radius: 2px;
+      transition: outline-color 0.15s, background 0.15s;
+    }
+    .preview-linkable.is-linked {
+      outline: 1px solid #b69b80;
+      background: #f8f2ea;
+    }
+
+    /* The item heading (CALL TO WORSHIP, HOLY HOLY HOLY, etc.) */
+    .item-heading {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 400;
+      color: #111;
+      line-height: 1.2;
+      margin-bottom: 0.2rem;
+    }
+
+    /* Items with a sub-rule (like WELCOME & GREETING FROM GOD) */
+    .item-heading.has-rule {
+      border-bottom: 0.75px solid #aaa;
+      padding-bottom: 0.15rem;
+      margin-bottom: 0.25rem;
+    }
+
+    /* Body text — lyrics, responsive readings, scripture text */
+    .item-body {
+      font-size: 0.82rem;
+      line-height: 1.4;
+      color: #111;
+      font-family: var(--font-serif);
+      /* line breaks handled via <br> nodes; no text-transform */
+    }
+    .item-body .body-section-gap {
+      height: 0.3rem;
+    }
+    .item-body strong {
+      font-weight: 700;
+    }
+    .lyric-section-label {
+      display: block;
+      font-style: italic;
+      font-size: 0.72rem;
+      color: #666;
+      font-family: var(--font-sans);
+      font-weight: normal;
+    }
+
+    /* Scripture verse numbers — small superscript, lighter gray */
+    .verse-num {
+      font-size: 0.62em;
+      color: #999;
+      vertical-align: super;
+      line-height: 0;
+      font-family: var(--font-sans);
+      font-weight: normal;
+      margin-right: 0.1em;
+    }
+
+    /* Announcement editor cards */
+    .ann-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+      background: #f9f9f9;
+    }
+    .ann-card-row1 {
+      display: flex;
+      gap: 0.25rem;
+      align-items: center;
+      margin-bottom: 0.35rem;
+    }
+    .ann-title-input {
+      flex: 1;
+      min-width: 0;
+      font-size: 0.8rem;
+      padding: 0.22rem 0.4rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-family: var(--font-sans);
+      background: #fff;
+    }
+    .ann-card-toolbar {
+      display: flex;
+      gap: 0.2rem;
+      margin-bottom: 0.3rem;
+    }
+    .ann-fmt-btn {
+      padding: 0.12rem 0.5rem;
+      font-size: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      cursor: pointer;
+      line-height: 1.6;
+      font-family: var(--font-sans);
+      color: var(--text);
+    }
+    .ann-fmt-btn:hover { background: #e8f0fe; border-color: #99b; }
+    .ann-fmt-bold { font-weight: 700; }
+    .ann-icon-btn {
+      padding: 0.12rem 0.38rem;
+      font-size: 0.72rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      cursor: pointer;
+      line-height: 1.6;
+      color: #666;
+      flex-shrink: 0;
+    }
+    .ann-icon-btn:hover { background: #f0f0f0; }
+    .ann-del-btn:hover { background: #fee; color: #c00; border-color: #d99; }
+    .ann-icon-btn:disabled { opacity: 0.3; cursor: default; }
+    .ann-body-input {
+      width: 100%;
+      font-size: 0.8rem;
+      font-family: var(--font-serif);
+      resize: vertical;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.3rem 0.4rem;
+      line-height: 1.5;
+      box-sizing: border-box;
+      field-sizing: content;
+    }
+    /* Printed announcement heading (title of each announcement) */
+    .ann-item-heading {
+      font-weight: 700;
+      font-size: 0.82rem;
+      font-family: var(--font-serif);
+      margin-top: 0.3rem;
+      margin-bottom: 0.05rem;
+    }
+    .ann-item-heading:first-of-type { margin-top: 0; }
+    .ann-body { margin-bottom: 0.1rem; }
+
+    /* Copyright line under song lyrics — tiny, right-aligned */
+    .song-copyright {
+      font-size: 0.42rem;
+      color: #aaa;
+      text-align: right;
+      font-family: var(--font-sans);
+      line-height: 1.1;
+      margin-top: 0.12rem;
+    }
+    /* Attribution line in non-song items (last line starting with —)
+       Same body size, lighter colour, right-aligned */
+    .item-attribution {
+      color: #999;
+      text-align: right;
+      margin-top: 0.1rem;
+    }
+
+    /* Blank pad page (used when targeting 8 / 12 page booklet) */
+    .booklet-page.booklet-page-blank {
+      display: flex; align-items: center; justify-content: center;
+    }
+    .blank-page-label {
+      font-size: 0.62rem; color: #ccc; text-transform: uppercase;
+      letter-spacing: 0.12em; font-family: var(--font-sans);
+    }
+
+    /* Page-count display — now in tab-bar (see .tab-bar-right) */
+
+    /* Screen-only page number badge (hidden in print) */
+    .preview-page-num {
+      position: absolute;
+      bottom: -1.6rem; right: 0;
+      font-size: 0.62rem;
+      color: var(--muted);
+      font-family: var(--font-sans);
+      letter-spacing: 0.04em;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    /* Page footer */
+    .page-footer {
+      position: absolute;
+      bottom: 0.22in; left: 0.32in; right: 0.32in;
+      border-top: 0.75px solid #ccc;
+      padding-top: 0.2rem;
+      font-size: 0.58rem;
+      color: #888;
+      display: flex; justify-content: space-between;
+      font-family: var(--font-sans);
+    }
+
+    /* ─── Interactive page-break controls (screen-only) ─────────────────────── */
+    .pg-break-ctrl {
+      width: var(--doc-page-w);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.3rem 0;
+      flex-shrink: 0;
+      z-index: 1;
+    }
+    .pg-break-ctrl-line {
+      flex: 1;
+      height: 1.5px;
+      background: #c07038;
+      opacity: 0.5;
+    }
+    .pg-break-remove-btn {
+      flex-shrink: 0;
+      background: #fff7f2;
+      border: 1.5px solid #c07038;
+      color: #9a5020;
+      font-size: 0.66rem;
+      padding: 0.15rem 0.55rem;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      white-space: nowrap;
+      opacity: 0.75;
+      transition: opacity 0.15s, background 0.15s;
+    }
+    .pg-break-remove-btn:hover { opacity: 1; background: #fde8d8; }
+
+    /* Within-page split controls: hidden by default, shown on page hover */
+    .pg-split-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      height: 1.2rem;
+      margin: -0.4rem 0;
+      position: relative;
+      z-index: 2;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.12s;
+    }
+    .booklet-page:hover .pg-split-ctrl {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .pg-split-line {
+      flex: 1;
+      height: 1px;
+      background: #999;
+      opacity: 0.35;
+    }
+    .pg-split-add-btn {
+      flex-shrink: 0;
+      background: #f4f4f4;
+      border: 1px solid #bbb;
+      color: #555;
+      font-size: 0.62rem;
+      padding: 0.08rem 0.42rem;
+      border-radius: 3px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      white-space: nowrap;
+      line-height: 1.5;
+    }
+    .pg-split-add-btn:hover { background: #e4eeff; border-color: #5080c0; color: #1a50a0; }
+
+    /* PCO note/media items — visible in editor but skipped in the printed bulletin */
+    .item-card.is-hidden-card {
+      opacity: 0.55;
+      border-style: dashed;
+    }
+    .is-label-card .item-detail-input {
+      opacity: 0.55;
+    }
+    .hidden-type-badge {
+      font-size: 0.65rem;
+      color: #904040;
+      background: #fde8e8;
+      border: 1px solid #f0b0b0;
+      border-radius: 3px;
+      padding: 1px 5px;
+      margin-left: 2px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    /* Bottom-section separator rule (between merged bottom content and previous section) */
+    .bottom-section-sep {
+      border: none;
+      border-top: 1.5px solid #ccc;
+      margin: 0.45rem 0;
+    }
+    /* pg-break-ctrl can appear inside a booklet-page when a bottom section is merged */
+    .booklet-page > .pg-break-ctrl {
+      margin-left: -0.32in;
+      width: var(--doc-page-w);
+    }
+    /* "Push up" button is disabled/grayed when content won't fit on previous page */
+    .pg-break-remove-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    @media print {
+      .pg-break-ctrl,
+      .pg-split-ctrl { display: none !important; }
+    }
