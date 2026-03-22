@@ -1,0 +1,34 @@
+    @media print {
+      .pg-break-ctrl,
+      .pg-split-ctrl { display: none !important; }
+    }
+
+    @media print {
+      body, html { background: none; height: auto !important; overflow: visible !important; }
+      header, aside, .tab-bar { display: none !important; }
+      .preview-linkable { cursor: default !important; }
+      .preview-linkable.is-linked { outline: none !important; background: transparent !important; }
+      /* Bust every layout container that clips content */
+      #page-songdb, #page-settings { display: none !important; }
+      #page-editor, main {
+        display: block !important; height: auto !important;
+        overflow: visible !important; flex: none !important;
+      }
+      #preview-pane {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        background: none !important;
+        padding: 0 !important;
+        gap: 0 !important;
+      }
+      #preview-empty { display: none !important; }
+      .preview-page-num { display: none !important; }
+      .booklet-page {
+        box-shadow: none !important; margin: 0 !important;
+        width: var(--doc-page-w) !important; min-height: 0 !important;
+        break-after: page; page-break-after: always;
+        overflow: visible !important;
+      }
+      .booklet-page:last-child { break-after: avoid; page-break-after: avoid; }
+    }

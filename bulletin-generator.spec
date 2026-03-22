@@ -17,7 +17,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('worship-booklet.html',              '.'),
+        ('index.html',                         '.'),
+        ('src',                                'src'),
         ('data/projects.example.json',        'data'),
         ('data/announcements.example.json',   'data'),
         ('data/settings.example.json',        'data'),
