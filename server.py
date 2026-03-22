@@ -43,6 +43,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTS_FILE      = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
 SETTINGS_FILE      = DATA_DIR / "settings.json"
+SONGS_FILE         = DATA_DIR / "song_database.json"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
@@ -607,10 +608,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json(settings)
             return
 
+        if path == "/api/songs":
+            songs = _read_json(SONGS_FILE, [])
+            self._send_json(songs)
+            return
+
         if path == "/api/bootstrap":
             settings = _read_json(SETTINGS_FILE, {})
+            songs = _read_json(SONGS_FILE, [])
             self._send_json({
                 "settings": settings,
+                "songDb": songs,
                 "config": _public_config(),
             })
             return
@@ -728,6 +736,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     else:
                         settings[key] = value
                 _write_json(SETTINGS_FILE, settings)
+            self._send_json({"ok": True})
+            return
+
+        if path == "/api/songs":
+            try:
+                songs = self._read_body_json()
+            except Exception:
+                self._send_json({"error": "invalid JSON"}, 400)
+                return
+            if not isinstance(songs, list):
+                self._send_json({"error": "body must be an array"}, 400)
+                return
+            with _lock:
+                _write_json(SONGS_FILE, songs)
             self._send_json({"ok": True})
             return
 
@@ -1181,6 +1203,16 @@ def run_server(port=8080):
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
+    # Migrate songDb out of settings.json → song_database.json (one-time)
+    if not SONGS_FILE.exists():
+        _settings = _read_json(SETTINGS_FILE, {})
+        if 'songDb' in _settings:
+            _write_json(SONGS_FILE, _settings.pop('songDb'))
+            _write_json(SETTINGS_FILE, _settings)
+            print(f"  [data] Migrated songDb from settings.json → song_database.json")
+        else:
+            _write_json(SONGS_FILE, [])
+            print(f"  [data] Initialized song_database.json with defaults")
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)

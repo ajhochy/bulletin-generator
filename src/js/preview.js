@@ -125,6 +125,7 @@ function buildChunks(item, idx) {
     }
 
     const t = (item.title || '').trim();
+    const fmt = getEffectiveFmt(item);
     const chunks = [];
     let globalStanzaIdx = 0;
 
@@ -151,10 +152,12 @@ function buildChunks(item, idx) {
           const h = document.createElement('div');
           h.className = 'item-heading has-rule';
           h.textContent = t;
+          applyTitleFmt(h, fmt);
           wrap.appendChild(h);
         }
         const body = document.createElement('div');
         body.className = 'item-body';
+        applyBodyFmt(body, fmt);
         renderBodyText(body, stanza);
         wrap.appendChild(body);
 

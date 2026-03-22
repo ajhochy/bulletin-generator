@@ -3,7 +3,7 @@ let songDb = [];
 let sdbEditingIdx = -1; // -1 = new entry, >= 0 = editing existing
 
 function saveSongDb() {
-  apiFetch('/api/settings', 'POST', { songDb }).catch(() => {});
+  apiFetch('/api/songs', 'POST', songDb).catch(() => {});
   renderSongDb();
 }
 

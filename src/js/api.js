@@ -54,8 +54,8 @@ async function loadAllFromServer() {
     }
     if (Array.isArray(_serverSettings.staffData) && _serverSettings.staffData.length)
       staffData = _serverSettings.staffData;
-    if (Array.isArray(_serverSettings.songDb))
-      songDb = _serverSettings.songDb;
+    if (Array.isArray(bootstrap.songDb))
+      songDb = bootstrap.songDb;
     annData = Array.isArray(annsData)
       ? annsData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '' }))
       : [];
