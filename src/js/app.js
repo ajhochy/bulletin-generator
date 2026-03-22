@@ -101,17 +101,17 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   allDayLabel.style.cssText = 'font-size:0.74rem; display:flex; align-items:center; gap:0.25rem; white-space:nowrap; cursor:pointer;';
   const allDayCheck = document.createElement('input');
   allDayCheck.type = 'checkbox';
-  allDayCheck.checked = true;
+  allDayCheck.checked = false;
   allDayLabel.appendChild(allDayCheck);
   allDayLabel.appendChild(document.createTextNode(' All day'));
   dateRow.appendChild(dateIn);
   dateRow.appendChild(allDayLabel);
   form.appendChild(dateRow);
 
-  // Time row (hidden when all-day checked)
+  // Time row (visible by default since all-day is unchecked)
   const timeRow = document.createElement('div');
   timeRow.className = 'cal-add-form-row';
-  timeRow.style.display = 'none';
+  timeRow.style.display = 'flex';
   const timeLabel = document.createElement('span');
   timeLabel.textContent = 'Time:';
   timeLabel.style.cssText = 'font-size:0.74rem; white-space:nowrap; flex-shrink:0;';

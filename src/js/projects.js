@@ -588,8 +588,17 @@ function downloadProjectJson(id) {
 
 // ── Server-side PDF helpers ────────────────────────────────────────────────────
 
-function buildPrintDocHtml(pagesHtml, title) {
-  const css = document.querySelector('style')?.textContent || '';
+async function buildPrintDocHtml(pagesHtml, title) {
+  // Collect CSS from all <link rel="stylesheet"> files (the 1.07 modular structure)
+  // plus any inline <style> blocks. Falls back gracefully if a fetch fails.
+  const linkEls   = [...document.querySelectorAll('link[rel="stylesheet"]')];
+  const fetched   = await Promise.allSettled(
+    linkEls.map(el => fetch(el.href).then(r => r.ok ? r.text() : '').catch(() => ''))
+  );
+  const linkedCss = fetched.map(r => r.status === 'fulfilled' ? r.value : '').join('\n');
+  const inlineCss = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n');
+  const css       = linkedCss + '\n' + inlineCss;
+
   const safeTitle = escAttr(title || 'Bulletin');
   const { w, h } = getPageDims();
   return `<!DOCTYPE html>
@@ -647,7 +656,7 @@ async function inlineExternalImages(html) {
 
 async function generateAndDownloadPdf(pagesHtml, filename) {
   setStatus('Generating PDF…', 'info');
-  let html = buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
   let resp;

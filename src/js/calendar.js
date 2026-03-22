@@ -48,10 +48,26 @@ function volRender() {
         }
       }
 
+      const teamNameRow = document.createElement('div');
+      teamNameRow.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:0;';
       const teamNameEl = document.createElement('div');
       teamNameEl.className = 'vol-team-name';
+      teamNameEl.style.marginBottom = '0';
       teamNameEl.textContent = team.name;
-      weekEl.appendChild(teamNameEl);
+      teamNameRow.appendChild(teamNameEl);
+      const delTeamBtn = document.createElement('button');
+      delTeamBtn.className = 'vol-remove-btn';
+      delTeamBtn.title = 'Remove this team';
+      delTeamBtn.textContent = '✕';
+      delTeamBtn.addEventListener('click', () => {
+        if (!confirm(`Remove team "${team.name}"?`)) return;
+        servingSchedule.weeks[wi].teams.splice(ti, 1);
+        volRender();
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      });
+      teamNameRow.appendChild(delTeamBtn);
+      weekEl.appendChild(teamNameRow);
 
       team.positions.forEach((pos, pi) => {
         const row = document.createElement('div');

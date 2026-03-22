@@ -193,21 +193,49 @@ function applyPcoData(planResp, itemsResp, notesResp) {
     mapPlanNotesToItems(items, normalizedNotes);
   }
 
-  // Re-sync merge: for items that existed before, restore the user's edited detail.
+  // Re-sync merge: for items that existed before, restore all user edits.
   // New items (not in prevItems) keep their freshly-enriched detail from above.
+  // Conflicts are collected (PCO detail ≠ user's detail, both non-empty) for review.
+  const refreshConflicts = [];
   if (prevItems.length > 0) {
     items.forEach((newItem, i) => {
       const match = prevItems.find(ex =>
         ex.type === newItem.type &&
         normTitle(ex.title) === normTitle(newItem.title)
       );
-      if (match) items[i] = { ...newItem, detail: match.detail };
+      if (match) {
+        // Detect a conflict before overwriting
+        if (match.detail && newItem.detail && match.detail.trim() !== newItem.detail.trim()) {
+          refreshConflicts.push({
+            idx: i,
+            title: newItem.title,
+            prevDetail: match.detail,   // user's current version
+            pcoDetail:  newItem.detail, // PCO / DB version
+          });
+        }
+        // Always preserve the user's edit (and all per-item overrides) by default.
+        // The conflict dialog lets the user choose to accept PCO data per-item.
+        items[i] = {
+          ...newItem,
+          detail:                match.detail,
+          _fmt:                  match._fmt,
+          _noBreakBefore:        match._noBreakBefore,
+          _noBreakBeforeStanzas: match._noBreakBeforeStanzas,
+          _collapsed:            match._collapsed,
+        };
+      }
     });
   }
 
   renderItemList();
   renderPreview();
   scheduleProjectPersist();
+
+  // Surface a per-item review dialog when PCO data differs from user edits.
+  if (refreshConflicts.length > 0) {
+    showRefreshConflictsDialog(refreshConflicts);
+    return; // skip the normal import-review dialog — conflicts take priority
+  }
 
   // Only surface the import-review dialog for songs not present in the previous import
   if (enrichResult.withNotes.length || enrichResult.unmatched.length) {
@@ -889,4 +917,80 @@ document.getElementById('pco-disconnect-btn').addEventListener('click', async ()
     setStatus('Could not disconnect — try again.', 'error');
   }
 });
+
+// ─── Refresh Conflicts Dialog ─────────────────────────────────────────────────
+// Shows a per-item review when a PCO re-import finds that Planning Center has
+// different content for items the user has already edited.
+function showRefreshConflictsDialog(conflicts) {
+  const body = document.getElementById('irm-body');
+  body.innerHTML = '';
+
+  const h = document.createElement('div');
+  h.className = 'irm-section-label';
+  h.textContent = 'Items with Updated Content from Planning Center';
+  body.appendChild(h);
+
+  const desc = document.createElement('p');
+  desc.className = 'irm-desc';
+  desc.textContent = 'Planning Center has different content for the items below. Your edits have been kept by default \u2014 choose \u201CUse PCO\u201D for any item you want to override.';
+  body.appendChild(desc);
+
+  // Map of idx → 'mine' | 'pco'
+  const selections = new Map();
+  conflicts.forEach(({ idx }) => selections.set(idx, 'mine'));
+
+  conflicts.forEach(({ idx, title, prevDetail, pcoDetail }) => {
+    const card = document.createElement('div');
+    card.className = 'irm-song-card';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'irm-song-title';
+    titleEl.textContent = title;
+    card.appendChild(titleEl);
+
+    const groupName = 'irm-rc-' + Math.random().toString(36).slice(2);
+
+    // Option 1: Keep user's edit (default)
+    const { row: row1 } = irmRadioRow(groupName, 'Keep my current edit', true, () => selections.set(idx, 'mine'));
+    card.appendChild(row1);
+    const prevFirst = prevDetail.split('\n').map(l => l.trim()).find(l => l) || '';
+    if (prevFirst) {
+      const prev = document.createElement('div');
+      prev.className = 'irm-preview-text';
+      prev.textContent = '\u201C' + prevFirst.slice(0, 90) + (prevFirst.length > 90 ? '\u2026' : '') + '\u201D';
+      card.appendChild(prev);
+    }
+
+    // Option 2: Use PCO / DB data
+    const { row: row2 } = irmRadioRow(groupName, 'Use Planning Center data', false, () => selections.set(idx, 'pco'));
+    card.appendChild(row2);
+    const pcoFirst = pcoDetail.split('\n').map(l => l.trim()).find(l => l) || '';
+    if (pcoFirst) {
+      const prev2 = document.createElement('div');
+      prev2.className = 'irm-preview-text';
+      prev2.textContent = '\u201C' + pcoFirst.slice(0, 90) + (pcoFirst.length > 90 ? '\u2026' : '') + '\u201D';
+      card.appendChild(prev2);
+    }
+
+    body.appendChild(card);
+  });
+
+  document.getElementById('irm-apply-btn').onclick = () => {
+    conflicts.forEach(({ idx, pcoDetail }) => {
+      if (selections.get(idx) === 'pco' && items[idx]) {
+        items[idx].detail = pcoDetail;
+      }
+    });
+    renderItemList();
+    renderPreview();
+    scheduleProjectPersist();
+    closeImportReviewDialog();
+  };
+
+  document.getElementById('irm-cancel-btn').onclick = closeImportReviewDialog;
+  document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
+
+  document.getElementById('irm-title').textContent = 'Review Refreshed Plan';
+  document.getElementById('import-review-modal').style.display = 'flex';
+}
 
