@@ -87,12 +87,9 @@ async function applyUpdate() {
       }
       setStatus('Update downloaded. Quit and relaunch to use the new version.', 'success');
     } else {
-      // Server mode: poll until the restarted container responds
-      if (status) {
-        status.textContent = 'Update triggered. Waiting for server to restart…';
-        status.className   = 'pco-msg';
-      }
-      _pollForRestart();
+      // Server mode: poll until the restarted container responds with new version
+      const currentVersion = _publicConfig.appVersion;
+      _pollForRestart(currentVersion);
     }
   } catch (e) {
     if (status) {
@@ -105,30 +102,72 @@ async function applyUpdate() {
 
 // ── Poll for restart (server mode) ────────────────────────────────────────────
 
-function _pollForRestart() {
+function _pollForRestart(oldVersion) {
   const status   = document.getElementById('update-status-msg');
-  const maxWait  = 120000; // 2 minutes
+  const bar      = document.getElementById('update-progress-bar');
+  const barFill  = document.getElementById('update-progress-fill');
+  const barText  = document.getElementById('update-progress-text');
+  const maxWait  = 180000; // 3 minutes
   const interval = 3000;
   let elapsed    = 0;
+  let phase      = 'pulling'; // pulling → restarting → done
+
+  // Show progress bar
+  if (bar) bar.style.display = '';
+
+  function updateProgress(pct, text) {
+    if (barFill) barFill.style.width = pct + '%';
+    if (barText) barText.textContent = text;
+    if (status) { status.textContent = text; status.className = 'pco-msg'; }
+  }
+
+  updateProgress(10, 'Pulling new image…');
 
   const timer = setInterval(async () => {
     elapsed += interval;
+
+    // Animate progress bar during pull phase (up to ~60%)
+    if (phase === 'pulling') {
+      const pct = Math.min(10 + (elapsed / maxWait) * 50, 60);
+      updateProgress(pct, 'Pulling new image…');
+    }
+
     try {
-      await apiFetch('/api/bootstrap');
-      clearInterval(timer);
-      if (status) {
-        status.textContent = 'Server updated and restarted. Reload this page.';
-        status.className   = 'pco-msg success';
-      }
-      setStatus('Server updated. Reload the page to use the new version.', 'success');
-    } catch (_) {
-      if (elapsed >= maxWait) {
+      const data = await apiFetch('/api/bootstrap');
+      const newVersion = data.config && data.config.appVersion;
+
+      if (newVersion && newVersion !== oldVersion) {
+        // Update complete — new version detected
         clearInterval(timer);
-        if (status) {
-          status.textContent = 'Server is taking longer than expected. Try reloading manually.';
-          status.className   = 'pco-msg error';
-        }
+        phase = 'done';
+        updateProgress(100, `Updated to v${newVersion}!`);
+        if (status) { status.className = 'pco-msg success'; }
+        setStatus(`Server updated to v${newVersion}. Reloading…`, 'success');
+        setTimeout(() => window.location.reload(), 2000);
+        return;
       }
+
+      // Server responded but still old version — still pulling/restarting
+      if (phase === 'pulling') {
+        const pct = Math.min(10 + (elapsed / maxWait) * 50, 60);
+        updateProgress(pct, 'Pulling new image…');
+      }
+    } catch (_) {
+      // Server unreachable — container is restarting
+      if (phase !== 'restarting') {
+        phase = 'restarting';
+        updateProgress(70, 'Restarting server…');
+      } else {
+        const pct = Math.min(70 + ((elapsed - 30000) / maxWait) * 25, 90);
+        updateProgress(Math.max(70, pct), 'Restarting server…');
+      }
+    }
+
+    if (elapsed >= maxWait) {
+      clearInterval(timer);
+      updateProgress(0, 'Update is taking longer than expected. Try reloading manually.');
+      if (status) { status.className = 'pco-msg error'; }
+      if (bar) bar.style.display = 'none';
     }
   }, interval);
 }

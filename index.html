@@ -493,6 +493,12 @@
         <div class="stg-btn-row">
           <button class="btn-sm btn-sm-primary" id="update-apply-btn" style="display:none;">Update Now</button>
         </div>
+        <div id="update-progress-bar" style="display:none;margin-top:0.6rem;">
+          <div style="background:#e0e0e0;border-radius:6px;height:20px;overflow:hidden;position:relative;">
+            <div id="update-progress-fill" style="background:var(--primary, #7b5e3c);height:100%;width:0%;transition:width 0.5s ease;border-radius:6px;"></div>
+            <span id="update-progress-text" style="position:absolute;top:0;left:0;right:0;text-align:center;line-height:20px;font-size:0.72rem;color:#333;font-weight:600;"></span>
+          </div>
+        </div>
       </div>
 
     </div>
