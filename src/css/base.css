@@ -92,9 +92,20 @@
     main {
       flex: 1;
       display: grid;
-      grid-template-columns: 690px 1fr;
+      grid-template-columns: var(--editor-w, 690px) 4px 1fr;
       overflow: hidden;
     }
+
+    #editor-resize-handle {
+      width: 4px;
+      cursor: col-resize;
+      background: var(--border);
+      transition: background 0.15s;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    #editor-resize-handle:hover,
+    #editor-resize-handle.dragging { background: var(--accent-light); }
 
     /* Form inputs */
     .field-row { display: flex; flex-direction: column; gap: 0.28rem; margin-bottom: 0.6rem; }

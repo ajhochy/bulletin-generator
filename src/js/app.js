@@ -183,3 +183,49 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   addBtnEl.parentNode.insertBefore(form, addBtnEl.nextSibling);
   titleIn.focus();
 });
+
+// ─── Editor / Preview resizable split ────────────────────────────────────────
+(function () {
+  const STORAGE_KEY = 'editorPanelWidth';
+  const MIN_W = 320;
+  const MAX_W = 900;
+  const handle = document.getElementById('editor-resize-handle');
+  if (!handle) return;
+
+  // Restore saved width
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) document.documentElement.style.setProperty('--editor-w', saved + 'px');
+
+  let dragging = false;
+  let startX = 0;
+  let startW = 0;
+
+  handle.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startW = parseInt(getComputedStyle(document.documentElement)
+      .getPropertyValue('--editor-w')) || 690;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    const newW = Math.min(MAX_W, Math.max(MIN_W, startW + delta));
+    document.documentElement.style.setProperty('--editor-w', newW + 'px');
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    const w = parseInt(getComputedStyle(document.documentElement)
+      .getPropertyValue('--editor-w')) || 690;
+    localStorage.setItem(STORAGE_KEY, w);
+  });
+})();
