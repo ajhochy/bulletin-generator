@@ -118,24 +118,29 @@ jobs:
 
           APP="dist/Bulletin Generator.app"
 
-          # Step 1: Sign every Mach-O binary inside-out (--deep misses nested binaries)
-          find "$APP" -type f | while IFS= read -r f; do
-            if file "$f" | grep -qE "Mach-O|shared library"; then
-              codesign --force --sign "$IDENTITY" \
+          # Step 1: Sign every Mach-O binary inside-out.
+          # Use process substitution (not a pipe) so the loop runs in the current
+          # shell and errors are not silently swallowed. --timestamp is required
+          # for notarization; --deep alone is unreliable with PyInstaller bundles.
+          while IFS= read -r f; do
+            if file "$f" | grep -qE "Mach-O"; then
+              echo "  signing: $f"
+              codesign --force --timestamp --sign "$IDENTITY" \
                 --options runtime \
                 --entitlements entitlements.plist "$f"
             fi
-          done
+          done < <(find "$APP" -type f)
 
-          # Step 2: Sign any frameworks as bundles
-          find "$APP" -name "*.framework" -type d | sort -r | while IFS= read -r fw; do
-            codesign --force --sign "$IDENTITY" \
+          # Step 2: Sign frameworks as bundles (deepest first)
+          while IFS= read -r fw; do
+            echo "  signing framework: $fw"
+            codesign --force --timestamp --sign "$IDENTITY" \
               --options runtime \
               --entitlements entitlements.plist "$fw"
-          done
+          done < <(find "$APP" -name "*.framework" -type d | sort -r)
 
           # Step 3: Sign the .app bundle itself
-          codesign --force --verify --verbose \
+          codesign --force --timestamp --verify --verbose \
             --sign "$IDENTITY" \
             --options runtime \
             --entitlements entitlements.plist \
