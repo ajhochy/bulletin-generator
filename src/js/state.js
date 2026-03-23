@@ -1,6 +1,7 @@
 // ─── State ────────────────────────────────────────────────────────────────────
 let items = [];
 let annData = []; // [{ title: string, body: string, _breakBefore?: bool, _noBreakBefore?: bool }]
+let welcomeItems = [...WELCOME_ITEMS]; // editable copy of welcome section items
 let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
 let giveOnlineUrl = '';
 let servingSchedule = null; // { weeks: [{date, planId, teams:[{name,serviceTime,positions:[{role,names[]}]}]}, ...] }
@@ -133,6 +134,8 @@ const addItemBtn           = document.getElementById('add-item-btn');
 const addBreakBtn          = document.getElementById('add-break-btn');
 const annList              = document.getElementById('ann-list');
 const annAddBtn            = document.getElementById('ann-add-btn');
+const welcomeList          = document.getElementById('welcome-list');
+const welcomeAddBtn        = document.getElementById('welcome-add-btn');
 const previewPane          = document.getElementById('preview-pane');
 const previewEmpty         = document.getElementById('preview-empty');
 const btnPrint             = document.getElementById('btn-print');

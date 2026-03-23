@@ -286,7 +286,7 @@ function renderPreview() {
 
     const welcomeList = document.createElement('ul');
     welcomeList.className = 'welcome-list';
-    WELCOME_ITEMS.forEach(text => {
+    welcomeItems.forEach(text => {
       const li = document.createElement('li');
       li.textContent = text;
       welcomeList.appendChild(li);

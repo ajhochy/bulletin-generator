@@ -2057,6 +2057,14 @@
       </div>
     </div>
 
+    <!-- Welcome -->
+    <div class="panel-section" id="panel-section-welcome">
+      <div class="section-label">Welcome</div>
+      <p class="section-hint">Edit the welcome items shown at the top of the announcements page. Saves per project.</p>
+      <div id="welcome-list"></div>
+      <button class="btn-sm btn-sm-primary" id="welcome-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Welcome Item</button>
+    </div>
+
     <!-- Announcements -->
     <div class="panel-section" id="panel-section-announcements">
       <div class="section-label">Announcements</div>
@@ -2540,6 +2548,7 @@ async function loadAllFromServer() {
 // ─── State ────────────────────────────────────────────────────────────────────
 let items = [];
 let annData = []; // [{ title: string, body: string, _breakBefore?: bool, _noBreakBefore?: bool }]
+let welcomeItems = [...WELCOME_ITEMS]; // editable copy of welcome section items
 let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
 let giveOnlineUrl = '';
 let servingSchedule = null; // { thisWeek: {date, planId, teams:[{name,positions:[{role,names[]}]}]}, nextWeek: {...}|null }
@@ -2664,6 +2673,8 @@ const addItemBtn           = document.getElementById('add-item-btn');
 const addBreakBtn          = document.getElementById('add-break-btn');
 const annList              = document.getElementById('ann-list');
 const annAddBtn            = document.getElementById('ann-add-btn');
+const welcomeList          = document.getElementById('welcome-list');
+const welcomeAddBtn        = document.getElementById('welcome-add-btn');
 const previewPane          = document.getElementById('preview-pane');
 const previewEmpty         = document.getElementById('preview-empty');
 const btnPrint             = document.getElementById('btn-print');
@@ -3222,6 +3233,7 @@ svcDate.addEventListener('input',         () => { updateDocTitle(); schedulePrev
 bulletinTitleInput.addEventListener('input', () => { updateSectionPreviews(); });
 svcChurch.addEventListener('input',       schedulePreviewUpdate);
 annAddBtn.addEventListener('click', annAdd);
+welcomeAddBtn.addEventListener('click', welcomeAdd);
 
 // ─── Collapsible sidebar panels ───────────────────────────────────────────────
 document.querySelectorAll('aside .panel-section').forEach(section => {
@@ -3435,6 +3447,50 @@ function annAdd() {
   annRender();
   saveAnnGlobal();
   const inputs = annList.querySelectorAll('.ann-title-input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  scheduleProjectPersist();
+}
+
+// ─── Welcome items editor ────────────────────────────────────────────────────
+function welcomeRender() {
+  welcomeList.innerHTML = '';
+  welcomeItems.forEach((text, idx) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:0.3rem;align-items:center;margin-bottom:0.3rem;';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ann-title-input';
+    input.style.cssText = 'flex:1;';
+    input.value = text;
+    input.placeholder = 'Welcome item text…';
+    input.addEventListener('input', () => {
+      welcomeItems[idx] = input.value;
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ann-icon-btn ann-del-btn';
+    delBtn.title = 'Remove';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => {
+      welcomeItems.splice(idx, 1);
+      welcomeRender();
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+
+    row.appendChild(input);
+    row.appendChild(delBtn);
+    welcomeList.appendChild(row);
+  });
+}
+
+function welcomeAdd() {
+  welcomeItems.push('');
+  welcomeRender();
+  const inputs = welcomeList.querySelectorAll('input');
   if (inputs.length) inputs[inputs.length - 1].focus();
   scheduleProjectPersist();
 }
@@ -3734,6 +3790,7 @@ function collectCurrentProjectState() {
     optAnnouncements: !!optAnnouncements.checked,
     optVolunteers:    !!optVolunteers.checked,
     optStaff:         !!optStaff.checked,
+    welcomeItems: welcomeItems.slice(),
     announcements: annData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })),
     items: cloneItems(items),
     coverImageUrl: coverImageUrl || null,
@@ -3750,6 +3807,8 @@ function applyProjectState(state) {
   svcTitle.value = safe.svcTitle || '';
   svcDate.value = safe.svcDate || '';
   svcChurch.value = safe.svcChurch || '';
+  welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
+  welcomeRender();
   if (Array.isArray(safe.announcements)) {
     annData = safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
     saveAnnGlobal();
@@ -4070,7 +4129,7 @@ function clearEditorForNewProject() {
   optAnnouncements.checked = true;
   optVolunteers.checked    = true;
   optStaff.checked         = true;
-  // Seed announcements from the most recently dated saved project
+  // Seed announcements and welcome items from the most recently dated saved project
   const datedProjects = projects
     .filter(p => p.state?.announcements && p.state?.svcDate)
     .sort((a, b) => {
@@ -4080,9 +4139,13 @@ function clearEditorForNewProject() {
     });
   if (datedProjects.length > 0) {
     annData = datedProjects[0].state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
+    welcomeItems = Array.isArray(datedProjects[0].state.welcomeItems) ? datedProjects[0].state.welcomeItems.slice() : [...WELCOME_ITEMS];
     saveAnnGlobal();
     annRender();
+  } else {
+    welcomeItems = [...WELCOME_ITEMS];
   }
+  welcomeRender();
   items = [];
   renderItemList();
   applyCoverImage(null, '');
@@ -4157,6 +4220,7 @@ async function restoreOnStartup() {
   }
 
   if (!restored) {
+    welcomeRender();
     annRender();
     renderItemList();
     renderPreview();
@@ -5349,7 +5413,7 @@ function renderPreview() {
 
     const welcomeList = document.createElement('ul');
     welcomeList.className = 'welcome-list';
-    WELCOME_ITEMS.forEach(text => {
+    welcomeItems.forEach(text => {
       const li = document.createElement('li');
       li.textContent = text;
       welcomeList.appendChild(li);

@@ -28,6 +28,7 @@ function collectCurrentProjectState() {
     optAnnouncements: !!optAnnouncements.checked,
     optVolunteers:    !!optVolunteers.checked,
     optStaff:         !!optStaff.checked,
+    welcomeItems: welcomeItems.slice(),
     announcements: annData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })),
     items: cloneItems(items),
     coverImageUrl: coverImageUrl || null,
@@ -44,6 +45,8 @@ function applyProjectState(state) {
   svcTitle.value = safe.svcTitle || '';
   svcDate.value = safe.svcDate || '';
   svcChurch.value = safe.svcChurch || '';
+  welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
+  welcomeRender();
   if (Array.isArray(safe.announcements)) {
     annData = safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
     saveAnnGlobal();
@@ -398,7 +401,7 @@ function clearEditorForNewProject() {
   optAnnouncements.checked = true;
   optVolunteers.checked    = true;
   optStaff.checked         = true;
-  // Seed announcements from the most recently dated saved project
+  // Seed announcements and welcome items from the most recently dated saved project
   const datedProjects = projects
     .filter(p => p.state?.announcements && p.state?.svcDate)
     .sort((a, b) => {
@@ -408,9 +411,13 @@ function clearEditorForNewProject() {
     });
   if (datedProjects.length > 0) {
     annData = datedProjects[0].state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
+    welcomeItems = Array.isArray(datedProjects[0].state.welcomeItems) ? datedProjects[0].state.welcomeItems.slice() : [...WELCOME_ITEMS];
     saveAnnGlobal();
     annRender();
+  } else {
+    welcomeItems = [...WELCOME_ITEMS];
   }
+  welcomeRender();
   items = [];
   renderItemList();
   applyCoverImage(null, '');
@@ -486,6 +493,7 @@ async function restoreOnStartup() {
   }
 
   if (!restored) {
+    welcomeRender();
     annRender();
     renderItemList();
     renderPreview();

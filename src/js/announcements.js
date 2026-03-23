@@ -213,6 +213,51 @@ function fmtItalic(ta) {
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
+// ─── Welcome items editor ────────────────────────────────────────────────────
+function welcomeRender() {
+  welcomeList.innerHTML = '';
+  welcomeItems.forEach((text, idx) => {
+    const row = document.createElement('div');
+    row.className = 'welcome-item-row';
+    row.style.cssText = 'display:flex;gap:0.3rem;align-items:center;margin-bottom:0.3rem;';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ann-title-input';
+    input.style.cssText = 'flex:1;';
+    input.value = text;
+    input.placeholder = 'Welcome item text…';
+    input.addEventListener('input', () => {
+      welcomeItems[idx] = input.value;
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ann-icon-btn ann-del-btn';
+    delBtn.title = 'Remove';
+    delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => {
+      welcomeItems.splice(idx, 1);
+      welcomeRender();
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+
+    row.appendChild(input);
+    row.appendChild(delBtn);
+    welcomeList.appendChild(row);
+  });
+}
+
+function welcomeAdd() {
+  welcomeItems.push('');
+  welcomeRender();
+  const inputs = welcomeList.querySelectorAll('input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  scheduleProjectPersist();
+}
+
 // ─── Linked preview scroll ────────────────────────────────────────────────────
 // Clicking an announcement card scrolls the preview to that announcement,
 // mirroring the linked-preview behaviour of the Order of Worship editor.
