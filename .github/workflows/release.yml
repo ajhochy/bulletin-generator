@@ -112,11 +112,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
       - name: Sign the .app bundle
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')
+          echo "Signing with identity: $IDENTITY"
           codesign --deep --force --verify --verbose \
-            --sign "Developer ID Application: $(security find-certificate -c 'Developer ID Application' -p | openssl x509 -noout -subject | sed 's/.*CN=//;s/,.*//')" \
+            --sign "$IDENTITY" \
             --options runtime \
             --entitlements entitlements.plist \
             "dist/Bulletin Generator.app"
