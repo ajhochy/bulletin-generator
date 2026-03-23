@@ -88,6 +88,10 @@
       margin-bottom: 0.65rem;
       break-inside: avoid;
     }
+    /* Song stanzas sit closer together than general items */
+    .order-item.song-stanza {
+      margin-bottom: 0.25rem;
+    }
     .preview-linkable {
       cursor: pointer;
       border-radius: 2px;

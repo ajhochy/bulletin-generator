@@ -144,7 +144,9 @@ function buildChunks(item, idx) {
         const stanzaGlobalIdx = globalStanzaIdx;
 
         const wrap = document.createElement('div');
-        wrap.className = 'order-item' + (isVeryFirst ? ' preview-linkable' : '');
+        wrap.className = 'order-item' +
+          (isVeryLast ? '' : ' song-stanza') +
+          (isVeryFirst ? ' preview-linkable' : '');
         wrap.dataset.previewIdx = idx;
         wrap.dataset.stanzaIdx  = stanzaGlobalIdx;
 

@@ -107,6 +107,7 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
       pcoGet(`/service_types/${stId}/plans/${planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${stId}/plans/${planId}/notes`).catch(() => ({ data: [] })),
     ]);
+    autosaveProjectState(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     const planLabel = document.getElementById('pco-plan-sel').selectedOptions[0]?.text || planId;
     pcoSaveLastImport(stId, planId, planLabel);
@@ -338,6 +339,9 @@ function showImportReviewDialog(withNotes, unmatched) {
   }
 
   // ── Section B: Unmatched songs ───────────────────────────────────────────────
+  // Per-song selection for unmatched songs: 'skip' | 'paste'
+  const unmatchedSelections = new Map();
+
   if (unmatched.length) {
     const h = document.createElement('div');
     h.className = 'irm-section-label';
@@ -346,39 +350,48 @@ function showImportReviewDialog(withNotes, unmatched) {
 
     const desc = document.createElement('p');
     desc.className = 'irm-desc';
-    desc.textContent = 'These songs were not found in your song database. Click \u201CAdd to Database\u201D to add lyrics now.';
+    desc.textContent = 'These songs were not found in your song database. Paste lyrics inline to use them in this bulletin, or skip to leave them blank.';
     body.appendChild(desc);
 
     unmatched.forEach(({ item }) => {
-      const row = document.createElement('div');
-      row.className = 'irm-unmatched-row';
+      unmatchedSelections.set(item, { choice: 'skip', lyrics: '' });
 
-      const nameEl = document.createElement('div');
-      nameEl.className = 'irm-unmatched-name';
-      nameEl.textContent = item.title;
-      row.appendChild(nameEl);
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
 
-      const addBtn = document.createElement('button');
-      addBtn.className = 'btn-sm btn-sm-primary irm-add-db-btn';
-      addBtn.textContent = 'Add to Database';
-      addBtn.addEventListener('click', () => {
-        closeImportReviewDialog();
-        // Switch to Song DB tab and pre-populate the add-song form
-        document.querySelector('.tab-btn[data-tab="page-songdb"]').click();
-        closeSdbForm();
-        document.getElementById('sdb-form-heading').textContent = 'Add Song';
-        document.getElementById('sdb-title').value     = item.title;
-        document.getElementById('sdb-author').value    = '';
-        document.getElementById('sdb-lyrics').value    = '';
-        document.getElementById('sdb-copyright').value = '';
-        setTimeout(() => {
-          document.getElementById('sdb-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
-          document.getElementById('sdb-title').focus();
-        }, 80);
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = item.title;
+      card.appendChild(titleEl);
+
+      const groupName = 'irm-u-' + Math.random().toString(36).slice(2);
+
+      // Textarea (shown when "Paste lyrics" is selected)
+      const lyricsArea = document.createElement('textarea');
+      lyricsArea.className = 'irm-lyrics-input';
+      lyricsArea.placeholder = 'Paste lyrics here\u2026';
+      lyricsArea.style.display = 'none';
+      lyricsArea.addEventListener('input', () => {
+        unmatchedSelections.get(item).lyrics = lyricsArea.value;
       });
-      row.appendChild(addBtn);
 
-      body.appendChild(row);
+      // Option 1: Skip (default)
+      const { row: skipRow } = irmRadioRow(groupName, 'Skip (leave blank)', true, () => {
+        unmatchedSelections.get(item).choice = 'skip';
+        lyricsArea.style.display = 'none';
+      });
+      card.appendChild(skipRow);
+
+      // Option 2: Paste lyrics inline
+      const { row: pasteRow } = irmRadioRow(groupName, 'Paste lyrics for this bulletin', false, () => {
+        unmatchedSelections.get(item).choice = 'paste';
+        lyricsArea.style.display = '';
+        setTimeout(() => lyricsArea.focus(), 30);
+      });
+      card.appendChild(pasteRow);
+      card.appendChild(lyricsArea);
+
+      body.appendChild(card);
     });
   }
 
@@ -396,6 +409,13 @@ function showImportReviewDialog(withNotes, unmatched) {
       } else {
         item.detail = '';
       }
+    });
+    unmatched.forEach(({ item }) => {
+      const sel = unmatchedSelections.get(item);
+      if (sel && sel.choice === 'paste' && sel.lyrics.trim()) {
+        item.detail = sel.lyrics.trim();
+      }
+      // 'skip' → leave item.detail as-is (empty)
     });
     renderItemList();
     renderPreview();
@@ -739,6 +759,7 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/notes`).catch(() => ({ data: [] })),
     ]);
+    autosaveProjectState(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     pcoSetMsg('pco-refresh-msg', `Updated — ${items.length} items refreshed.`, 'success');
     setStatus(`Refreshed from Planning Center (${items.length} items).`, 'success');
