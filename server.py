@@ -369,7 +369,7 @@ def get_week_window():
     dow = today.weekday()  # Monday=0, Sunday=6
     days_until_sunday = (6 - dow) % 7  # 0 if today is Sunday
     start = today + timedelta(days=days_until_sunday)
-    end   = start + timedelta(days=6)
+    end   = start + timedelta(days=7)
     return start, end
 
 
