@@ -67,7 +67,7 @@ async function loadAllFromServer() {
       activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, _serverSettings.docTemplate);
     }
     applyDocTemplate();
-    if (typeof _serverSettings.editorDisplayName === 'string') {
+    if (!isServerMode() && typeof _serverSettings.editorDisplayName === 'string') {
       _editorDisplayName = _serverSettings.editorDisplayName;
     }
   } catch (e) {
