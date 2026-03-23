@@ -20,6 +20,8 @@ import platform
 import threading
 import subprocess
 import tempfile
+import zipfile
+import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -44,11 +46,22 @@ PROJECTS_FILE      = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
 SETTINGS_FILE      = DATA_DIR / "settings.json"
 SONGS_FILE         = DATA_DIR / "song_database.json"
+MIGRATIONS_FILE    = DATA_DIR / "migrations.json"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
 ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
+
+# ── App version and update config ──────────────────────────────────────────────
+APP_VERSION    = "1.08"
+GITHUB_REPO    = "ajhochy/bulletin-generator"
+# Watchtower HTTP API — internal Docker network only, never exposed externally.
+# Token is a shared default between the app and the Watchtower sidecar in
+# docker-compose.yml. Advanced deployments can override via WATCHTOWER_URL /
+# WATCHTOWER_TOKEN env vars.
+WATCHTOWER_URL   = os.environ.get("WATCHTOWER_URL",   "http://watchtower:8080/v1/update")
+WATCHTOWER_TOKEN = os.environ.get("WATCHTOWER_TOKEN", "bulletin-updater")
 
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 GOOGLE_CAL_API  = 'https://www.googleapis.com/calendar/v3'
@@ -201,6 +214,7 @@ def _refresh_google_token():
 def _public_config():
     return {
         "appMode": APP_MODE,
+        "appVersion": APP_VERSION,
         "pcoConfigured": _pco_auth_header() is not None,
         "googleConfigured": _google_auth_header() is not None,
         "calendarDefaults": {
@@ -505,6 +519,49 @@ def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles):
     return deduped
 
 
+# ─── Migration framework ───────────────────────────────────────────────────────
+
+def _migration_001_songdb_extraction():
+    """Move songDb out of settings.json into song_database.json."""
+    if SONGS_FILE.exists():
+        return  # Already done (by previous ad-hoc code or a prior run of this migration)
+    settings = _read_json(SETTINGS_FILE, {})
+    if 'songDb' in settings:
+        _write_json(SONGS_FILE, settings.pop('songDb'))
+        _write_json(SETTINGS_FILE, settings)
+    else:
+        _write_json(SONGS_FILE, [])
+
+
+# Registry: list of (id, callable). Order matters — append only, never reorder.
+_MIGRATION_REGISTRY = [
+    ("M001_songdb_extraction", _migration_001_songdb_extraction),
+]
+
+
+def run_migrations():
+    """Run any pending migrations at startup. Safe to call every time — idempotent."""
+    applied = _read_json(MIGRATIONS_FILE, [])
+    if not isinstance(applied, list):
+        applied = []
+    applied_set = set(applied)
+    changed = False
+    for migration_id, fn in _MIGRATION_REGISTRY:
+        if migration_id in applied_set:
+            continue
+        try:
+            fn()
+            applied.append(migration_id)
+            applied_set.add(migration_id)
+            changed = True
+            print(f"  [migration] Applied {migration_id}")
+        except Exception as e:
+            print(f"  [migration] ERROR in {migration_id}: {e} — stopping migration run")
+            break  # Stop on first failure to avoid cascading issues
+    if changed:
+        _write_json(MIGRATIONS_FILE, applied)
+
+
 # ─── HTTP handler ──────────────────────────────────────────────────────────────
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -682,6 +739,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 super().do_GET()
             return
 
+        if path == "/api/admin/check-update":
+            self._handle_check_update()
+            return
+
         self._send_json({"error": f"Not found: {path}"}, 404)
 
     def do_POST(self):
@@ -800,6 +861,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 settings.pop('googleCalendarIds', None)
                 _write_json(SETTINGS_FILE, settings)
             self._send_json({"ok": True})
+            return
+
+        if path == "/api/admin/apply-update":
+            self._handle_apply_update()
             return
 
         self._send_json({"error": "not found"}, 404)
@@ -1156,6 +1221,142 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(f'{{"errors":[{{"detail":"{e}"}}]}}'.encode())
 
+    # ── Update endpoints ────────────────────────────────────────────────────────
+
+    def _handle_check_update(self):
+        try:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            req = urllib.request.Request(url, headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": f"BulletinGenerator/{APP_VERSION}",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            latest_tag  = data.get("tag_name", "").lstrip("v")
+            release_url = data.get("html_url", "")
+            has_update  = bool(latest_tag) and latest_tag != APP_VERSION
+            self._send_json({
+                "current": APP_VERSION,
+                "latest":  latest_tag,
+                "url":     release_url,
+                "hasUpdate": has_update,
+            })
+        except Exception as e:
+            self._send_json({"error": f"Could not reach GitHub: {e}"}, 502)
+
+    def _handle_apply_update(self):
+        if APP_MODE == "server":
+            self._apply_update_server()
+        else:
+            self._apply_update_desktop()
+
+    def _apply_update_server(self):
+        """Trigger Watchtower to pull the latest image and restart the container."""
+        try:
+            req = urllib.request.Request(
+                WATCHTOWER_URL,
+                data=b"",
+                headers={
+                    "Authorization": f"Bearer {WATCHTOWER_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                resp.read()
+            self._send_json({"ok": True, "mode": "server",
+                             "message": "Update triggered. Server will restart shortly."})
+        except urllib.error.HTTPError as e:
+            self._send_json({"error": f"Watchtower returned {e.code}: {e.reason}"}, 502)
+        except Exception as e:
+            self._send_json({"error": f"Could not reach Watchtower: {e}"}, 502)
+
+    def _apply_update_desktop(self):
+        """Download the latest macOS .app zip from GitHub Releases, extract, replace bundle."""
+        if not getattr(sys, 'frozen', False):
+            self._send_json({"error": "Auto-update only works in the packaged .app build."}, 400)
+            return
+        try:
+            # 1. Fetch latest release metadata
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            req = urllib.request.Request(url, headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": f"BulletinGenerator/{APP_VERSION}",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                release = json.loads(resp.read())
+
+            # 2. Find the macOS zip asset
+            zip_url = None
+            for asset in release.get("assets", []):
+                name = asset.get("name", "")
+                if name.endswith(".zip") and "macos" in name.lower():
+                    zip_url = asset.get("browser_download_url")
+                    break
+            if not zip_url:
+                for asset in release.get("assets", []):
+                    if asset.get("name", "").endswith(".zip"):
+                        zip_url = asset.get("browser_download_url")
+                        break
+            if not zip_url:
+                self._send_json({"error": "No macOS zip asset found in the latest release."}, 404)
+                return
+
+            # 3. Download zip to a temp file
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp_f:
+                tmp_zip = tmp_f.name
+            with urllib.request.urlopen(zip_url, timeout=120) as resp:
+                with open(tmp_zip, "wb") as f:
+                    while True:
+                        chunk = resp.read(65536)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+
+            # 4. Locate current .app bundle
+            # sys.executable inside PyInstaller: <bundle>.app/Contents/MacOS/<exe>
+            current_app = Path(sys.executable).parents[2]
+            if not str(current_app).endswith(".app"):
+                self._send_json({"error": f"Could not locate .app bundle (found: {current_app})"}, 500)
+                Path(tmp_zip).unlink(missing_ok=True)
+                return
+
+            app_parent = current_app.parent
+            app_name   = current_app.name
+
+            # 5. Extract zip and find the .app inside
+            with tempfile.TemporaryDirectory(dir=str(app_parent)) as tmp_dir:
+                with zipfile.ZipFile(tmp_zip, "r") as zf:
+                    zf.extractall(tmp_dir)
+
+                new_app = None
+                for item in Path(tmp_dir).iterdir():
+                    if item.suffix == ".app":
+                        new_app = item
+                        break
+                if new_app is None:
+                    for sub in Path(tmp_dir).rglob("*.app"):
+                        new_app = sub
+                        break
+
+                if new_app is None:
+                    self._send_json({"error": "No .app bundle found in the downloaded zip."}, 500)
+                    return
+
+                # 6. Atomic replace: backup old, copy new
+                backup = app_parent / (app_name + ".bak")
+                if backup.exists():
+                    shutil.rmtree(str(backup))
+                current_app.rename(backup)
+                shutil.copytree(str(new_app), str(app_parent / app_name))
+
+            Path(tmp_zip).unlink(missing_ok=True)
+            self._send_json({"ok": True, "mode": "desktop",
+                             "message": "Update downloaded. Quit and relaunch the app to use the new version."})
+        except Exception as e:
+            import traceback; traceback.print_exc()
+            self._send_json({"error": str(e)}, 500)
+
     # ── Calendar endpoint ──────────────────────────────────────────────────────
 
     def _handle_cal(self):
@@ -1229,20 +1430,11 @@ def run_server(port=8080):
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
-    # Migrate songDb out of settings.json → song_database.json (one-time)
-    if not SONGS_FILE.exists():
-        _settings = _read_json(SETTINGS_FILE, {})
-        if 'songDb' in _settings:
-            _write_json(SONGS_FILE, _settings.pop('songDb'))
-            _write_json(SETTINGS_FILE, _settings)
-            print(f"  [data] Migrated songDb from settings.json → song_database.json")
-        else:
-            _write_json(SONGS_FILE, [])
-            print(f"  [data] Initialized song_database.json with defaults")
+    run_migrations()
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
-    print(f'  Worship Booklet Generator running at:')
+    print(f'  Worship Booklet Generator v{APP_VERSION} running at:')
     print(f'  http://localhost:{port}/')
     print(f'  Data directory: {DATA_DIR}')
     print(f'  PCO configured: {"yes" if _public_config()["pcoConfigured"] else "no"}')

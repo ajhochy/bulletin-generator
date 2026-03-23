@@ -884,3 +884,11 @@
       padding: 0; line-height: 1; flex-shrink: 0;
     }
     .toast-close:hover { color: #f8f4ee; }
+
+    /* ─── App Updates section ────────────────────────────────────────────────── */
+    .update-available-card {
+      border-color: #b5c9a0;
+      background: color-mix(in srgb, #b5c9a0 8%, var(--surface));
+    }
+    #update-current-version,
+    #update-latest-version { font-variant-numeric: tabular-nums; }

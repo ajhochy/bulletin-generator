@@ -2,12 +2,26 @@ version: "3"
 
 services:
   worship-booklet:
-    build: .
+    image: ghcr.io/ajhochy/bulletin-generator:latest
     env_file:
       - .env
     ports:
       - "8080:8080"
     volumes:
-      # Persists local working data outside the image
       - ./data:/app/data
+    restart: unless-stopped
+    labels:
+      - "com.centurylabs.watchtower.scope=bulletin-generator"
+
+  # Watchtower watches GHCR for new images and restarts the app container.
+  # It is only reachable within the private Docker network — never exposed
+  # externally — so the shared default token is safe for typical deployments.
+  # Advanced users can override WATCHTOWER_TOKEN in .env.
+  watchtower:
+    image: containrrr/watchtower
+    command: --http-api-update --scope bulletin-generator --cleanup
+    environment:
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-bulletin-updater}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
