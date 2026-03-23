@@ -81,6 +81,16 @@ logoImgInput.addEventListener('change', () => {
 });
 logoImgClear.addEventListener('click', () => applyStaffLogo(null, ''));
 
+// ─── Church Name (Settings → Church Branding) ─────────────────────────────────
+function restoreChurchName() {
+  const saved = _serverSettings.churchName || '';
+  if (saved) svcChurch.value = saved;
+}
+svcChurch.addEventListener('input', () => {
+  apiFetch('/api/settings', 'POST', { churchName: svcChurch.value }).catch(() => {});
+  schedulePreviewUpdate();
+});
+
 // ─── Give Online URL (Feature 7) ──────────────────────────────────────────────
 giveOnlineUrlInput.addEventListener('input', () => {
   giveOnlineUrl = giveOnlineUrlInput.value;
@@ -365,6 +375,32 @@ function scrollPreviewToItem(idx, behavior = 'smooth') {
   scrollElementIntoContainer(previewPane, linked, behavior);
   linkedPreviewTimer = setTimeout(() => {
     clearLinkedPreviewHighlight();
+  }, 1600);
+}
+
+// Scroll the preview pane to a specific announcement and briefly highlight it.
+// Mirrors scrollPreviewToItem but uses data-preview-ann-idx instead of data-preview-idx.
+function scrollPreviewToAnn(idx) {
+  const linked = previewPane.querySelector(`[data-preview-ann-idx="${idx}"]`);
+  if (!linked) {
+    // Announcement page may not be visible yet — scroll to the section heading instead
+    const heading = previewPane.querySelector('[data-preview-section="announcements"]');
+    if (heading) scrollElementIntoContainer(previewPane, heading, 'smooth');
+    return;
+  }
+  clearTimeout(linkedPreviewTimer);
+  // Highlight both the preview element and the editor card
+  previewPane.querySelectorAll('[data-preview-ann-idx].is-linked')
+    .forEach(el => el.classList.remove('is-linked'));
+  annList.querySelectorAll('.ann-card.is-linked')
+    .forEach(el => el.classList.remove('is-linked'));
+  linked.classList.add('is-linked');
+  const card = annList.querySelector(`.ann-card[data-ann-idx="${idx}"]`);
+  if (card) card.classList.add('is-linked');
+  scrollElementIntoContainer(previewPane, linked, 'smooth');
+  linkedPreviewTimer = setTimeout(() => {
+    linked.classList.remove('is-linked');
+    if (card) card.classList.remove('is-linked');
   }, 1600);
 }
 

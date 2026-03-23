@@ -4,6 +4,7 @@ function annRender() {
   annData.forEach((ann, idx) => {
     const card = document.createElement('div');
     card.className = 'ann-card';
+    card.dataset.annIdx = idx;
 
     // Row 1: title input + move + delete
     const row1 = document.createElement('div');
@@ -211,5 +212,16 @@ function fmtItalic(ta) {
   ta.focus();
   ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
+
+// ─── Linked preview scroll ────────────────────────────────────────────────────
+// Clicking an announcement card scrolls the preview to that announcement,
+// mirroring the linked-preview behaviour of the Order of Worship editor.
+annList.addEventListener('click', e => {
+  const card = e.target.closest('.ann-card');
+  if (!card) return;
+  const idx = parseInt(card.dataset.annIdx, 10);
+  if (!Number.isInteger(idx)) return;
+  if (typeof scrollPreviewToAnn === 'function') scrollPreviewToAnn(idx);
+});
 
 // ─── Per-item formatting toolbar ──────────────────────────────────────────────

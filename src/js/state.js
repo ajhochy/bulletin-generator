@@ -23,7 +23,10 @@ let _loadedRevision = null;   // revision of the project as loaded from server
 let _editorDisplayName = '';  // local editor identity
 let _staleCheckTimer = null;
 
-const PROJECTS_STORAGE_KEY = 'worshipProjectsV1';
+// Note: both server mode and desktop mode persist projects through the local
+// Python server API (data/projects.json). localStorage is only used to track
+// the active project ID across page reloads and to store the unsaved draft.
+// PROJECTS_STORAGE_KEY was an earlier localStorage-only path that is no longer used.
 const ACTIVE_PROJECT_STORAGE_KEY = 'worshipActiveProjectId';
 const DRAFT_STORAGE_KEY = 'worshipProjectDraftV1';
 const TYPE_FORMATS_KEY = 'worshipTypeFormatsV1';
