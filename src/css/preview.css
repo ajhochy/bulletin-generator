@@ -36,6 +36,8 @@
       padding: 0;
       overflow: hidden;
       display: block;
+      /* Lock to exact page height so preview crop matches PDF output */
+      height: var(--doc-page-h);
     }
     .cover-full-img {
       width: 100%;
