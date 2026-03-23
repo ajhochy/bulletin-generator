@@ -57,7 +57,7 @@
       max-width: 200px;
     }
     .panel-section:not(.collapsed) .section-preview { display: none; }
-    .panel-section.collapsed > :not(.section-label) { display: none !important; }
+    .panel-section.collapsed > :not(.section-label):not(#stale-banner):not(#conflict-banner) { display: none !important; }
     .section-hint {
       font-size: 0.75rem;
       color: var(--muted);

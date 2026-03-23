@@ -107,6 +107,7 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
       pcoGet(`/service_types/${stId}/plans/${planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${stId}/plans/${planId}/notes`).catch(() => ({ data: [] })),
     ]);
+    savePreImportBackup(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     const planLabel = document.getElementById('pco-plan-sel').selectedOptions[0]?.text || planId;
     pcoSaveLastImport(stId, planId, planLabel);
@@ -231,24 +232,40 @@ function applyPcoData(planResp, itemsResp, notesResp) {
   renderPreview();
   scheduleProjectPersist();
 
-  // Surface a per-item review dialog when PCO data differs from user edits.
-  if (refreshConflicts.length > 0) {
-    showRefreshConflictsDialog(refreshConflicts);
-    return; // skip the normal import-review dialog — conflicts take priority
+  // Compute songs that still need user review.
+  //
+  // Unmatched: show any song that still has no lyrics in the live items array
+  // after re-sync (regardless of whether it was in the previous plan).
+  // Also update e.item to the live items[] reference — the re-sync merge
+  // replaces items[i] with a new object, so the original enrichResult reference
+  // is stale and writing to it would not affect the rendered preview.
+  const pendingUnmatched = enrichResult.unmatched.filter(e => {
+    const live = items.find(it =>
+      it.type === e.item.type && normTitle(it.title) === normTitle(e.item.title)
+    );
+    if (!live || live.detail) return false; // already has lyrics — skip
+    e.item = live; // point to the live object so dialog writes take effect
+    return true;
+  });
+
+  // withNotes: only surface songs that are new to this plan (existing ones
+  // were already reviewed in a prior session).
+  let pendingWithNotes = enrichResult.withNotes;
+  if (prevItems.length > 0) {
+    const prevKeys = new Set(prevItems.map(ex => ex.type + '|' + normTitle(ex.title)));
+    pendingWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
   }
 
-  // Only surface the import-review dialog for songs not present in the previous import
-  if (enrichResult.withNotes.length || enrichResult.unmatched.length) {
-    if (prevItems.length > 0) {
-      const prevKeys = new Set(prevItems.map(ex => ex.type + '|' + normTitle(ex.title)));
-      const newWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
-      const newUnmatched = enrichResult.unmatched.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
-      if (newWithNotes.length || newUnmatched.length) {
-        showImportReviewDialog(newWithNotes, newUnmatched);
-      }
-    } else {
-      showImportReviewDialog(enrichResult.withNotes, enrichResult.unmatched);
-    }
+  // Surface a per-item review dialog when PCO data differs from user edits.
+  // Pass pending song reviews so they can be chained after conflict resolution.
+  if (refreshConflicts.length > 0) {
+    showRefreshConflictsDialog(refreshConflicts, pendingWithNotes, pendingUnmatched);
+    return;
+  }
+
+  // No conflicts — go straight to import review if there are new songs to handle.
+  if (pendingWithNotes.length || pendingUnmatched.length) {
+    showImportReviewDialog(pendingWithNotes, pendingUnmatched);
   }
 }
 
@@ -275,136 +292,182 @@ function mapPlanNotesToItems(items, normalizedNotes) {
   });
 }
 
-// ─── Import Review Dialog (FIX 7 & 8) ────────────────────────────────────────
+// ─── Import Review Dialog helpers ────────────────────────────────────────────
+
+// Renders "Songs with PCO Notes" cards into body; returns a selections Map.
+function irmBuildWithNotesSection(body, withNotes) {
+  const selections = new Map();
+  if (!withNotes.length) return selections;
+
+  const h = document.createElement('div');
+  h.className = 'irm-section-label';
+  h.textContent = 'Songs with Planning Center Notes';
+  body.appendChild(h);
+
+  const desc = document.createElement('p');
+  desc.className = 'irm-desc';
+  desc.textContent = 'A match was found in your database for each song below. Choose which version to display in the bulletin:';
+  body.appendChild(desc);
+
+  withNotes.forEach(({ item, pcoNotes, dbMatch }) => {
+    selections.set(item, 'db');
+    const card = document.createElement('div');
+    card.className = 'irm-song-card';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'irm-song-title';
+    titleEl.textContent = item.title;
+    card.appendChild(titleEl);
+
+    const groupName = 'irm-' + Math.random().toString(36).slice(2);
+
+    const { row: row1 } = irmRadioRow(groupName, 'Use lyrics from song database', true, () => selections.set(item, 'db'));
+    card.appendChild(row1);
+    const dbFirstLine = (dbMatch.lyrics || '').split('\n').map(l => l.trim()).find(l => l) || '';
+    if (dbFirstLine) {
+      const prev = document.createElement('div');
+      prev.className = 'irm-preview-text';
+      prev.textContent = '\u201C' + dbFirstLine.slice(0, 90) + (dbFirstLine.length > 90 ? '\u2026' : '') + '\u201D';
+      card.appendChild(prev);
+    }
+
+    const { row: row2 } = irmRadioRow(groupName, 'Keep Planning Center notes', false, () => selections.set(item, 'notes'));
+    card.appendChild(row2);
+    if (pcoNotes) {
+      const prev = document.createElement('div');
+      prev.className = 'irm-preview-text';
+      prev.textContent = '\u201C' + pcoNotes.slice(0, 90) + (pcoNotes.length > 90 ? '\u2026' : '') + '\u201D';
+      card.appendChild(prev);
+    }
+
+    const { row: row3 } = irmRadioRow(groupName, 'Leave blank', false, () => selections.set(item, 'blank'));
+    card.appendChild(row3);
+
+    body.appendChild(card);
+  });
+
+  return selections;
+}
+
+// Renders "Songs Not in Database" cards into body; returns an unmatchedSelections Map.
+function irmBuildUnmatchedSection(body, unmatched) {
+  const unmatchedSelections = new Map();
+  if (!unmatched.length) return unmatchedSelections;
+
+  const h = document.createElement('div');
+  h.className = 'irm-section-label';
+  h.textContent = 'Songs Not in Your Database';
+  body.appendChild(h);
+
+  const desc = document.createElement('p');
+  desc.className = 'irm-desc';
+  desc.textContent = 'These songs were not found in your song database. Paste lyrics inline to use them in this bulletin, or skip to leave them blank.';
+  body.appendChild(desc);
+
+  unmatched.forEach(({ item }) => {
+    unmatchedSelections.set(item, { choice: 'skip', lyrics: '' });
+    const card = document.createElement('div');
+    card.className = 'irm-song-card';
+
+    const titleEl = document.createElement('div');
+    titleEl.className = 'irm-song-title';
+    titleEl.textContent = item.title;
+    card.appendChild(titleEl);
+
+    const groupName = 'irm-u-' + Math.random().toString(36).slice(2);
+
+    const lyricsArea = document.createElement('textarea');
+    lyricsArea.className = 'irm-lyrics-input';
+    lyricsArea.placeholder = 'Paste lyrics here\u2026';
+    lyricsArea.style.display = 'none';
+    lyricsArea.addEventListener('input', () => {
+      unmatchedSelections.get(item).lyrics = lyricsArea.value;
+    });
+
+    const { row: skipRow } = irmRadioRow(groupName, 'Skip (leave blank)', true, () => {
+      unmatchedSelections.get(item).choice = 'skip';
+      lyricsArea.style.display = 'none';
+    });
+    card.appendChild(skipRow);
+
+    const { row: pasteRow } = irmRadioRow(groupName, 'Paste lyrics for this bulletin', false, () => {
+      unmatchedSelections.get(item).choice = 'paste';
+      lyricsArea.style.display = '';
+      setTimeout(() => lyricsArea.focus(), 30);
+    });
+    card.appendChild(pasteRow);
+    card.appendChild(lyricsArea);
+
+    body.appendChild(card);
+  });
+
+  return unmatchedSelections;
+}
+
+// Applies withNotes selections to items[].
+function irmApplyWithNotes(withNotes, selections) {
+  withNotes.forEach(({ item, pcoNotes, dbMatch }) => {
+    const choice = selections.get(item) || 'db';
+    if (choice === 'db') {
+      item.detail = sdbBuildDetail(dbMatch);
+      dbMatch.times_used = (dbMatch.times_used || 0) + 1;
+      dbMatch.last_used  = new Date().toISOString();
+      saveSongDb();
+    } else if (choice === 'notes') {
+      item.detail = pcoNotes;
+    } else {
+      item.detail = '';
+    }
+  });
+}
+
+// Applies unmatched paste/skip selections to items[] and saves to song DB.
+function irmApplyUnmatched(unmatched, unmatchedSelections) {
+  let dbChanged = false;
+  unmatched.forEach(({ item }) => {
+    const sel = unmatchedSelections.get(item);
+    if (sel && sel.choice === 'paste' && sel.lyrics.trim()) {
+      const lyrics = sel.lyrics.trim();
+      item.detail = lyrics;
+
+      // Save to song database so future imports find this song automatically.
+      // Update in-place if a record already exists (e.g. from a manual add).
+      const existingIdx = songDb.findIndex(s => normTitle(s.title) === normTitle(item.title));
+      if (existingIdx >= 0) {
+        songDb[existingIdx].lyrics     = lyrics;
+        songDb[existingIdx].times_used = (songDb[existingIdx].times_used || 0) + 1;
+        songDb[existingIdx].last_used  = new Date().toISOString();
+      } else {
+        songDb.push({
+          title: item.title, author: '', lyrics, copyright: '',
+          source: 'pco-import', date_added: new Date().toISOString(),
+          times_used: 1, last_used: new Date().toISOString(),
+        });
+      }
+      dbChanged = true;
+    }
+  });
+  if (dbChanged) saveSongDb();
+}
+
+// ─── Import Review Dialog ─────────────────────────────────────────────────────
 function showImportReviewDialog(withNotes, unmatched) {
   const body = document.getElementById('irm-body');
   body.innerHTML = '';
 
-  // Per-song selection for notes songs: 'db' | 'notes' | 'blank'
-  const selections = new Map();
+  const selections         = irmBuildWithNotesSection(body, withNotes);
+  const unmatchedSelections = irmBuildUnmatchedSection(body, unmatched);
 
-  // ── Section A: Songs with PCO notes where a DB match also exists ────────────
-  if (withNotes.length) {
-    const h = document.createElement('div');
-    h.className = 'irm-section-label';
-    h.textContent = 'Songs with Planning Center Notes';
-    body.appendChild(h);
-
-    const desc = document.createElement('p');
-    desc.className = 'irm-desc';
-    desc.textContent = 'A match was found in your database for each song below. Choose which version to display in the bulletin:';
-    body.appendChild(desc);
-
-    withNotes.forEach(({ item, pcoNotes, dbMatch }) => {
-      selections.set(item, 'db'); // default: use DB lyrics
-
-      const card = document.createElement('div');
-      card.className = 'irm-song-card';
-
-      const titleEl = document.createElement('div');
-      titleEl.className = 'irm-song-title';
-      titleEl.textContent = item.title;
-      card.appendChild(titleEl);
-
-      const groupName = 'irm-' + Math.random().toString(36).slice(2);
-
-      // Option 1: Use DB lyrics (default)
-      const { row: row1 } = irmRadioRow(groupName, 'Use lyrics from song database', true, () => selections.set(item, 'db'));
-      card.appendChild(row1);
-      const dbFirstLine = (dbMatch.lyrics || '').split('\n').map(l => l.trim()).find(l => l) || '';
-      if (dbFirstLine) {
-        const prev = document.createElement('div');
-        prev.className = 'irm-preview-text';
-        prev.textContent = '\u201C' + dbFirstLine.slice(0, 90) + (dbFirstLine.length > 90 ? '\u2026' : '') + '\u201D';
-        card.appendChild(prev);
-      }
-
-      // Option 2: Keep PCO notes
-      const { row: row2 } = irmRadioRow(groupName, 'Keep Planning Center notes', false, () => selections.set(item, 'notes'));
-      card.appendChild(row2);
-      if (pcoNotes) {
-        const prev = document.createElement('div');
-        prev.className = 'irm-preview-text';
-        prev.textContent = '\u201C' + pcoNotes.slice(0, 90) + (pcoNotes.length > 90 ? '\u2026' : '') + '\u201D';
-        card.appendChild(prev);
-      }
-
-      // Option 3: Leave blank
-      const { row: row3 } = irmRadioRow(groupName, 'Leave blank', false, () => selections.set(item, 'blank'));
-      card.appendChild(row3);
-
-      body.appendChild(card);
-    });
-  }
-
-  // ── Section B: Unmatched songs ───────────────────────────────────────────────
-  if (unmatched.length) {
-    const h = document.createElement('div');
-    h.className = 'irm-section-label';
-    h.textContent = 'Songs Not in Your Database';
-    body.appendChild(h);
-
-    const desc = document.createElement('p');
-    desc.className = 'irm-desc';
-    desc.textContent = 'These songs were not found in your song database. Click \u201CAdd to Database\u201D to add lyrics now.';
-    body.appendChild(desc);
-
-    unmatched.forEach(({ item }) => {
-      const row = document.createElement('div');
-      row.className = 'irm-unmatched-row';
-
-      const nameEl = document.createElement('div');
-      nameEl.className = 'irm-unmatched-name';
-      nameEl.textContent = item.title;
-      row.appendChild(nameEl);
-
-      const addBtn = document.createElement('button');
-      addBtn.className = 'btn-sm btn-sm-primary irm-add-db-btn';
-      addBtn.textContent = 'Add to Database';
-      addBtn.addEventListener('click', () => {
-        closeImportReviewDialog();
-        // Switch to Song DB tab and pre-populate the add-song form
-        document.querySelector('.tab-btn[data-tab="page-songdb"]').click();
-        closeSdbForm();
-        document.getElementById('sdb-form-heading').textContent = 'Add Song';
-        document.getElementById('sdb-title').value     = item.title;
-        document.getElementById('sdb-author').value    = '';
-        document.getElementById('sdb-lyrics').value    = '';
-        document.getElementById('sdb-copyright').value = '';
-        setTimeout(() => {
-          document.getElementById('sdb-title').scrollIntoView({ behavior: 'smooth', block: 'start' });
-          document.getElementById('sdb-title').focus();
-        }, 80);
-      });
-      row.appendChild(addBtn);
-
-      body.appendChild(row);
-    });
-  }
-
-  // ── Wire apply & cancel buttons ──────────────────────────────────────────────
   document.getElementById('irm-apply-btn').onclick = () => {
-    withNotes.forEach(({ item, pcoNotes, dbMatch }) => {
-      const choice = selections.get(item) || 'db';
-      if (choice === 'db') {
-        item.detail = sdbBuildDetail(dbMatch);
-        dbMatch.times_used = (dbMatch.times_used || 0) + 1;
-        dbMatch.last_used  = new Date().toISOString();
-        saveSongDb();
-      } else if (choice === 'notes') {
-        item.detail = pcoNotes;
-      } else {
-        item.detail = '';
-      }
-    });
+    irmApplyWithNotes(withNotes, selections);
+    irmApplyUnmatched(unmatched, unmatchedSelections);
     renderItemList();
     renderPreview();
     scheduleProjectPersist();
     closeImportReviewDialog();
   };
-
-  document.getElementById('irm-cancel-btn').onclick  = closeImportReviewDialog;
-  document.getElementById('irm-close-btn').onclick   = closeImportReviewDialog;
+  document.getElementById('irm-cancel-btn').onclick = closeImportReviewDialog;
+  document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
 
   document.getElementById('irm-title').textContent = 'Review Imported Songs';
   document.getElementById('import-review-modal').style.display = 'flex';
@@ -739,6 +802,7 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/notes`).catch(() => ({ data: [] })),
     ]);
+    savePreImportBackup(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     pcoSetMsg('pco-refresh-msg', `Updated — ${items.length} items refreshed.`, 'success');
     setStatus(`Refreshed from Planning Center (${items.length} items).`, 'success');
@@ -921,10 +985,14 @@ document.getElementById('pco-disconnect-btn').addEventListener('click', async ()
 // ─── Refresh Conflicts Dialog ─────────────────────────────────────────────────
 // Shows a per-item review when a PCO re-import finds that Planning Center has
 // different content for items the user has already edited.
-function showRefreshConflictsDialog(conflicts) {
+// ─── Refresh Conflicts Dialog ─────────────────────────────────────────────────
+// When pendingWithNotes or pendingUnmatched are present they are appended as
+// additional sections in the same dialog so the user only sees one modal.
+function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnmatched = []) {
   const body = document.getElementById('irm-body');
   body.innerHTML = '';
 
+  // ── Conflicts section ────────────────────────────────────────────────────────
   const h = document.createElement('div');
   h.className = 'irm-section-label';
   h.textContent = 'Items with Updated Content from Planning Center';
@@ -935,9 +1003,8 @@ function showRefreshConflictsDialog(conflicts) {
   desc.textContent = 'Planning Center has different content for the items below. Your edits have been kept by default \u2014 choose \u201CUse PCO\u201D for any item you want to override.';
   body.appendChild(desc);
 
-  // Map of idx → 'mine' | 'pco'
-  const selections = new Map();
-  conflicts.forEach(({ idx }) => selections.set(idx, 'mine'));
+  const conflictSelections = new Map();
+  conflicts.forEach(({ idx }) => conflictSelections.set(idx, 'mine'));
 
   conflicts.forEach(({ idx, title, prevDetail, pcoDetail }) => {
     const card = document.createElement('div');
@@ -950,8 +1017,7 @@ function showRefreshConflictsDialog(conflicts) {
 
     const groupName = 'irm-rc-' + Math.random().toString(36).slice(2);
 
-    // Option 1: Keep user's edit (default)
-    const { row: row1 } = irmRadioRow(groupName, 'Keep my current edit', true, () => selections.set(idx, 'mine'));
+    const { row: row1 } = irmRadioRow(groupName, 'Keep my current edit', true, () => conflictSelections.set(idx, 'mine'));
     card.appendChild(row1);
     const prevFirst = prevDetail.split('\n').map(l => l.trim()).find(l => l) || '';
     if (prevFirst) {
@@ -961,8 +1027,7 @@ function showRefreshConflictsDialog(conflicts) {
       card.appendChild(prev);
     }
 
-    // Option 2: Use PCO / DB data
-    const { row: row2 } = irmRadioRow(groupName, 'Use Planning Center data', false, () => selections.set(idx, 'pco'));
+    const { row: row2 } = irmRadioRow(groupName, 'Use Planning Center data', false, () => conflictSelections.set(idx, 'pco'));
     card.appendChild(row2);
     const pcoFirst = pcoDetail.split('\n').map(l => l.trim()).find(l => l) || '';
     if (pcoFirst) {
@@ -975,22 +1040,29 @@ function showRefreshConflictsDialog(conflicts) {
     body.appendChild(card);
   });
 
+  // ── Append song sections inline (no second dialog needed) ────────────────────
+  const withNotesSelections  = irmBuildWithNotesSection(body, pendingWithNotes);
+  const unmatchedSelections  = irmBuildUnmatchedSection(body, pendingUnmatched);
+
+  // ── Wire buttons ─────────────────────────────────────────────────────────────
   document.getElementById('irm-apply-btn').onclick = () => {
     conflicts.forEach(({ idx, pcoDetail }) => {
-      if (selections.get(idx) === 'pco' && items[idx]) {
+      if (conflictSelections.get(idx) === 'pco' && items[idx]) {
         items[idx].detail = pcoDetail;
       }
     });
+    irmApplyWithNotes(pendingWithNotes, withNotesSelections);
+    irmApplyUnmatched(pendingUnmatched, unmatchedSelections);
     renderItemList();
     renderPreview();
     scheduleProjectPersist();
     closeImportReviewDialog();
   };
-
   document.getElementById('irm-cancel-btn').onclick = closeImportReviewDialog;
   document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
 
-  document.getElementById('irm-title').textContent = 'Review Refreshed Plan';
+  const hasExtra = pendingWithNotes.length || pendingUnmatched.length;
+  document.getElementById('irm-title').textContent = hasExtra ? 'Review Imported Plan' : 'Review Refreshed Plan';
   document.getElementById('import-review-modal').style.display = 'flex';
 }
 
