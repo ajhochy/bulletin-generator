@@ -1,0 +1,101 @@
+name: Release
+
+# Triggered by pushing a version tag: git tag v1.09 && git push origin v1.09
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ── Job 1: Build and push Docker image to GHCR ─────────────────────────────
+  docker:
+    name: Docker image → GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # ── Job 2: Build macOS .app and attach to GitHub Release ───────────────────
+  desktop-macos:
+    name: macOS desktop build
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Write desktop_config.py from secrets
+        env:
+          PCO_CLIENT_ID: ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET: ${{ secrets.PCO_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          python - <<'PYEOF'
+          import os
+          lines = [
+              'PCO_CLIENT_ID = "{}"\n'.format(os.environ.get("PCO_CLIENT_ID", "")),
+              'PCO_CLIENT_SECRET = "{}"\n'.format(os.environ.get("PCO_CLIENT_SECRET", "")),
+              'GOOGLE_CLIENT_ID = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_ID", "")),
+              'GOOGLE_CLIENT_SECRET = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_SECRET", "")),
+          ]
+          with open("desktop_config.py", "w") as f:
+              f.writelines(lines)
+          print("desktop_config.py written.")
+          PYEOF
+
+      - name: Build with PyInstaller
+        run: pyinstaller bulletin-generator.spec
+
+      - name: Zip the .app bundle
+        run: |
+          cd dist
+          zip -r "BulletinGenerator-macos-${{ github.ref_name }}.zip" "Bulletin Generator.app"
+
+      - name: Create GitHub Release and upload artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/BulletinGenerator-macos-${{ github.ref_name }}.zip
+          generate_release_notes: true

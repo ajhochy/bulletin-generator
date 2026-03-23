@@ -43,7 +43,13 @@ restoreOnStartup().then(() => {
   initPco();
   initGoogle();
   renderServingTeamSettings();
+  initUpdateSection();
 });
+
+// ─── Update section button wiring ─────────────────────────────────────────────
+document.getElementById('update-check-btn').addEventListener('click', checkForUpdate);
+document.getElementById('update-apply-btn').addEventListener('click', applyUpdate);
+document.getElementById('update-token-save-btn').addEventListener('click', saveWatchtowerToken);
 
 // ─── Calendar button listeners ────────────────────────────────────────────────
 document.getElementById('cal-refresh-btn').addEventListener('click', () => calFetchAll(true));

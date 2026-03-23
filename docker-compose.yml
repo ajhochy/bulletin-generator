@@ -2,12 +2,26 @@ version: "3"
 
 services:
   worship-booklet:
-    build: .
+    image: ghcr.io/ajhochy/bulletin-generator:latest
     env_file:
       - .env
     ports:
       - "8080:8080"
     volumes:
-      # Persists local working data outside the image
       - ./data:/app/data
+    restart: unless-stopped
+    labels:
+      - "com.centurylabs.watchtower.scope=bulletin-generator"
+
+  # Watchtower watches for new images on GHCR and restarts the app container.
+  # The HTTP API allows the in-app "Update Now" button to trigger a pull+restart.
+  # Set WATCHTOWER_HTTP_API_TOKEN in your .env file to a strong secret, and
+  # enter the same value in Settings → App Updates → Watchtower Token.
+  watchtower:
+    image: containrrr/watchtower
+    command: --http-api-update --scope bulletin-generator --cleanup
+    environment:
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped

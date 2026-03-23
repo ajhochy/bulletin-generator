@@ -347,6 +347,8 @@
       <a href="#" class="stg-anchor-link" data-target="stg-serving">Serving Teams</a>
       <span class="stg-anchor-sep">·</span>
       <a href="#" class="stg-anchor-link" data-target="stg-songdb">Song Database</a>
+      <span class="stg-anchor-sep">·</span>
+      <a href="#" class="stg-anchor-link" data-target="stg-updates">App Updates</a>
     </div>
 
     <!-- ── Editor Identity (server mode) ────────────────────────────────── -->
@@ -468,6 +470,42 @@
           <button class="btn-sm" id="song-db-clear-btn" style="color:#c0392b;">Clear All Songs</button>
         </div>
       </div>
+    </div>
+
+    <!-- ── App Updates ──────────────────────────────────────────────────────── -->
+    <div class="stg-group">
+      <div class="stg-group-heading" id="stg-updates">App Updates</div>
+
+      <!-- Current version + check -->
+      <div class="stg-card">
+        <div class="stg-card-label">Current Version</div>
+        <p class="section-hint">Running version <strong id="update-current-version">—</strong>. Check for a newer release on GitHub.</p>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="update-check-btn">Check for Updates</button>
+        </div>
+        <div id="update-status-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+      </div>
+
+      <!-- Update available banner (hidden until check returns hasUpdate: true) -->
+      <div class="stg-card update-available-card" id="update-banner" style="display:none;">
+        <div class="stg-card-label">Update Available</div>
+        <p class="section-hint">Version <strong id="update-latest-version">—</strong> is available.</p>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="update-apply-btn" style="display:none;">Update Now</button>
+        </div>
+      </div>
+
+      <!-- Watchtower token (server mode only — hidden in desktop mode by JS) -->
+      <div class="stg-card" id="update-token-card">
+        <div class="stg-card-label">Watchtower Token</div>
+        <p class="section-hint">Required for server-mode in-app updates. Set the same value as <code>WATCHTOWER_HTTP_API_TOKEN</code> in your <code>.env</code> file.</p>
+        <input type="password" id="update-watchtower-token" placeholder="Enter Watchtower API token"
+               style="width:100%;box-sizing:border-box;padding:0.25rem 0.4rem;font-size:0.78rem;border:1px solid var(--border);border-radius:var(--radius);margin-top:0.15rem;" />
+        <div class="stg-btn-row" style="margin-top:0.4rem;">
+          <button class="btn-sm btn-sm-primary" id="update-token-save-btn">Save Token</button>
+        </div>
+      </div>
+
     </div>
 
   </div>
@@ -595,6 +633,7 @@
 <script src="src/js/propresenter.js"></script>
 <script src="src/js/projects.js"></script>
 <script src="src/js/pco.js"></script>
+<script src="src/js/update.js"></script>
 <script src="src/js/app.js"></script>
 </body>
 </html>

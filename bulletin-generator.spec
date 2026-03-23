@@ -73,8 +73,8 @@ app = BUNDLE(
     info_plist={
         'CFBundleName':             'Bulletin Generator',
         'CFBundleDisplayName':      'Bulletin Generator',
-        'CFBundleVersion':          '1.0.4',
-        'CFBundleShortVersionString': '1.0.4',
+        'CFBundleVersion':          '1.08',
+        'CFBundleShortVersionString': '1.08',
         'NSHighResolutionCapable':  True,
         'LSBackgroundOnly':         False,
         'NSHumanReadableCopyright': 'Bulletin Generator',
