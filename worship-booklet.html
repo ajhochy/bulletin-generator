@@ -8854,29 +8854,9 @@ async function googleLoadCalendarList() {
   }
 }
 
-// Desktop: clicking Connect Planning Center navigates to OAuth start
-// Server: clicking Retry Connection checks if credentials are now working
-document.getElementById('pco-connect-btn').addEventListener('click', async () => {
-  if (isDesktopMode()) {
-    window.location.href = '/oauth/pco/start';
-    return;
-  }
-  // Server mode — retry Basic auth check
-  const btn = document.getElementById('pco-connect-btn');
-  btn.disabled = true;
-  btn.textContent = 'Checking…';
-  pcoSetMsg('pco-creds-msg', '');
-  try {
-    await pcoGet('/service_types?per_page=1');
-    _publicConfig.pcoConfigured = true;
-    pcoShowImportView();
-    pcoLoadServiceTypes();
-  } catch (err) {
-    pcoSetMsg('pco-creds-msg', err.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Retry Connection';
-  }
+// Clicking Connect Planning Center navigates to OAuth start
+document.getElementById('pco-connect-btn').addEventListener('click', () => {
+  window.location.href = '/oauth/pco/start';
 });
 
 document.getElementById('pco-disconnect-btn').addEventListener('click', async () => {
