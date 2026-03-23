@@ -46,6 +46,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: APP_VERSION=${{ github.ref_name }}
 
   # ── Job 2: Build, sign, notarize macOS .app and attach to GitHub Release ───
   desktop-macos:

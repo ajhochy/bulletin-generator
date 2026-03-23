@@ -18,5 +18,8 @@ COPY . .
 # Ensure the data directory exists (will be overridden by volume mount in prod)
 RUN mkdir -p /app/data
 
+ARG APP_VERSION=1.09
+ENV APP_VERSION=$APP_VERSION
+
 EXPOSE 8080
 CMD ["python", "server.py"]
