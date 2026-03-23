@@ -107,7 +107,7 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
       pcoGet(`/service_types/${stId}/plans/${planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${stId}/plans/${planId}/notes`).catch(() => ({ data: [] })),
     ]);
-    autosaveProjectState(); // snapshot pre-import state before overwriting
+    savePreImportBackup(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     const planLabel = document.getElementById('pco-plan-sel').selectedOptions[0]?.text || planId;
     pcoSaveLastImport(stId, planId, planLabel);
@@ -232,24 +232,25 @@ function applyPcoData(planResp, itemsResp, notesResp) {
   renderPreview();
   scheduleProjectPersist();
 
-  // Surface a per-item review dialog when PCO data differs from user edits.
-  if (refreshConflicts.length > 0) {
-    showRefreshConflictsDialog(refreshConflicts);
-    return; // skip the normal import-review dialog — conflicts take priority
+  // Compute new songs that need review (songs not present in the pre-import state)
+  let pendingWithNotes = enrichResult.withNotes;
+  let pendingUnmatched = enrichResult.unmatched;
+  if (prevItems.length > 0) {
+    const prevKeys = new Set(prevItems.map(ex => ex.type + '|' + normTitle(ex.title)));
+    pendingWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
+    pendingUnmatched = enrichResult.unmatched.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
   }
 
-  // Only surface the import-review dialog for songs not present in the previous import
-  if (enrichResult.withNotes.length || enrichResult.unmatched.length) {
-    if (prevItems.length > 0) {
-      const prevKeys = new Set(prevItems.map(ex => ex.type + '|' + normTitle(ex.title)));
-      const newWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
-      const newUnmatched = enrichResult.unmatched.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
-      if (newWithNotes.length || newUnmatched.length) {
-        showImportReviewDialog(newWithNotes, newUnmatched);
-      }
-    } else {
-      showImportReviewDialog(enrichResult.withNotes, enrichResult.unmatched);
-    }
+  // Surface a per-item review dialog when PCO data differs from user edits.
+  // Pass pending song reviews so they can be chained after conflict resolution.
+  if (refreshConflicts.length > 0) {
+    showRefreshConflictsDialog(refreshConflicts, pendingWithNotes, pendingUnmatched);
+    return;
+  }
+
+  // No conflicts — go straight to import review if there are new songs to handle.
+  if (pendingWithNotes.length || pendingUnmatched.length) {
+    showImportReviewDialog(pendingWithNotes, pendingUnmatched);
   }
 }
 
@@ -759,7 +760,7 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/items?include=song&per_page=100`),
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/notes`).catch(() => ({ data: [] })),
     ]);
-    autosaveProjectState(); // snapshot pre-import state before overwriting
+    savePreImportBackup(); // snapshot pre-import state before overwriting
     applyPcoData(planResp, itemsResp, notesResp);
     pcoSetMsg('pco-refresh-msg', `Updated — ${items.length} items refreshed.`, 'success');
     setStatus(`Refreshed from Planning Center (${items.length} items).`, 'success');
@@ -942,7 +943,7 @@ document.getElementById('pco-disconnect-btn').addEventListener('click', async ()
 // ─── Refresh Conflicts Dialog ─────────────────────────────────────────────────
 // Shows a per-item review when a PCO re-import finds that Planning Center has
 // different content for items the user has already edited.
-function showRefreshConflictsDialog(conflicts) {
+function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnmatched = []) {
   const body = document.getElementById('irm-body');
   body.innerHTML = '';
 
@@ -1006,10 +1007,24 @@ function showRefreshConflictsDialog(conflicts) {
     renderPreview();
     scheduleProjectPersist();
     closeImportReviewDialog();
+    // Chain to import review dialog if there are new unmatched/withNotes songs
+    if (pendingWithNotes.length || pendingUnmatched.length) {
+      showImportReviewDialog(pendingWithNotes, pendingUnmatched);
+    }
   };
 
-  document.getElementById('irm-cancel-btn').onclick = closeImportReviewDialog;
-  document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
+  document.getElementById('irm-cancel-btn').onclick = () => {
+    closeImportReviewDialog();
+    if (pendingWithNotes.length || pendingUnmatched.length) {
+      showImportReviewDialog(pendingWithNotes, pendingUnmatched);
+    }
+  };
+  document.getElementById('irm-close-btn').onclick  = () => {
+    closeImportReviewDialog();
+    if (pendingWithNotes.length || pendingUnmatched.length) {
+      showImportReviewDialog(pendingWithNotes, pendingUnmatched);
+    }
+  };
 
   document.getElementById('irm-title').textContent = 'Review Refreshed Plan';
   document.getElementById('import-review-modal').style.display = 'flex';

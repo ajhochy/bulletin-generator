@@ -249,6 +249,33 @@ function saveCurrentProject(saveAs = false) {
   setStatus(`Saved "${project.name}".`, 'success');
 }
 
+// Silently saves a snapshot of the current state before a PCO import.
+// Creates a new project named "<current name> — pre-import" without changing
+// the active project, so the user can revert from the Browse projects list.
+// If a backup with that name already exists it is updated in-place.
+function savePreImportBackup() {
+  if (!items.length) return; // nothing worth backing up
+  const state = collectCurrentProjectState();
+  const ts = nowIso();
+  const currentName = (activeProjectId && projectById(activeProjectId)?.name)
+                    || bulletinTitleInput.value.trim()
+                    || suggestedProjectName();
+  const backupName = currentName + ' — pre-import';
+
+  // Update existing backup rather than accumulating duplicates
+  const existing = projects.find(p => p.name === backupName);
+  if (existing) {
+    existing.state = state;
+    existing.updatedAt = ts;
+    saveProjectToServer(existing);
+  } else {
+    const project = { id: generateProjectId(), name: backupName, createdAt: ts, updatedAt: ts, state };
+    projects.push(project); // append to end so it doesn't displace the active project
+    saveProjectToServer(project);
+  }
+  renderProjectSelect();
+}
+
 function saveNewVersion() {
   const state = collectCurrentProjectState();
   const ts = nowIso();
