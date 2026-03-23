@@ -13,15 +13,15 @@ services:
     labels:
       - "com.centurylabs.watchtower.scope=bulletin-generator"
 
-  # Watchtower watches for new images on GHCR and restarts the app container.
-  # The HTTP API allows the in-app "Update Now" button to trigger a pull+restart.
-  # Set WATCHTOWER_HTTP_API_TOKEN in your .env file to a strong secret, and
-  # enter the same value in Settings → App Updates → Watchtower Token.
+  # Watchtower watches GHCR for new images and restarts the app container.
+  # It is only reachable within the private Docker network — never exposed
+  # externally — so the shared default token is safe for typical deployments.
+  # Advanced users can override WATCHTOWER_TOKEN in .env.
   watchtower:
     image: containrrr/watchtower
     command: --http-api-update --scope bulletin-generator --cleanup
     environment:
-      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_HTTP_API_TOKEN}
+      - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-bulletin-updater}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped

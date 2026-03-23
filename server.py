@@ -54,10 +54,14 @@ ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
 
 # ── App version and update config ──────────────────────────────────────────────
-APP_VERSION   = "1.08"
-GITHUB_REPO   = "ajhochy/bulletin-generator"
-# Watchtower HTTP API — default matches the service name in docker-compose.yml
-WATCHTOWER_URL = os.environ.get("WATCHTOWER_URL", "http://watchtower:8080/v1/update")
+APP_VERSION    = "1.08"
+GITHUB_REPO    = "ajhochy/bulletin-generator"
+# Watchtower HTTP API — internal Docker network only, never exposed externally.
+# Token is a shared default between the app and the Watchtower sidecar in
+# docker-compose.yml. Advanced deployments can override via WATCHTOWER_URL /
+# WATCHTOWER_TOKEN env vars.
+WATCHTOWER_URL   = os.environ.get("WATCHTOWER_URL",   "http://watchtower:8080/v1/update")
+WATCHTOWER_TOKEN = os.environ.get("WATCHTOWER_TOKEN", "bulletin-updater")
 
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 GOOGLE_CAL_API  = 'https://www.googleapis.com/calendar/v3'
@@ -1248,17 +1252,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _apply_update_server(self):
         """Trigger Watchtower to pull the latest image and restart the container."""
-        settings = _read_json(SETTINGS_FILE, {})
-        token = settings.get("watchtowerToken", "").strip()
-        if not token:
-            self._send_json({"error": "Watchtower token not configured. Add it in Settings → App Updates."}, 400)
-            return
         try:
             req = urllib.request.Request(
                 WATCHTOWER_URL,
                 data=b"",
                 headers={
-                    "Authorization": f"Bearer {token}",
+                    "Authorization": f"Bearer {WATCHTOWER_TOKEN}",
                     "Content-Type": "application/json",
                 },
                 method="POST",

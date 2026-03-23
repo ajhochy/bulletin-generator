@@ -10,16 +10,6 @@
 function initUpdateSection() {
   const versionEl = document.getElementById('update-current-version');
   if (versionEl) versionEl.textContent = _publicConfig.appVersion || '—';
-
-  // Watchtower token field is server-mode only
-  const tokenCard = document.getElementById('update-token-card');
-  if (tokenCard) tokenCard.style.display = isServerMode() ? '' : 'none';
-
-  // Pre-fill saved token
-  const tokenInput = document.getElementById('update-watchtower-token');
-  if (tokenInput && _serverSettings.watchtowerToken) {
-    tokenInput.value = _serverSettings.watchtowerToken;
-  }
 }
 
 // ── Check for update ───────────────────────────────────────────────────────────
@@ -143,17 +133,3 @@ function _pollForRestart() {
   }, interval);
 }
 
-// ── Save Watchtower token ──────────────────────────────────────────────────────
-
-async function saveWatchtowerToken() {
-  const input = document.getElementById('update-watchtower-token');
-  if (!input) return;
-  const token = input.value.trim();
-  try {
-    await apiFetch('/api/settings', 'POST', { watchtowerToken: token || null });
-    _serverSettings.watchtowerToken = token || undefined;
-    setStatus('Watchtower token saved.', 'success');
-  } catch (e) {
-    setStatus('Failed to save Watchtower token.', 'error');
-  }
-}
