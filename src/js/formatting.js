@@ -40,7 +40,10 @@ function buildItemFmtToolbar(item, idx) {
       sw.addEventListener('click', () => {
         if (!items[idx]) return;
         if (!items[idx]._fmt) items[idx]._fmt = {};
-        items[idx]._fmt[fmtKey] = val;
+        // Delete the key when resetting to default ('') so type-level
+        // format defaults are not blocked by a stale empty override.
+        if (val === '') { delete items[idx]._fmt[fmtKey]; }
+        else            { items[idx]._fmt[fmtKey] = val;  }
         swatches.forEach(s => s.classList.remove('fmt-active'));
         sw.classList.add('fmt-active');
         schedulePreviewUpdate();
@@ -59,7 +62,10 @@ function buildItemFmtToolbar(item, idx) {
       ab.addEventListener('click', () => {
         if (!items[idx]) return;
         if (!items[idx]._fmt) items[idx]._fmt = {};
-        items[idx]._fmt[fmtKey] = val;
+        // Delete the key when resetting to default ('') so type-level
+        // format defaults are not blocked by a stale empty override.
+        if (val === '') { delete items[idx]._fmt[fmtKey]; }
+        else            { items[idx]._fmt[fmtKey] = val;  }
         btns.forEach(b => b.classList.remove('fmt-active'));
         ab.classList.add('fmt-active');
         schedulePreviewUpdate();
@@ -83,7 +89,10 @@ function buildItemFmtToolbar(item, idx) {
     sel.addEventListener('change', () => {
       if (!items[idx]) return;
       if (!items[idx]._fmt) items[idx]._fmt = {};
-      items[idx]._fmt[fmtKey] = sel.value;
+      // Delete the key when resetting to default ('') so type-level
+      // format defaults are not blocked by a stale empty override.
+      if (sel.value === '') { delete items[idx]._fmt[fmtKey]; }
+      else                  { items[idx]._fmt[fmtKey] = sel.value; }
       schedulePreviewUpdate();
       scheduleProjectPersist();
     });
