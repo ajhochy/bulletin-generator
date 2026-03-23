@@ -114,10 +114,6 @@
         <label for="svc-date">Date</label>
         <input type="text" id="svc-date" placeholder="e.g. January 5, 2025" />
       </div>
-      <div class="field-row">
-        <label for="svc-church">Church Name</label>
-        <input type="text" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church" />
-      </div>
     </div>
 
     <!-- Cover Image -->
@@ -365,6 +361,13 @@
     <!-- ── Church Branding ──────────────────────────────────────────────── -->
     <div class="stg-group">
       <div class="stg-group-heading" id="stg-branding">Church Branding</div>
+
+      <div class="stg-card">
+        <div class="stg-card-label">Church Name</div>
+        <p class="section-hint">Appears on the bulletin cover. Set once here and it carries across all bulletins automatically.</p>
+        <input type="text" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church"
+               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      </div>
 
       <div class="stg-card">
         <div class="stg-card-label">Give Online URL</div>

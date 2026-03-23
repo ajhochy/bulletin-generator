@@ -273,6 +273,12 @@ function applyPcoData(planResp, itemsResp, notesResp) {
 
 // Convert raw PCO notes response into a flat normalized array.
 function normalizePlanNotes(notesResp) {
+  // Guard against null/undefined, non-objects, or a raw array being passed
+  // instead of the expected { data: [...] } JSON:API envelope.
+  if (!notesResp || typeof notesResp !== 'object' || Array.isArray(notesResp)) {
+    console.warn('normalizePlanNotes: unexpected input shape', notesResp);
+    return [];
+  }
   return (notesResp.data || []).map(note => {
     const a = note.attributes || {};
     const title = (a.category_name || '').trim();

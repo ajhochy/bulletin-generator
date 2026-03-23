@@ -113,7 +113,7 @@ async function saveProjectToServer(project) {
       reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
       banner.appendChild(reloadLink);
     } else {
-      setStatus('Could not save project to server.', 'error');
+      setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
     }
   }
 }
@@ -388,7 +388,7 @@ function clearEditorForNewProject() {
   activeProjectId = '';
   svcTitle.value = '';
   svcDate.value = '';
-  svcChurch.value = '';
+  svcChurch.value = _serverSettings.churchName || ''; // inherit org-level default
   servingSchedule = null;
   volRender();
   optCover.checked = true;
@@ -445,6 +445,7 @@ async function restoreOnStartup() {
 
   // Always restore global logo from server settings first
   restoreDefaultStaffLogo();
+  restoreChurchName();
   restoreGiveOnlineUrl();
   restoreEditorIdentity();
 
