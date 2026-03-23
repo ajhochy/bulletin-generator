@@ -267,7 +267,13 @@ function _getArrangementOrderedLyrics(pres) {
       if (sectionTexts.length) {
         const label = cueGroup.groupName || '';
         const showLabel = label && HEADING_RE.test(label);
-        ordered.push((showLabel ? label + '\n' : '') + sectionTexts.join('\n'));
+        // Merge consecutive groups that share the same label (e.g. two "Verse 1" slides)
+        const lastLabel = ordered.length > 0 ? ordered[ordered.length - 1].split('\n')[0] : null;
+        if (label && lastLabel === label) {
+          ordered[ordered.length - 1] += '\n' + sectionTexts.join('\n');
+        } else {
+          ordered.push((showLabel ? label + '\n' : '') + sectionTexts.join('\n'));
+        }
       }
     }
   }
@@ -374,7 +380,15 @@ function _parsePropresenterXml(filename, xmlText) {
       });
       if (lines.length) slideTexts.push(lines.join('\n'));
     });
-    if (slideTexts.length) lyricSections.push((sectionName ? sectionName + '\n' : '') + slideTexts.join('\n'));
+    if (slideTexts.length) {
+      // Merge consecutive groups that share the same label (e.g. two "Verse 1" slides)
+      const lastLabel = lyricSections.length > 0 ? lyricSections[lyricSections.length - 1].split('\n')[0] : null;
+      if (sectionName && lastLabel === sectionName) {
+        lyricSections[lyricSections.length - 1] += '\n' + slideTexts.join('\n');
+      } else {
+        lyricSections.push((sectionName ? sectionName + '\n' : '') + slideTexts.join('\n'));
+      }
+    }
   });
 
   return {
