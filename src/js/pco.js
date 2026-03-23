@@ -421,14 +421,33 @@ function irmApplyWithNotes(withNotes, selections) {
   });
 }
 
-// Applies unmatched paste/skip selections to items[].
+// Applies unmatched paste/skip selections to items[] and saves to song DB.
 function irmApplyUnmatched(unmatched, unmatchedSelections) {
+  let dbChanged = false;
   unmatched.forEach(({ item }) => {
     const sel = unmatchedSelections.get(item);
     if (sel && sel.choice === 'paste' && sel.lyrics.trim()) {
-      item.detail = sel.lyrics.trim();
+      const lyrics = sel.lyrics.trim();
+      item.detail = lyrics;
+
+      // Save to song database so future imports find this song automatically.
+      // Update in-place if a record already exists (e.g. from a manual add).
+      const existingIdx = songDb.findIndex(s => normTitle(s.title) === normTitle(item.title));
+      if (existingIdx >= 0) {
+        songDb[existingIdx].lyrics     = lyrics;
+        songDb[existingIdx].times_used = (songDb[existingIdx].times_used || 0) + 1;
+        songDb[existingIdx].last_used  = new Date().toISOString();
+      } else {
+        songDb.push({
+          title: item.title, author: '', lyrics, copyright: '',
+          source: 'pco-import', date_added: new Date().toISOString(),
+          times_used: 1, last_used: new Date().toISOString(),
+        });
+      }
+      dbChanged = true;
     }
   });
+  if (dbChanged) saveSongDb();
 }
 
 // ─── Import Review Dialog ─────────────────────────────────────────────────────
