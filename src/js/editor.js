@@ -53,6 +53,12 @@ function restoreGiveOnlineUrl() {
 }
 
 function restoreEditorIdentity() {
+  if (isServerMode()) {
+    try {
+      const local = localStorage.getItem('editorDisplayName');
+      if (local) _editorDisplayName = local;
+    } catch (_) {}
+  }
   if (_editorDisplayName) editorDisplayNameInput.value = _editorDisplayName;
   applyIdentitySectionVisibility();
 }
@@ -106,7 +112,11 @@ function applyIdentitySectionVisibility() {
 }
 editorDisplayNameInput.addEventListener('input', () => {
   _editorDisplayName = editorDisplayNameInput.value.trim();
-  apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {});
+  if (isServerMode()) {
+    try { localStorage.setItem('editorDisplayName', _editorDisplayName); } catch (_) {}
+  } else {
+    apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {});
+  }
 });
 
 // ─── PDF text extraction ──────────────────────────────────────────────────────
