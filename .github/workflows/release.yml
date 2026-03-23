@@ -7,7 +7,7 @@ on:
       - 'v*'
 
 env:
-  REGISTRY: ghcr.io
+  REGISTRY:   ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-  # ── Job 2: Build macOS .app and attach to GitHub Release ───────────────────
+  # ── Job 2: Build, sign, notarize macOS .app and attach to GitHub Release ───
   desktop-macos:
     name: macOS desktop build
     runs-on: macos-latest
@@ -68,9 +68,9 @@ jobs:
 
       - name: Write desktop_config.py from secrets
         env:
-          PCO_CLIENT_ID: ${{ secrets.PCO_CLIENT_ID }}
-          PCO_CLIENT_SECRET: ${{ secrets.PCO_CLIENT_SECRET }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          PCO_CLIENT_ID:      ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET:  ${{ secrets.PCO_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID:   ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
           python - <<'PYEOF'
@@ -89,9 +89,73 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller bulletin-generator.spec
 
-      - name: Zip the .app bundle
+      # ── Code signing ────────────────────────────────────────────────────────
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE:          ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          # Create a temporary keychain so CI secrets never touch the login keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Decode and import the certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+      - name: Sign the .app bundle
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          codesign --deep --force --verify --verbose \
+            --sign "Developer ID Application: $(security find-certificate -c 'Developer ID Application' -p | openssl x509 -noout -subject | sed 's/.*CN=//;s/,.*//')" \
+            --options runtime \
+            --entitlements entitlements.plist \
+            "dist/Bulletin Generator.app"
+          echo "Code signing complete."
+          codesign --verify --deep --strict "dist/Bulletin Generator.app"
+
+      # ── Notarization ────────────────────────────────────────────────────────
+      - name: Zip the signed .app for notarization
         run: |
           cd dist
+          zip -r "BulletinGenerator-macos-${{ github.ref_name }}.zip" "Bulletin Generator.app"
+
+      - name: Notarize with Apple
+        env:
+          APPLE_NOTARY_KEY_ID:      ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_KEY_ISSUER:  ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
+          APPLE_NOTARY_KEY_CONTENT: ${{ secrets.APPLE_NOTARY_KEY_CONTENT }}
+        run: |
+          # Write the App Store Connect API key to a temp file
+          KEY_PATH="$RUNNER_TEMP/notary-key.p8"
+          echo "$APPLE_NOTARY_KEY_CONTENT" > "$KEY_PATH"
+
+          xcrun notarytool submit \
+            "dist/BulletinGenerator-macos-${{ github.ref_name }}.zip" \
+            --key        "$KEY_PATH" \
+            --key-id     "$APPLE_NOTARY_KEY_ID" \
+            --issuer     "$APPLE_NOTARY_KEY_ISSUER" \
+            --wait \
+            --timeout 15m
+
+      - name: Staple notarization ticket to the .app
+        run: |
+          xcrun stapler staple "dist/Bulletin Generator.app"
+          xcrun stapler validate "dist/Bulletin Generator.app"
+
+      - name: Re-zip the stapled .app
+        run: |
+          cd dist
+          rm "BulletinGenerator-macos-${{ github.ref_name }}.zip"
           zip -r "BulletinGenerator-macos-${{ github.ref_name }}.zip" "Bulletin Generator.app"
 
       - name: Create GitHub Release and upload artifact
