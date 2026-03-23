@@ -115,18 +115,12 @@ def _parse_list_env(name):
 
 
 def _pco_auth_header():
-    # Desktop mode: use stored OAuth access token if available
+    """Return the OAuth Bearer header from stored access token, or None."""
     settings = _read_json(SETTINGS_FILE, {})
     access_token = settings.get('pcoAccessToken', '').strip()
     if access_token:
         return f'Bearer {access_token}'
-    # Server mode fallback: Basic auth from environment
-    app_id = os.environ.get("PCO_APP_ID", "").strip()
-    secret = os.environ.get("PCO_SECRET", "").strip()
-    if not app_id or not secret:
-        return None
-    token = base64.b64encode(f"{app_id}:{secret}".encode("utf-8")).decode("ascii")
-    return f"Basic {token}"
+    return None
 
 
 def _refresh_pco_token():
@@ -886,15 +880,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         self._send_json({"error": "not found"}, 404)
 
-    # ── PCO OAuth (desktop mode) ───────────────────────────────────────────────
+    # ── PCO OAuth ──────────────────────────────────────────────────────────────
 
     def _handle_pco_oauth_start(self):
         client_id = os.environ.get('PCO_CLIENT_ID', '').strip()
         if not client_id:
-            self._send_json({'error': 'PCO OAuth credentials not configured in desktop build.'}, 503)
+            self._send_json({'error': 'PCO OAuth credentials not configured.'}, 503)
             return
-        port = self.server.server_address[1]
-        redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
+        app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
+        if app_url:
+            redirect_uri = f'{app_url}/oauth/pco/callback'
+        else:
+            port = self.server.server_address[1]
+            redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
         params = urllib.parse.urlencode({
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
@@ -917,8 +915,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
         client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
-        port          = self.server.server_address[1]
-        redirect_uri  = f'http://localhost:{port}/oauth/pco/callback'
+        app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
+        if app_url:
+            redirect_uri = f'{app_url}/oauth/pco/callback'
+        else:
+            port = self.server.server_address[1]
+            redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
 
         try:
             token_data = urllib.parse.urlencode({

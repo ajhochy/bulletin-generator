@@ -830,17 +830,10 @@ function initPco() {
   const discBtn = document.getElementById('pco-disconnect-btn');
   const badge   = document.getElementById('pco-connected-badge');
 
-  if (isDesktopMode()) {
-    connBtn.textContent = 'Connect Planning Center';
-    if (badge) badge.textContent = 'Connected';
-    if (discBtn) discBtn.style.display = '';
-    if (hint) hint.textContent = 'Sign in to Planning Center using the app connection to import your service plans.';
-  } else {
-    connBtn.textContent = 'Retry Connection';
-    if (badge) badge.textContent = 'Server Configured';
-    if (discBtn) discBtn.style.display = 'none';
-    if (hint) hint.textContent = 'Planning Center access is configured on the local server with PCO_APP_ID and PCO_SECRET. Update the server environment, restart it, then retry.';
-  }
+  connBtn.textContent = 'Connect Planning Center';
+  if (badge) badge.textContent = 'Connected';
+  if (discBtn) discBtn.style.display = '';
+  if (hint) hint.textContent = 'Sign in to Planning Center to import your service plans.';
 
   if (_publicConfig.pcoConfigured) {
     pcoShowImportView();
