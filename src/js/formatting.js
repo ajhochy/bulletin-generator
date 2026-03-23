@@ -40,7 +40,10 @@ function buildItemFmtToolbar(item, idx) {
       sw.addEventListener('click', () => {
         if (!items[idx]) return;
         if (!items[idx]._fmt) items[idx]._fmt = {};
-        items[idx]._fmt[fmtKey] = val;
+        // Delete the key when resetting to default ('') so type-level
+        // format defaults are not blocked by a stale empty override.
+        if (val === '') { delete items[idx]._fmt[fmtKey]; }
+        else            { items[idx]._fmt[fmtKey] = val;  }
         swatches.forEach(s => s.classList.remove('fmt-active'));
         sw.classList.add('fmt-active');
         schedulePreviewUpdate();
@@ -52,10 +55,16 @@ function buildItemFmtToolbar(item, idx) {
   }
 
   function mkAlignBtns(fmtKey, rowEl) {
-    const alignDefs = [['', 'L', 'Left align'], ['center', 'C', 'Center'], ['right', 'R', 'Right align']];
+    // Use explicit 'left' (not '') so a per-item Left choice is a real override
+    // that wins over a type-level Center/Right default. The empty string '' is
+    // still treated as "no override" by getEffectiveFmt (truthy check), so old
+    // saved '' values continue to fall through to the type default.
+    const alignDefs = [['left', 'L', 'Left align'], ['center', 'C', 'Center'], ['right', 'R', 'Right align']];
     const btns = [];
+    // Current effective alignment for active-state highlight
+    const curVal = fmt[fmtKey] || '';
     alignDefs.forEach(([val, lbl, ttl]) => {
-      const ab = mkBtn(lbl, '', ttl, (fmt[fmtKey] || '') === val);
+      const ab = mkBtn(lbl, '', ttl, curVal === val);
       ab.addEventListener('click', () => {
         if (!items[idx]) return;
         if (!items[idx]._fmt) items[idx]._fmt = {};
@@ -83,7 +92,10 @@ function buildItemFmtToolbar(item, idx) {
     sel.addEventListener('change', () => {
       if (!items[idx]) return;
       if (!items[idx]._fmt) items[idx]._fmt = {};
-      items[idx]._fmt[fmtKey] = sel.value;
+      // Delete the key when resetting to default ('') so type-level
+      // format defaults are not blocked by a stale empty override.
+      if (sel.value === '') { delete items[idx]._fmt[fmtKey]; }
+      else                  { items[idx]._fmt[fmtKey] = sel.value; }
       schedulePreviewUpdate();
       scheduleProjectPersist();
     });

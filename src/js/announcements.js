@@ -177,7 +177,7 @@ function annFmtBold(ta) {
     ta.setRangeText(`**${sel}**`, start, end, 'select');
   }
   ta.focus();
-  ta.dispatchEvent(new Event('input'));
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 function annFmtBullet(ta) {
@@ -192,7 +192,7 @@ function annFmtBullet(ta) {
   }).join('\n');
   ta.setRangeText(toggled, lineStart, lineEnd === -1 ? ta.value.length : lineEnd, 'end');
   ta.focus();
-  ta.dispatchEvent(new Event('input'));
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // Insert *italic* markers around selected text in a textarea
@@ -209,7 +209,7 @@ function fmtItalic(ta) {
     ta.setRangeText(`*${sel}*`, start, end, 'select');
   }
   ta.focus();
-  ta.dispatchEvent(new Event('input'));
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
 // ─── Per-item formatting toolbar ──────────────────────────────────────────────

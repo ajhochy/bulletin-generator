@@ -36,12 +36,15 @@
       padding: 0;
       overflow: hidden;
       display: block;
+      /* Lock to exact page height so preview crop matches PDF output */
+      height: var(--doc-page-h);
     }
     .cover-full-img {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
+      background: #fff;
     }
     .cover-cross { font-size: 2rem; color: #333; margin-bottom: 1.1rem; }
     .cover-church {

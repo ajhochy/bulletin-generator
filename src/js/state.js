@@ -66,19 +66,23 @@ function saveTypeFormats() {
   apiFetch('/api/settings', 'POST', { typeFormats }).catch(() => {});
 }
 
-// Merge per-type default with per-item override (_fmt); item-level wins
+// Merge per-type default with per-item override (_fmt); item-level wins.
+// For boolean flags (titleBold/titleItalic) an explicit false is meaningful,
+// so we check !== undefined. For string properties the empty string '' means
+// "reset to default", so we use a truthy check — this ensures stale ''
+// overrides in saved projects don't silently block type-level formatting.
 function getEffectiveFmt(item) {
   const base = typeFormats[item.type] || {};
   const over = item._fmt || {};
   return {
     titleBold:   over.titleBold   !== undefined ? over.titleBold   : (base.titleBold   || false),
     titleItalic: over.titleItalic !== undefined ? over.titleItalic : (base.titleItalic || false),
-    titleAlign:  over.titleAlign  !== undefined ? over.titleAlign  : (base.titleAlign  || ''),
-    titleSize:   over.titleSize   !== undefined ? over.titleSize   : (base.titleSize   || ''),
-    titleColor:  over.titleColor  !== undefined ? over.titleColor  : (base.titleColor  || ''),
-    bodyAlign:   over.bodyAlign   !== undefined ? over.bodyAlign   : (base.bodyAlign   || ''),
-    bodySize:    over.bodySize    !== undefined ? over.bodySize    : (base.bodySize    || ''),
-    bodyColor:   over.bodyColor   !== undefined ? over.bodyColor   : (base.bodyColor   || ''),
+    titleAlign:  over.titleAlign  || base.titleAlign  || '',
+    titleSize:   over.titleSize   || base.titleSize   || '',
+    titleColor:  over.titleColor  || base.titleColor  || '',
+    bodyAlign:   over.bodyAlign   || base.bodyAlign   || '',
+    bodySize:    over.bodySize    || base.bodySize    || '',
+    bodyColor:   over.bodyColor   || base.bodyColor   || '',
   };
 }
 const CAL_CACHE_MS   = 15 * 60 * 1000;

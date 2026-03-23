@@ -548,6 +548,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 
+    def _serve_nocache_static(self):
+        """Serve a static file with Cache-Control: no-store so JS/CSS changes
+        are always picked up immediately without a hard browser refresh."""
+        rel = self.path.split("?")[0].lstrip("/")
+        file_path = BASE_DIR / rel
+        try:
+            data = file_path.read_bytes()
+        except (FileNotFoundError, IsADirectoryError):
+            self.send_response(404)
+            self.end_headers()
+            return
+        ext = file_path.suffix.lower()
+        ctype = "text/javascript; charset=utf-8" if ext == ".js" else "text/css; charset=utf-8"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -651,9 +671,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_cal()
             return
 
-        # Serve static files (CSS, JS, images) from BASE_DIR via SimpleHTTPRequestHandler
+        # Serve static files (CSS, JS, images) from BASE_DIR via SimpleHTTPRequestHandler.
+        # JS and CSS files get no-store so browser always fetches fresh copies during
+        # development — prevents stale cached code after a server update.
         if path.startswith("/src/"):
-            super().do_GET()
+            if path.endswith(".js") or path.endswith(".css"):
+                # Intercept to inject cache-busting headers before delegating
+                self._serve_nocache_static()
+            else:
+                super().do_GET()
             return
 
         self._send_json({"error": f"Not found: {path}"}, 404)
