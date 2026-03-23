@@ -63,8 +63,8 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyInstaller
-        run: pip install pyinstaller
+      - name: Install PyInstaller and dependencies
+        run: pip install pyinstaller rumps
 
       - name: Write desktop_config.py from secrets
         env:

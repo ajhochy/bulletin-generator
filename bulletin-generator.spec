@@ -23,8 +23,9 @@ a = Analysis(
         ('data/announcements.example.json',   'data'),
         ('data/settings.example.json',        'data'),
         ('desktop_config.py',                 '.'),
+        ('menubar-icon.png',                  '.'),
     ],
-    hiddenimports=['encodings.idna'],
+    hiddenimports=['encodings.idna', 'rumps'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -76,7 +77,7 @@ app = BUNDLE(
         'CFBundleVersion':          '1.08',
         'CFBundleShortVersionString': '1.08',
         'NSHighResolutionCapable':  True,
-        'LSBackgroundOnly':         False,
+        'LSUIElement':              True,   # menu bar only — no dock icon
         'NSHumanReadableCopyright': 'Bulletin Generator',
     },
 )

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Desktop launcher for Bulletin Generator.
-Starts the local server on a fixed port and opens the app in the default browser.
+Starts the local server on a fixed port and runs as a macOS menu bar app.
 
 Desktop mode always uses port 8765 so the PCO OAuth redirect URI is predictable.
 Register this in your PCO developer app:
@@ -17,7 +17,10 @@ import threading
 import webbrowser
 
 DESKTOP_PORT = 8765
+APP_URL      = f'http://localhost:{DESKTOP_PORT}/'
 
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _get_pid_file():
     """Return path to the PID file in the data directory."""
@@ -40,9 +43,9 @@ def _kill_stale_server(port):
     """Kill any leftover process holding our port from a previous run.
     Returns only after the port is confirmed free or all attempts exhausted."""
     if not _port_in_use(port):
-        return True  # Port is free
+        return True
 
-    my_pid = os.getpid()
+    my_pid  = os.getpid()
     targets = set()
 
     # Strategy 1: PID file from previous run
@@ -74,69 +77,45 @@ def _kill_stale_server(port):
             continue
 
     if not targets:
-        # Can't identify the process — wait briefly and hope it dies
         time.sleep(2)
         return not _port_in_use(port)
 
-    # SIGTERM all targets
     for pid in targets:
         try:
             os.kill(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             pass
 
-    # Wait for port to free (up to 8 seconds)
     for _ in range(40):
         time.sleep(0.2)
         if not _port_in_use(port):
             return True
 
-    # Escalate to SIGKILL
     for pid in targets:
         try:
             os.kill(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
 
-    # Final wait after SIGKILL (up to 2 seconds)
     for _ in range(10):
         time.sleep(0.2)
         if not _port_in_use(port):
             return True
 
-    return False  # Couldn't free the port
+    return False
 
 
 def _write_pid_file():
     """Write current PID so future launches can kill us."""
     try:
-        pid_file = _get_pid_file()
-        with open(pid_file, 'w') as f:
+        with open(_get_pid_file(), 'w') as f:
             f.write(str(os.getpid()))
     except OSError:
         pass
 
-# Set desktop mode before importing server
-os.environ.setdefault('APP_MODE', 'desktop')
-
-# Load PCO OAuth credentials bundled with the desktop build
-def _load_desktop_config():
-    try:
-        import desktop_config
-        os.environ.setdefault('PCO_CLIENT_ID',     desktop_config.PCO_CLIENT_ID)
-        os.environ.setdefault('PCO_CLIENT_SECRET', desktop_config.PCO_CLIENT_SECRET)
-        if hasattr(desktop_config, 'GOOGLE_CLIENT_ID'):
-            os.environ.setdefault('GOOGLE_CLIENT_ID',     desktop_config.GOOGLE_CLIENT_ID)
-        if hasattr(desktop_config, 'GOOGLE_CLIENT_SECRET'):
-            os.environ.setdefault('GOOGLE_CLIENT_SECRET', desktop_config.GOOGLE_CLIENT_SECRET)
-    except ImportError:
-        pass  # Credentials not bundled — OAuth connect will show an error
-
-_load_desktop_config()
-
 
 def _wait_for_server(port, timeout=15):
-    """Wait for OUR new server to start listening."""
+    """Wait for our new server to start listening."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
@@ -161,65 +140,97 @@ def _is_our_server(port):
         return False
 
 
-def _start_server_detached():
-    """Start the server as a detached background process that survives app exit."""
-    import subprocess
+def _icon_path():
+    """Return path to the menu bar icon bundled with the app."""
+    base = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, 'menubar-icon.png')
 
-    # Find the real Python/executable path
-    exe = sys.executable
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    server_script = os.path.join(script_dir, 'server.py')
 
-    # For PyInstaller bundled app, run server in-process but forked
-    pid = os.fork()
-    if pid == 0:
-        # Child process — become the background server
-        os.setsid()  # Detach from parent session
-        # Close inherited file descriptors
-        try:
-            devnull = os.open(os.devnull, os.O_RDWR)
-            os.dup2(devnull, 0)
-            os.dup2(devnull, 1)
-            os.dup2(devnull, 2)
-            os.close(devnull)
-        except OSError:
-            pass
+# ── Desktop config ─────────────────────────────────────────────────────────────
 
-        # Write PID file for the server process
-        _write_pid_file()
+# Set desktop mode before importing server
+os.environ.setdefault('APP_MODE', 'desktop')
 
-        import server
-        server.run_server(DESKTOP_PORT)
-        sys.exit(0)
-    else:
-        # Parent process — return immediately so the .app exits
-        return pid
 
+def _load_desktop_config():
+    try:
+        import desktop_config
+        os.environ.setdefault('PCO_CLIENT_ID',     desktop_config.PCO_CLIENT_ID)
+        os.environ.setdefault('PCO_CLIENT_SECRET', desktop_config.PCO_CLIENT_SECRET)
+        if hasattr(desktop_config, 'GOOGLE_CLIENT_ID'):
+            os.environ.setdefault('GOOGLE_CLIENT_ID',     desktop_config.GOOGLE_CLIENT_ID)
+        if hasattr(desktop_config, 'GOOGLE_CLIENT_SECRET'):
+            os.environ.setdefault('GOOGLE_CLIENT_SECRET', desktop_config.GOOGLE_CLIENT_SECRET)
+    except ImportError:
+        pass  # Credentials not bundled — OAuth connect will show an error
+
+
+_load_desktop_config()
+
+
+# ── Menu bar app ───────────────────────────────────────────────────────────────
+
+def _make_menu_bar_app():
+    import rumps
+
+    class _App(rumps.App):
+        def __init__(self):
+            super().__init__('', icon=_icon_path(), template=True, quit_button=None)
+            self.menu = [
+                rumps.MenuItem('Open Bulletin Generator', callback=self._open),
+                None,  # separator
+                rumps.MenuItem('Quit', callback=self._quit),
+            ]
+
+        def _open(self, _):
+            webbrowser.open(APP_URL)
+
+        def _quit(self, _):
+            rumps.quit_application()
+
+    return _App()
+
+
+# ── Server thread ──────────────────────────────────────────────────────────────
+
+def _start_server_thread():
+    """Run the server in a daemon thread (dies automatically when the process exits)."""
+    import server
+    t = threading.Thread(target=server.run_server, args=(DESKTOP_PORT,), daemon=True)
+    t.start()
+    return t
+
+
+# ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
-    # If our server is already running, just open the browser and exit
+    # If our server is already running another instance owns the menu bar — just
+    # open the browser and exit so we don't create a duplicate menu bar icon.
     if _port_in_use(DESKTOP_PORT) and _is_our_server(DESKTOP_PORT):
-        webbrowser.open(f'http://localhost:{DESKTOP_PORT}/')
+        webbrowser.open(APP_URL)
         return
 
-    # Something else is on our port — kill it
+    # Kill anything else that may be squatting on our port
     if _port_in_use(DESKTOP_PORT):
-        port_free = _kill_stale_server(DESKTOP_PORT)
-        if not port_free:
-            pass  # Try anyway — SO_REUSEADDR might save us
+        _kill_stale_server(DESKTOP_PORT)
 
-    # Start server as a detached background process
-    _start_server_detached()
+    # Start server in a background thread and record the PID
+    _start_server_thread()
+    _write_pid_file()
 
-    # Wait for server to come up, then open browser
-    if _wait_for_server(DESKTOP_PORT):
-        webbrowser.open(f'http://localhost:{DESKTOP_PORT}/')
-    else:
-        print(f'Bulletin Generator failed to start on port {DESKTOP_PORT}.')
-        print('Make sure no other app is using that port and try again.')
+    # Wait for the server to come up
+    if not _wait_for_server(DESKTOP_PORT):
+        import rumps
+        rumps.alert(
+            title='Bulletin Generator',
+            message=f'Failed to start the local server on port {DESKTOP_PORT}.\n'
+                    'Make sure no other app is using that port and try again.',
+        )
         sys.exit(1)
 
-    # Parent exits — the .app closes, but the server keeps running in background
+    # Open browser, then hand control to the menu bar run loop
+    webbrowser.open(APP_URL)
+    _make_menu_bar_app().run()
 
 
 if __name__ == '__main__':
