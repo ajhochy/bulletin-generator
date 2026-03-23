@@ -108,6 +108,13 @@ jobs:
             -k "$KEYCHAIN_PATH" \
             -P "$APPLE_CERTIFICATE_PASSWORD" \
             -T /usr/bin/codesign
+
+          # Import the Developer ID G2 intermediate CA so the full chain is
+          # embedded in the signature (required for Apple notarization)
+          curl -sL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN_PATH"
+
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
@@ -118,24 +125,57 @@ jobs:
 
           APP="dist/Bulletin Generator.app"
 
-          # Sign the entire bundle in one pass with --deep --timestamp.
-          # Multi-step signing (individual files → frameworks → bundle) causes
-          # framework signing to overwrite inner binary signatures mid-process.
-          # --deep handles the inside-out ordering internally and is the most
-          # reliable single-pass approach for PyInstaller bundles.
-          codesign --deep --force --timestamp --verify --verbose \
-            --sign "$IDENTITY" \
+          # Step 1: Sign every Mach-O binary individually (inside-out).
+          # --deep is unreliable for propagating --options runtime to inner
+          # binaries; Apple requires hardened runtime on EVERY binary.
+          echo "=== Signing individual binaries ==="
+          while IFS= read -r f; do
+            echo "  signing: $f"
+            codesign --force --timestamp --sign "$IDENTITY" \
+              --options runtime \
+              --entitlements entitlements.plist "$f"
+          done < <(find -L "$APP" -type f -exec sh -c 'file "$1" | grep -qE "Mach-O"' _ {} \; -print)
+
+          # Step 2: Sign .framework bundles (creates CodeResources that hash
+          # the already-signed inner binaries)
+          echo "=== Signing frameworks ==="
+          while IFS= read -r fw; do
+            echo "  framework: $fw"
+            codesign --force --timestamp --sign "$IDENTITY" \
+              --options runtime \
+              --entitlements entitlements.plist "$fw"
+          done < <(find "$APP" -name "*.framework" -type d | sort -r)
+
+          # Step 3: Sign the .app bundle itself (without --deep)
+          echo "=== Signing app bundle ==="
+          codesign --force --timestamp --sign "$IDENTITY" \
             --options runtime \
-            --entitlements entitlements.plist \
-            "$APP"
-          echo "Code signing complete."
-          codesign --verify --deep --strict "$APP"
+            --entitlements entitlements.plist "$APP"
+
+          # Verify
+          echo "=== Verification ==="
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          # Diagnostic: check the 5 paths Apple has been complaining about
+          echo "=== Diagnostic: individual binary signatures ==="
+          for p in \
+            "$APP/Contents/MacOS/BulletinGenerator" \
+            "$APP/Contents/Resources/Python" \
+            "$APP/Contents/Resources/Python.framework/Python" \
+            "$APP/Contents/Frameworks/Python" \
+            "$APP/Contents/Frameworks/Python.framework/Python"; do
+            echo "--- $p ---"
+            ls -la "$p" 2>&1 || true
+            codesign -dvv "$p" 2>&1 || true
+          done
 
       # ── Notarization ────────────────────────────────────────────────────────
       - name: Zip the signed .app for notarization
         run: |
-          cd dist
-          zip -r "BulletinGenerator-macos-${{ github.ref_name }}.zip" "Bulletin Generator.app"
+          # Use ditto instead of zip — preserves macOS extended attributes,
+          # resource forks, and symlinks correctly (required for code signatures)
+          ditto -c -k --keepParent "dist/Bulletin Generator.app" \
+            "dist/BulletinGenerator-macos-${{ github.ref_name }}.zip"
 
       - name: Notarize with Apple
         env:
@@ -177,9 +217,9 @@ jobs:
 
       - name: Re-zip the stapled .app
         run: |
-          cd dist
-          rm "BulletinGenerator-macos-${{ github.ref_name }}.zip"
-          zip -r "BulletinGenerator-macos-${{ github.ref_name }}.zip" "Bulletin Generator.app"
+          rm "dist/BulletinGenerator-macos-${{ github.ref_name }}.zip"
+          ditto -c -k --keepParent "dist/Bulletin Generator.app" \
+            "dist/BulletinGenerator-macos-${{ github.ref_name }}.zip"
 
       - name: Create GitHub Release and upload artifact
         uses: softprops/action-gh-release@v2
