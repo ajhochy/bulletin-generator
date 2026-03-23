@@ -269,7 +269,7 @@ function _getArrangementOrderedLyrics(pres) {
         const showLabel = label && HEADING_RE.test(label);
         // Merge consecutive groups that share the same label (e.g. two "Verse 1" slides)
         const lastLabel = ordered.length > 0 ? ordered[ordered.length - 1].split('\n')[0] : null;
-        if (label && lastLabel === label) {
+        if (label && label.trim() === (lastLabel || '').trim()) {
           ordered[ordered.length - 1] += '\n' + sectionTexts.join('\n');
         } else {
           ordered.push((showLabel ? label + '\n' : '') + sectionTexts.join('\n'));
@@ -278,7 +278,10 @@ function _getArrangementOrderedLyrics(pres) {
     }
   }
 
-  // Fall back to file-order cues with group names from cueGroups
+  // Fall back to file-order cues with group names from cueGroups.
+  // ProPresenter sometimes stores cues interleaved (all "slide A" cues then all "slide B"
+  // cues) rather than grouped by section. We collect all texts per label, then sort
+  // numbered sections (Verse 1, Verse 2 …) by number so they appear in natural order.
   if (ordered.length === 0) {
     // Build reverse map: cueId → groupName
     const cueToGroup = new Map();
@@ -287,17 +290,41 @@ function _getArrangementOrderedLyrics(pres) {
         if (!cueToGroup.has(cueId)) cueToGroup.set(cueId, cg.groupName || '');
       }
     }
-    let lastGroup = '';
+
+    // Collect texts per label, preserving first-appearance order
+    const groupOrder = [];
+    const groupTextMap = new Map();
     for (const cue of cues) {
       const groupName = cueToGroup.get(cue.uuid) || '';
       for (const text of cue.rtfTexts) {
         const key = text.trim();
         if (seen.has(key)) continue;
         seen.add(key);
-        const showLabel = groupName && groupName !== lastGroup && HEADING_RE.test(groupName);
-        ordered.push((showLabel ? groupName + '\n' : '') + text);
-        if (groupName) lastGroup = groupName;
+        if (!groupTextMap.has(groupName)) {
+          groupTextMap.set(groupName, []);
+          groupOrder.push(groupName);
+        }
+        groupTextMap.get(groupName).push(text);
       }
+    }
+
+    // Sort: numbered sections with the same base label sort by number (Verse 1 < Verse 2);
+    // all other sections retain first-appearance order (stable sort).
+    const NUMBERED_LABEL_RE = /^(.+?)\s+(\d+)$/i;
+    const sorted = [...groupOrder].sort((a, b) => {
+      const ma = NUMBERED_LABEL_RE.exec(a);
+      const mb = NUMBERED_LABEL_RE.exec(b);
+      if (ma && mb && ma[1].toLowerCase() === mb[1].toLowerCase()) {
+        return parseInt(ma[2], 10) - parseInt(mb[2], 10);
+      }
+      return groupOrder.indexOf(a) - groupOrder.indexOf(b);
+    });
+
+    for (const groupName of sorted) {
+      const texts = groupTextMap.get(groupName) || [];
+      if (!texts.length) continue;
+      const showLabel = groupName && HEADING_RE.test(groupName);
+      ordered.push((showLabel ? groupName + '\n' : '') + texts.join('\n'));
     }
   }
 
