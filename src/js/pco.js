@@ -232,13 +232,28 @@ function applyPcoData(planResp, itemsResp, notesResp) {
   renderPreview();
   scheduleProjectPersist();
 
-  // Compute new songs that need review (songs not present in the pre-import state)
+  // Compute songs that still need user review.
+  //
+  // Unmatched: show any song that still has no lyrics in the live items array
+  // after re-sync (regardless of whether it was in the previous plan).
+  // Also update e.item to the live items[] reference — the re-sync merge
+  // replaces items[i] with a new object, so the original enrichResult reference
+  // is stale and writing to it would not affect the rendered preview.
+  const pendingUnmatched = enrichResult.unmatched.filter(e => {
+    const live = items.find(it =>
+      it.type === e.item.type && normTitle(it.title) === normTitle(e.item.title)
+    );
+    if (!live || live.detail) return false; // already has lyrics — skip
+    e.item = live; // point to the live object so dialog writes take effect
+    return true;
+  });
+
+  // withNotes: only surface songs that are new to this plan (existing ones
+  // were already reviewed in a prior session).
   let pendingWithNotes = enrichResult.withNotes;
-  let pendingUnmatched = enrichResult.unmatched;
   if (prevItems.length > 0) {
     const prevKeys = new Set(prevItems.map(ex => ex.type + '|' + normTitle(ex.title)));
     pendingWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
-    pendingUnmatched = enrichResult.unmatched.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
   }
 
   // Surface a per-item review dialog when PCO data differs from user edits.
