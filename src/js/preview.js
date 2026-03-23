@@ -945,8 +945,9 @@ btnPrint.addEventListener('click', async () => {
   const pagesHtml = [...previewPane.querySelectorAll('.booklet-page')]
     .map(el => el.outerHTML).join('\n');
   if (!pagesHtml) { setStatus('Nothing to print.', 'error'); return; }
-  const title = (svcTitle.value.trim() || svcDate.value || 'Bulletin');
-  await generateAndDownloadPdf(pagesHtml, title + '.pdf');
+  const title   = (svcTitle.value.trim() || svcDate.value || 'Bulletin');
+  const sizeTag = (activeDocTemplate.pageSize || '5.5x8.5');
+  await generateAndDownloadPdf(pagesHtml, title + ' - ' + sizeTag + '.pdf');
 });
 
 previewPane.addEventListener('click', e => {

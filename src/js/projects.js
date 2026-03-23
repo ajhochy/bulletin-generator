@@ -754,7 +754,8 @@ async function downloadProjectAsPdf(id) {
     return;
   }
 
-  const filename = (project.name || 'Bulletin') + '.pdf';
+  const sizeTag  = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
+  const filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
   await generateAndDownloadPdf(pagesHtml, filename);
 }
 
