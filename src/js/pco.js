@@ -856,7 +856,8 @@ function initPco() {
     setStatus('Planning Center connected successfully.', 'success');
     window.history.replaceState({}, '', window.location.pathname);
   } else if (urlParams.get('pco_error')) {
-    pcoSetMsg('pco-creds-msg', 'Planning Center sign-in failed or was cancelled. Please try again.', 'error');
+    const detail = urlParams.get('detail') || '';
+    pcoSetMsg('pco-creds-msg', 'Planning Center sign-in failed or was cancelled.' + (detail ? ' Error: ' + detail : ' Please try again.'), 'error');
     window.history.replaceState({}, '', window.location.pathname);
   }
 }
@@ -876,7 +877,8 @@ function initGoogle() {
     window.history.replaceState({}, '', '/');
   } else if (params.has('google_error')) {
     const err = params.get('google_error');
-    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed. Please try again.';
+    const detail = params.get('detail') || '';
+    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed.' + (detail ? ' Error: ' + detail : ' Please try again.');
     msgEl.className = 'pco-msg error';
     window.history.replaceState({}, '', '/');
   }
