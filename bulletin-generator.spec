@@ -17,7 +17,7 @@ from pathlib import Path
 
 block_cipher = None
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(SPECPATH).resolve()
 SVG_ICON_PATH = ROOT_DIR / 'bulletin Generator icon.svg'
 FALLBACK_ICON_PATH = ROOT_DIR / 'Bulletin Generator.icns'
 
