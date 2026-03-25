@@ -63,7 +63,7 @@ cp .env.example .env
 
 2. Update `.env` with your local values:
 
-- `PCO_APP_ID` and `PCO_SECRET` for Planning Center access
+- `PCO_CLIENT_ID` and `PCO_CLIENT_SECRET` for Planning Center OAuth access
 - `CALENDAR_ICAL_URLS` if you want default calendar feeds
 - `CALENDAR_EXCLUDE_TITLES` if you want to suppress recurring default event titles
 
@@ -98,6 +98,10 @@ cp desktop_config.py.example desktop_config.py
 ```bash
 pyinstaller bulletin-generator.spec
 ```
+
+If `bulletin Generator icon.svg` exists in the repo root, the build spec will
+convert it into the `.icns` bundle icon automatically during the macOS build.
+If that conversion cannot run, the build falls back to `Bulletin Generator.icns`.
 
 4. Distribute `dist/Bulletin Generator.app`.
 
@@ -144,7 +148,7 @@ In packaged desktop mode, the server is expected to store writable data outside 
 
 Planning Center access is handled server-side.
 
-- local/server dev mode: set `PCO_APP_ID` and `PCO_SECRET` in `.env`, then restart the server
+- local/server dev mode: set `PCO_CLIENT_ID` and `PCO_CLIENT_SECRET` in `.env`, then restart the server
 - packaged desktop mode: bundle `PCO_CLIENT_ID` and `PCO_CLIENT_SECRET` in `desktop_config.py`
 - the frontend talks to the local server, which proxies the PCO requests or runs the desktop OAuth flow
 

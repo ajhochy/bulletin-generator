@@ -277,7 +277,7 @@ function renderPreview() {
 
     const welcomeTitle = document.createElement('div');
     welcomeTitle.className = 'welcome-title';
-    welcomeTitle.textContent = church ? `Welcome to ${church}` : 'Welcome';
+    welcomeTitle.textContent = welcomeHeading || (church ? `Welcome to ${church}` : 'Welcome');
     welcomeSection.appendChild(welcomeTitle);
 
     const welcomeDivider = document.createElement('hr');
@@ -286,7 +286,7 @@ function renderPreview() {
 
     const welcomeList = document.createElement('ul');
     welcomeList.className = 'welcome-list';
-    WELCOME_ITEMS.forEach(text => {
+    welcomeItems.forEach(text => {
       const li = document.createElement('li');
       li.textContent = text;
       welcomeList.appendChild(li);

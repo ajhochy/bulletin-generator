@@ -69,8 +69,8 @@ jobs:
 
       - name: Write desktop_config.py from secrets
         env:
-          PCO_CLIENT_ID:        ${{ secrets.PCO_APP_ID }}
-          PCO_CLIENT_SECRET:    ${{ secrets.PCO_SECRET }}
+          PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET:    ${{ secrets.PCO_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
