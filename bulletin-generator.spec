@@ -31,7 +31,7 @@ a = Analysis(
         ('menubar-icon.png',                  '.'),
         ('menubar-icon@2x.png',               '.'),
     ],
-    hiddenimports=['encodings.idna', 'rumps'],
+    hiddenimports=['encodings.idna', 'rumps', 'certifi'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -18,6 +18,15 @@ import os
 import sys
 import platform
 import threading
+
+# PyInstaller bundles Python without the system CA certificates.
+# Use certifi's bundled CA bundle so all HTTPS requests verify correctly.
+try:
+    import ssl
+    import certifi
+    ssl._create_default_https_context = lambda: ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    pass
 import subprocess
 import tempfile
 import zipfile

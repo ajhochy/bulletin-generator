@@ -65,7 +65,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install PyInstaller and dependencies
-        run: pip install "pyinstaller==6.19.0" rumps
+        run: pip install "pyinstaller==6.19.0" rumps certifi
 
       - name: Write desktop_config.py from secrets
         env:
