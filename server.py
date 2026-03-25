@@ -898,6 +898,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
             'scope':         'services',
+            'prompt':        'login',
         })
         self.send_response(302)
         self.send_header('Location', f'https://api.planningcenteronline.com/oauth/authorize?{params}')
