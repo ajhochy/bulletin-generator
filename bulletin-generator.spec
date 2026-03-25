@@ -10,89 +10,12 @@
 #
 # The .app bundle will be in dist/Bulletin Generator.app
 
-import shutil
-import subprocess
-import tempfile
 from pathlib import Path
 
 block_cipher = None
 
 ROOT_DIR = Path(SPECPATH).resolve()
-SVG_ICON_PATH = ROOT_DIR / 'bulletin Generator icon.svg'
-FALLBACK_ICON_PATH = ROOT_DIR / 'Bulletin Generator.icns'
-
-
-def _build_icns_from_svg(svg_path):
-    """
-    Convert the checked-in SVG icon into an .icns file for the macOS app bundle.
-    Falls back to the committed .icns file if conversion tools are unavailable.
-    """
-    qlmanage = shutil.which('qlmanage')
-    sips = shutil.which('sips')
-    iconutil = shutil.which('iconutil')
-    if not (qlmanage and sips and iconutil):
-        raise RuntimeError('Missing one or more macOS icon tools: qlmanage, sips, iconutil')
-
-    out_icns = ROOT_DIR / 'build' / 'Bulletin Generator.generated.icns'
-    out_icns.parent.mkdir(parents=True, exist_ok=True)
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmpdir_path = Path(tmpdir)
-        iconset_dir = tmpdir_path / 'BulletinGenerator.iconset'
-        iconset_dir.mkdir()
-
-        subprocess.run(
-            [qlmanage, '-t', '-s', '1024', '-o', str(tmpdir_path), str(svg_path)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        preview_png = tmpdir_path / f'{svg_path.name}.png'
-        if not preview_png.exists():
-            raise RuntimeError(f'Quick Look did not produce a preview for {svg_path.name}')
-
-        sizes = [16, 32, 128, 256, 512]
-        for size in sizes:
-            subprocess.run(
-                [sips, '-z', str(size), str(size), str(preview_png), '--out',
-                 str(iconset_dir / f'icon_{size}x{size}.png')],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            subprocess.run(
-                [sips, '-z', str(size * 2), str(size * 2), str(preview_png), '--out',
-                 str(iconset_dir / f'icon_{size}x{size}@2x.png')],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-
-        subprocess.run(
-            [iconutil, '-c', 'icns', str(iconset_dir), '-o', str(out_icns)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    return str(out_icns)
-
-
-def resolve_bundle_icon():
-    if SVG_ICON_PATH.exists():
-        try:
-            generated_path = _build_icns_from_svg(SVG_ICON_PATH)
-            print(f'Using generated app icon from {SVG_ICON_PATH.name}')
-            return generated_path
-        except Exception as exc:
-            print(f'Warning: could not generate .icns from {SVG_ICON_PATH.name}: {exc}')
-
-    print(f'Using fallback app icon {FALLBACK_ICON_PATH.name}')
-    return str(FALLBACK_ICON_PATH)
-
-
-BUNDLE_ICON_PATH = resolve_bundle_icon()
+BUNDLE_ICON_PATH = str(ROOT_DIR / 'Bulletin Generator.icns')
 
 a = Analysis(
     ['launcher.py'],
