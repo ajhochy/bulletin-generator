@@ -877,8 +877,7 @@ function initGoogle() {
     window.history.replaceState({}, '', '/');
   } else if (params.has('google_error')) {
     const err = params.get('google_error');
-    const detail = params.get('detail') || '';
-    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed.' + (detail ? ' Error: ' + detail : ' Please try again.');
+    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed. Please try again.';
     msgEl.className = 'pco-msg error';
     window.history.replaceState({}, '', '/');
   }
