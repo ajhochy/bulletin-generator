@@ -108,16 +108,18 @@ async function saveProjectToServer(project) {
     }
     document.getElementById('conflict-banner').style.display = 'none';
   } catch (err) {
-    if (err.message && err.message.includes('409')) {
+    if (err.status === 409) {
       const banner = document.getElementById('conflict-banner');
       banner.textContent = 'This bulletin was updated by someone else.';
       banner.style.display = '';
-      const reloadLink = document.createElement('a');
-      reloadLink.href = '#';
-      reloadLink.textContent = ' Reload latest';
-      reloadLink.style.marginLeft = '0.4rem';
-      reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
-      banner.appendChild(reloadLink);
+      if (!banner.querySelector('a')) {
+        const reloadLink = document.createElement('a');
+        reloadLink.href = '#';
+        reloadLink.textContent = ' Reload latest';
+        reloadLink.style.marginLeft = '0.4rem';
+        reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
+        banner.appendChild(reloadLink);
+      }
     } else {
       setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
     }

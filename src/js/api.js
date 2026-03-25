@@ -7,7 +7,7 @@ async function apiFetch(path, method = 'GET', body = null) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
-  if (!res.ok) throw new Error(`API ${method} ${path} → ${res.status}`);
+  if (!res.ok) { const e = new Error(`API ${method} ${path} → ${res.status}`); e.status = res.status; throw e; }
   return res.json();
 }
 

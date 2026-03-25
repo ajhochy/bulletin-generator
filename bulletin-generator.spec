@@ -29,6 +29,7 @@ a = Analysis(
         ('data/settings.example.json',        'data'),
         ('desktop_config.py',                 '.'),
         ('menubar-icon.png',                  '.'),
+        ('menubar-icon@2x.png',               '.'),
     ],
     hiddenimports=['encodings.idna', 'rumps'],
     hookspath=[],

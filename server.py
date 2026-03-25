@@ -1344,6 +1344,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
                 if new_app is None:
                     self._send_json({"error": "No .app bundle found in the downloaded zip."}, 500)
+                    Path(tmp_zip).unlink(missing_ok=True)
                     return
 
                 # 6. Atomic replace: backup old, copy new
