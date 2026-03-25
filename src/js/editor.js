@@ -520,6 +520,11 @@ bulletinTitleInput.addEventListener('input', () => { updateSectionPreviews(); })
 svcChurch.addEventListener('input',       schedulePreviewUpdate);
 annAddBtn.addEventListener('click', () => annAdd());
 welcomeAddBtn.addEventListener('click', () => welcomeAdd());
+welcomeHeadingInput.addEventListener('input', () => {
+  welcomeHeading = welcomeHeadingInput.value;
+  schedulePreviewUpdate();
+  scheduleProjectPersist();
+});
 
 // ─── Collapsible sidebar panels ───────────────────────────────────────────────
 document.querySelectorAll('aside .panel-section').forEach(section => {

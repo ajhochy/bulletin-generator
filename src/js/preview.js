@@ -277,7 +277,7 @@ function renderPreview() {
 
     const welcomeTitle = document.createElement('div');
     welcomeTitle.className = 'welcome-title';
-    welcomeTitle.textContent = church ? `Welcome to ${church}` : 'Welcome';
+    welcomeTitle.textContent = welcomeHeading || (church ? `Welcome to ${church}` : 'Welcome');
     welcomeSection.appendChild(welcomeTitle);
 
     const welcomeDivider = document.createElement('hr');

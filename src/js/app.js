@@ -39,6 +39,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 
 
 
+// Seed welcome items now that staff.js (WELCOME_ITEMS) has loaded
+welcomeItems = [...WELCOME_ITEMS];
+
 restoreOnStartup().then(() => {
   initPco();
   initGoogle();

@@ -28,6 +28,7 @@ function collectCurrentProjectState() {
     optAnnouncements: !!optAnnouncements.checked,
     optVolunteers:    !!optVolunteers.checked,
     optStaff:         !!optStaff.checked,
+    welcomeHeading: welcomeHeading || '',
     welcomeItems: welcomeItems.slice(),
     announcements: annData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })),
     items: cloneItems(items),
@@ -45,6 +46,8 @@ function applyProjectState(state) {
   svcTitle.value = safe.svcTitle || '';
   svcDate.value = safe.svcDate || '';
   svcChurch.value = safe.svcChurch || '';
+  welcomeHeading = typeof safe.welcomeHeading === 'string' ? safe.welcomeHeading : '';
+  welcomeHeadingInput.value = welcomeHeading;
   welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
   welcomeRender();
   if (Array.isArray(safe.announcements)) {
@@ -411,12 +414,15 @@ function clearEditorForNewProject() {
     });
   if (datedProjects.length > 0) {
     annData = datedProjects[0].state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
+    welcomeHeading = typeof datedProjects[0].state.welcomeHeading === 'string' ? datedProjects[0].state.welcomeHeading : '';
     welcomeItems = Array.isArray(datedProjects[0].state.welcomeItems) ? datedProjects[0].state.welcomeItems.slice() : [...WELCOME_ITEMS];
     saveAnnGlobal();
     annRender();
   } else {
+    welcomeHeading = '';
     welcomeItems = [...WELCOME_ITEMS];
   }
+  welcomeHeadingInput.value = welcomeHeading;
   welcomeRender();
   items = [];
   renderItemList();
