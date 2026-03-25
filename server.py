@@ -957,8 +957,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             print(f'  [oauth] PCO token exchange failed: {e}')
+            detail = urllib.parse.quote(str(e)[:200])
             self.send_response(302)
-            self.send_header('Location', '/?pco_error=token')
+            self.send_header('Location', f'/?pco_error=token&detail={detail}')
             self.end_headers()
 
     # ── Google Calendar OAuth ──────────────────────────────────────────────────
@@ -1033,8 +1034,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         except Exception as e:
             print(f'  [google] Token exchange failed: {e}')
+            detail = urllib.parse.quote(str(e)[:200])
             self.send_response(302)
-            self.send_header('Location', '/?google_error=token')
+            self.send_header('Location', f'/?google_error=token&detail={detail}')
             self.end_headers()
 
     def _handle_google_calendars(self):
