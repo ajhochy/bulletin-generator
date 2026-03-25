@@ -126,16 +126,20 @@ def _wait_for_server(port, timeout=15):
     return False
 
 
-def _is_our_server(port):
-    """Check if our Bulletin Generator server is already running on the port."""
+def _is_our_server_current_version(port):
+    """Return True only if a Bulletin Generator server at this port is running
+    the same APP_VERSION as this build.  Forces a restart on version mismatch."""
     try:
-        import http.client
+        import http.client, json as _json
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=2)
         conn.request('GET', '/api/bootstrap')
         resp = conn.getresponse()
         body = resp.read().decode('utf-8', errors='replace')
         conn.close()
-        return 'appMode' in body
+        data = _json.loads(body)
+        running_version = (data.get('config') or {}).get('appVersion', '')
+        this_version    = os.environ.get('APP_VERSION', '1.09').lstrip('v')
+        return bool(running_version) and running_version == this_version
     except Exception:
         return False
 
@@ -204,13 +208,13 @@ def _start_server_thread():
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 def main():
-    # If our server is already running another instance owns the menu bar — just
-    # open the browser and exit so we don't create a duplicate menu bar icon.
-    if _port_in_use(DESKTOP_PORT) and _is_our_server(DESKTOP_PORT):
+    # If our server is already running at the correct version, another instance
+    # owns the menu bar — just open the browser and exit to avoid duplicates.
+    if _port_in_use(DESKTOP_PORT) and _is_our_server_current_version(DESKTOP_PORT):
         webbrowser.open(APP_URL)
         return
 
-    # Kill anything else that may be squatting on our port
+    # Kill anything on our port (old version, stale process, or unrelated app).
     if _port_in_use(DESKTOP_PORT):
         _kill_stale_server(DESKTOP_PORT)
 
