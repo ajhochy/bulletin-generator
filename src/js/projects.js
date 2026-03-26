@@ -110,16 +110,16 @@ async function saveProjectToServer(project) {
   } catch (err) {
     if (err.status === 409) {
       const banner = document.getElementById('conflict-banner');
-      banner.textContent = 'This bulletin was updated by someone else.';
+      banner.innerHTML = '';
+      const bannerText = document.createTextNode('This bulletin was updated by someone else.');
+      banner.appendChild(bannerText);
       banner.style.display = '';
-      if (!banner.querySelector('a')) {
-        const reloadLink = document.createElement('a');
-        reloadLink.href = '#';
-        reloadLink.textContent = ' Reload latest';
-        reloadLink.style.marginLeft = '0.4rem';
-        reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
-        banner.appendChild(reloadLink);
-      }
+      const reloadLink = document.createElement('a');
+      reloadLink.href = '#';
+      reloadLink.textContent = ' Reload latest';
+      reloadLink.style.marginLeft = '0.4rem';
+      reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
+      banner.appendChild(reloadLink);
     } else {
       setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
     }
@@ -457,6 +457,7 @@ function deleteActiveProject() {
 async function restoreOnStartup() {
   await loadAllFromServer();
   renderSongDb();
+  renderStaffEditor(); // re-render now that staffData is loaded from server
 
   // Always restore global logo from server settings first
   restoreDefaultStaffLogo();

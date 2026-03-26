@@ -459,7 +459,11 @@ def fetch_and_parse_calendars(urls, exclude_titles):
 
 
 def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles):
-    """Fetch this week's events from Google Calendar API for given calendar IDs."""
+    """Fetch this week's events from Google Calendar API for given calendar IDs.
+    Returns None if any calendar returns 401/403 (signals auth failure to caller).
+    Returns [] if auth succeeds but there are no events in the window.
+    Returns a list of events otherwise.
+    """
     start_date, end_date = get_week_window()
     time_min = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     time_max = datetime.combine(end_date,   datetime.max.time().replace(microsecond=0)).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -483,6 +487,13 @@ def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles):
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                # Auth failure — signal caller to refresh token, not just an empty calendar
+                print(f'  [google-cal] Auth error ({e.code}) for calendar {cal_id} — token may be expired')
+                return None
+            print(f'  [google-cal] HTTP {e.code} fetching calendar {cal_id}: {e}')
+            continue
         except Exception as e:
             print(f'  [google-cal] Failed to fetch calendar {cal_id}: {e}')
             continue
@@ -1403,11 +1414,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             google_auth = _google_auth_header()
             if google_auth and google_cal_ids:
                 result = fetch_google_cal_events(google_auth, google_cal_ids, exclude)
-                if result is None or (isinstance(result, list) and len(result) == 0 and google_cal_ids):
-                    # On 401 try refreshing once
+                if result is None:
+                    # None means auth failure (401/403) — refresh token and retry once
                     new_auth = _refresh_google_token()
                     if new_auth:
                         result = fetch_google_cal_events(new_auth, google_cal_ids, exclude)
+                    else:
+                        result = []
             else:
                 result = fetch_and_parse_calendars(urls, exclude)
 
