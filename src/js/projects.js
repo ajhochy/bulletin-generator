@@ -652,7 +652,12 @@ async function buildPrintDocHtml(pagesHtml, title) {
 <style>
 ${css}
 /* Headless PDF overrides — placed after embedded CSS so page-size variables win */
-:root { --doc-page-w: ${w}in; --doc-page-h: ${h}in; }
+:root {
+  --doc-page-w: ${w}in; --doc-page-h: ${h}in;
+  /* system-ui / -apple-system don't resolve consistently on Linux/Docker,
+     so override with a reliable cross-platform stack for PDF output. */
+  --font-sans: Arial, Helvetica, sans-serif;
+}
 @page { size: ${w}in ${h}in; margin: 0; }
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
 header, aside, .tab-bar, .pg-break-ctrl,

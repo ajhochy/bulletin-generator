@@ -1,4 +1,18 @@
 // ─── Serving schedule helpers ─────────────────────────────────────────────────
+
+// Split a teams array at {type:'page-break'} entries, returning an array of segments.
+// Each segment is an array of normal team objects. Always returns at least one segment.
+function volSegments(teams) {
+  const segs = [];
+  let cur = [];
+  for (const t of (teams || [])) {
+    if (t.type === 'page-break') { segs.push(cur); cur = []; }
+    else cur.push(t);
+  }
+  segs.push(cur);
+  return segs;
+}
+
 function formatNameList(names) {
   if (!names || names.length === 0) return '—';
   if (names.length === 1) return names[0];
@@ -24,6 +38,41 @@ function volRender() {
     const label = wi === 0 ? 'This Week' : (weeks.length === 2 ? 'Next Week' : data.date || `Week ${wi + 1}`);
     const weekEl = document.createElement('div');
 
+    // For weeks after the first, allow a page break before the entire week heading
+    if (wi > 0) {
+      if (data._breakBefore) {
+        const pbRow = document.createElement('div');
+        pbRow.className = 'vol-page-break-row';
+        const lbl = document.createElement('span');
+        lbl.textContent = '— Page Break —';
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'vol-remove-btn';
+        removeBtn.title = 'Remove page break';
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', () => {
+          delete servingSchedule.weeks[wi]._breakBefore;
+          volRender();
+          schedulePreviewUpdate();
+          scheduleProjectPersist();
+        });
+        pbRow.appendChild(lbl);
+        pbRow.appendChild(removeBtn);
+        weekEl.appendChild(pbRow);
+      } else {
+        const wBreakBtn = document.createElement('button');
+        wBreakBtn.className = 'vol-add-link';
+        wBreakBtn.style.cssText = 'color:var(--muted); display:block; margin-bottom:0.15rem;';
+        wBreakBtn.textContent = '⊞ Add page break before ' + label;
+        wBreakBtn.addEventListener('click', () => {
+          servingSchedule.weeks[wi]._breakBefore = true;
+          volRender();
+          schedulePreviewUpdate();
+          scheduleProjectPersist();
+        });
+        weekEl.appendChild(wBreakBtn);
+      }
+    }
+
     const weekLabel = document.createElement('div');
     weekLabel.className = 'vol-week-label';
     weekLabel.textContent = label + (wi === 0 && data.date ? ' — ' + data.date : (wi > 0 && label !== data.date && data.date ? ' — ' + data.date : ''));
@@ -32,7 +81,37 @@ function volRender() {
     // Track service time headers so we insert them before the first team in each group
     let lastServiceTime = undefined;
 
+    // Whether this week uses service-time groupings — determines page-break button placement.
+    const hasServiceTimes = (data.teams || []).some(t => t.type !== 'page-break' && t.serviceTime);
+
+    // For non-service-time data: index of last real team (suppresses button on final team).
+    const lastRealTeamIdx = hasServiceTimes ? -1 : (data.teams || []).reduce(
+      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false) ? i : last, -1
+    );
+
     (data.teams || []).forEach((team, ti) => {
+      // Page break marker
+      if (team.type === 'page-break') {
+        const pbRow = document.createElement('div');
+        pbRow.className = 'vol-page-break-row';
+        const lbl = document.createElement('span');
+        lbl.textContent = '— Page Break —';
+        const removeBtn = document.createElement('button');
+        removeBtn.className = 'vol-remove-btn';
+        removeBtn.title = 'Remove page break';
+        removeBtn.textContent = '✕';
+        removeBtn.addEventListener('click', () => {
+          servingSchedule.weeks[wi].teams.splice(ti, 1);
+          volRender();
+          schedulePreviewUpdate();
+          scheduleProjectPersist();
+        });
+        pbRow.appendChild(lbl);
+        pbRow.appendChild(removeBtn);
+        weekEl.appendChild(pbRow);
+        return;
+      }
+
       // Skip teams hidden by the serving team filter
       if (servingTeamFilter[team.name] === false) return;
 
@@ -40,6 +119,21 @@ function volRender() {
       if (team.serviceTime !== lastServiceTime) {
         lastServiceTime = team.serviceTime;
         if (team.serviceTime) {
+          // "Add page break before this service time" — only when there's content above it
+          if (ti > 0) {
+            const stBreakBtn = document.createElement('button');
+            stBreakBtn.className = 'vol-add-link';
+            stBreakBtn.style.cssText = 'color:var(--muted); display:block; margin-bottom:0.15rem;';
+            stBreakBtn.textContent = '⊞ Add page break before ' + team.serviceTime;
+            stBreakBtn.title = 'Insert a page break before this service time';
+            stBreakBtn.addEventListener('click', () => {
+              servingSchedule.weeks[wi].teams.splice(ti, 0, { type: 'page-break' });
+              volRender();
+              schedulePreviewUpdate();
+              scheduleProjectPersist();
+            });
+            weekEl.appendChild(stBreakBtn);
+          }
           const stHeader = document.createElement('div');
           stHeader.className = 'vol-week-label';
           stHeader.style.cssText = 'font-size:0.65rem; margin-top:0.4rem; margin-bottom:0.15rem; color:var(--accent-light); border-bottom-color:var(--border);';
@@ -122,6 +216,23 @@ function volRender() {
         scheduleProjectPersist();
       });
       weekEl.appendChild(addRoleBtn);
+
+      // Add page break button after each team — only for non-service-time data,
+      // and only when there are more teams after this one.
+      if (!hasServiceTimes && ti < lastRealTeamIdx) {
+        const addBreakBtn = document.createElement('button');
+        addBreakBtn.className = 'vol-add-link';
+        addBreakBtn.style.cssText = 'color:var(--muted); margin-left:0.6rem;';
+        addBreakBtn.textContent = '⊞ Add page break';
+        addBreakBtn.title = 'Insert a page break after this team group';
+        addBreakBtn.addEventListener('click', () => {
+          servingSchedule.weeks[wi].teams.splice(ti + 1, 0, { type: 'page-break' });
+          volRender();
+          schedulePreviewUpdate();
+          scheduleProjectPersist();
+        });
+        weekEl.appendChild(addBreakBtn);
+      }
     });
 
     // Add team button
@@ -430,11 +541,11 @@ function renderServingTeam(container, team) {
 function renderServingWeek(container, weekData, labelText) {
   const wLabel = document.createElement('div');
   wLabel.className = 'serving-week-label';
-  wLabel.textContent = labelText + (weekData.date ? ` (${weekData.date})` : '');
+  wLabel.textContent = labelText;
   container.appendChild(wLabel);
 
-  // Filter out hidden teams
-  const visibleTeams = (weekData.teams || []).filter(t => servingTeamFilter[t.name] !== false);
+  // Filter out page-break markers and hidden teams
+  const visibleTeams = (weekData.teams || []).filter(t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false);
 
   if (visibleTeams.length === 0) {
     const empty = document.createElement('div');

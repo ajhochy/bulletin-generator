@@ -742,6 +742,16 @@
     }
     .vol-add-link:hover { text-decoration: underline; }
     .vol-week-footer { margin-top: 0.3rem; }
+    .vol-page-break-row {
+      display: flex; align-items: center; gap: 0.4rem;
+      margin: 0.3rem 0; padding: 0.18rem 0.4rem;
+      background: var(--bg); border-radius: var(--radius);
+      border: 1px dashed var(--border);
+    }
+    .vol-page-break-row span {
+      flex: 1; text-align: center;
+      font-size: 0.63rem; color: var(--muted); font-style: italic;
+    }
 
     /* ─── Import Review Modal ───────────────────────────────────────────────── */
     .irm-overlay {
