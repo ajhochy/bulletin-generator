@@ -58,17 +58,24 @@ document.getElementById('cal-refresh-btn').addEventListener('click', () => calFe
 
 document.getElementById('cal-settings-save-btn').addEventListener('click', () => {
   const urlsRaw = document.getElementById('cal-urls-input').value.trim();
-  const exclRaw = document.getElementById('cal-excl-input').value.trim();
   const urls = urlsRaw.split('\n').map(s => s.trim()).filter(Boolean);
-  const excl = exclRaw.split('\n').map(s => s.trim()).filter(Boolean);
   _calUrls = urls;
-  _calExclude = excl;
-  apiFetch('/api/settings', 'POST', { calUrls: _calUrls, calExclude: _calExclude }).catch(() => {});
-  // Invalidate cache and re-fetch
+  apiFetch('/api/settings', 'POST', { calUrls: _calUrls }).catch(() => {});
   calEvents = null;
   calLastFetch = 0;
   calFetchAll(true);
   setStatus('Calendar settings saved. Re-fetching…', 'success');
+});
+
+document.getElementById('cal-excl-save-btn').addEventListener('click', () => {
+  const exclRaw = document.getElementById('cal-excl-input').value.trim();
+  const excl = exclRaw.split('\n').map(s => s.trim()).filter(Boolean);
+  _calExclude = excl;
+  apiFetch('/api/settings', 'POST', { calExclude: _calExclude }).catch(() => {});
+  calEvents = null;
+  calLastFetch = 0;
+  calFetchAll(true);
+  setStatus('Exclude list saved. Re-fetching…', 'success');
 });
 
 document.getElementById('cal-settings-reset-btn').addEventListener('click', () => {
@@ -76,6 +83,7 @@ document.getElementById('cal-settings-reset-btn').addEventListener('click', () =
   _calExclude = null;
   apiFetch('/api/settings', 'POST', { calUrls: null, calExclude: null }).catch(() => {});
   calInitSettings();
+  document.getElementById('cal-excl-input').value = calGetExclude().join('\n');
   calEvents = null;
   calLastFetch = 0;
   calFetchAll(true);

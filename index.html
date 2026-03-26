@@ -437,11 +437,19 @@
         <p class="section-hint">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
         <label>iCal Feed URLs (one per line):</label>
         <textarea id="cal-urls-input" rows="4"></textarea>
-        <label style="margin-top:0.3rem;">Exclude event titles (one per line, case-insensitive):</label>
-        <textarea id="cal-excl-input" rows="3"></textarea>
         <div class="stg-btn-row">
           <button class="btn-sm btn-sm-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
           <button class="btn-sm" id="cal-settings-reset-btn">Reset to Defaults</button>
+        </div>
+      </div>
+
+      <!-- Exclude list — always visible regardless of calendar connection type -->
+      <div class="stg-card">
+        <div class="stg-card-label">Exclude Events</div>
+        <label>Exclude event titles (one per line, case-insensitive):</label>
+        <textarea id="cal-excl-input" rows="3"></textarea>
+        <div class="stg-btn-row">
+          <button class="btn-sm btn-sm-primary" id="cal-excl-save-btn">Save &amp; Refresh</button>
         </div>
       </div>
     </div>

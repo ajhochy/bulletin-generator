@@ -701,15 +701,54 @@ function renderPreview() {
 
   // ── Serving schedule ────────────────────────────────────────────────────────
   if (servingSchedule && optVolunteers.checked) {
-    const servingContent = document.createElement('div');
-    servingContent.classList.add('preview-linkable');
-    servingContent.dataset.previewSection = 'volunteers';
     const sWeeks = servingSchedule.weeks || [];
+
+    // Build rendering pages: each entry is an array of {week, segTeams, label}.
+    // A {type:'page-break'} in a week's teams forces a new page for remaining teams.
+    const pages = [[]];
     sWeeks.forEach((week, wi) => {
-      const label = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
-      renderServingWeek(servingContent, week, label);
+      const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
+      // A _breakBefore flag on a week (wi > 0) forces it onto a new page
+      if (wi > 0 && week._breakBefore) pages.push([]);
+      volSegments(week.teams).forEach((segTeams, si) => {
+        // Skip empty continuation segments (e.g. page break placed after last team)
+        if (si > 0 && segTeams.length === 0) return;
+        const label = si === 0 ? baseLabel : baseLabel + ' (cont.)';
+        if (si === 0) {
+          pages[pages.length - 1].push({ week, segTeams, label });
+        } else {
+          pages.push([{ week, segTeams, label }]);
+        }
+      });
     });
-    appendBottomSection(servingContent, 'serving');
+
+    pages.forEach((pageItems, pi) => {
+      const servingContent = document.createElement('div');
+      servingContent.classList.add('preview-linkable');
+      servingContent.dataset.previewSection = 'volunteers';
+      pageItems.forEach(({ week, segTeams, label }) => {
+        renderServingWeek(servingContent, { ...week, teams: segTeams }, label);
+      });
+      if (pi === 0) {
+        appendBottomSection(servingContent, 'serving');
+      } else {
+        // Continuation pages always get their own page (no merge toggle)
+        const contentH = measureBottomContent(servingContent);
+        const pg = document.createElement('div');
+        pg.className = 'booklet-page';
+        pg.appendChild(servingContent);
+        if (optFooter.checked) {
+          const footer = document.createElement('div');
+          footer.className = 'page-footer';
+          footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+          pg.appendChild(footer);
+        }
+        if (lastRenderedPageEl) lastRenderedPageEl.after(pg);
+        else previewPane.appendChild(pg);
+        lastRenderedPageEl = pg;
+        lastPageUsedH = contentH;
+      }
+    });
   }
 
   // ── Calendar ────────────────────────────────────────────────────────────────
