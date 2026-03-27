@@ -2,7 +2,7 @@
 
 ## Deployment Modes
 
-This project is expected to support two first-class deployment modes from one codebase.
+This project supports two first-class deployment modes from one codebase.
 
 ### Desktop Mode
 
