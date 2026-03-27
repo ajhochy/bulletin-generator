@@ -36,20 +36,23 @@ Typical workflow:
 - project save/load workflow
 - announcement editor
 - order-of-worship editor
+- staff page
 - Planning Center service import
 - volunteer/schedule import from Planning Center
+- ProPresenter song database import
 - weekly calendar rendering
 - song database management
 - PDF generation through headless Chrome/Chromium
+- in-app update system (desktop launcher + Docker Watchtower)
 
 ## Deployment modes
 
-This project is moving toward two supported deployment modes from one codebase:
+The project supports two deployment modes from one codebase:
 
-- `desktop`: packaged local app for single-user installs and testing
-- `server`: shared self-hosted deployment for browser access on a local network/server
+- `desktop`: packaged macOS app for single-user installs
+- `server`: shared self-hosted deployment for browser access on a local network or server
 
-See [docs/ARCHITECTURE.md](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/docs/ARCHITECTURE.md) for the current deployment-mode plan, issue labels, and milestone structure.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the deployment-mode plan, issue labels, and milestone structure.
 
 ## Quick start
 
@@ -83,7 +86,7 @@ On first run, the app creates local working files in `data/` from the committed 
 
 ### Packaged desktop build
 
-Desktop test builds are expected to ship with project-owned OAuth credentials bundled in the app.
+The desktop app ships as a signed and notarized macOS `.app` bundle with project-owned OAuth credentials bundled in.
 
 1. Copy the desktop config template:
 
@@ -105,7 +108,7 @@ If that conversion cannot run, the build falls back to `Bulletin Generator.icns`
 
 4. Distribute `dist/Bulletin Generator.app`.
 
-Desktop testers should sign in with their own Planning Center and Google accounts through the packaged app. They should not need to create or paste their own API keys or OAuth client credentials.
+Users sign in with their own Planning Center and Google accounts through the packaged app. They do not need to create or paste their own API keys or OAuth client credentials.
 
 ### Docker
 
@@ -132,7 +135,7 @@ Common local files include:
 - `data/projects.json`
 - `data/announcements.json`
 - `data/settings.json`
-- local song database/export files as needed
+- `data/song_database.json`
 
 Committed example files are included as safe templates:
 
@@ -140,7 +143,7 @@ Committed example files are included as safe templates:
 - `data/announcements.example.json`
 - `data/settings.example.json`
 
-In packaged desktop mode, the server is expected to store writable data outside the app bundle. The current code already supports using an application support directory on macOS.
+In packaged desktop mode, the server stores writable data in the application support directory on macOS (`~/Library/Application Support/BulletinGenerator/`).
 
 ## Integrations
 
@@ -166,12 +169,17 @@ Relevant env values:
 
 ## Repo layout
 
-- [server.py](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/server.py): local backend, API routes, PDF generation, integration proxying
-- [worship-booklet.html](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/worship-booklet.html): main frontend/editor UI
-- [Dockerfile](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/Dockerfile): container build
-- [docker-compose.yml](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/docker-compose.yml): local/shared Docker run setup
+- [server.py](server.py): local backend, API routes, PDF generation, integration proxying
+- [launcher.py](launcher.py): macOS menu bar app — single-instance management, server lifecycle
+- [worship-booklet.html](worship-booklet.html): main frontend entry point
+- [src/js/](src/js/): frontend JavaScript modules
+- [src/css/](src/css/): frontend stylesheets
+- [bulletin-generator.spec](bulletin-generator.spec): PyInstaller build config for macOS desktop app
+- [Dockerfile](Dockerfile): container build
+- [docker-compose.yml](docker-compose.yml): local/shared Docker run setup
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): design notes, deployment modes, issue labels
 - `data/*.example.json`: safe starter data committed to Git
-- [.env.example](/Users/ajhochhalter/Documents/Bulletin Generator - 1.04/.env.example): starter environment configuration
+- [.env.example](.env.example): starter environment configuration
 
 ## What stays local
 

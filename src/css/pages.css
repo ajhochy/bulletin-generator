@@ -466,7 +466,7 @@
     .staff-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.70rem;
+      font-size: 0.58rem;
       font-family: var(--font-sans);
     }
     .staff-table tr {
@@ -490,7 +490,7 @@
     }
     .staff-table .semail {
       color: #888;
-      font-size: 0.62rem;
+      font-size: 0.52rem;
       font-style: italic;
       text-align: right;
       white-space: nowrap;
@@ -504,7 +504,7 @@
     .staff-flex-wrap {
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow: visible;
     }
     /* Stretchy gap between staff table and logo — QR centers itself here */
     .staff-give-flex {
@@ -525,7 +525,7 @@
     }
     .staff-logo-wrap img {
       max-width: 2.3in;
-      max-height: 0.9in;
+      max-height: 1.2in;
       object-fit: contain;
     }
 
