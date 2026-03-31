@@ -576,6 +576,81 @@ function pcoMapItemType(attrs) {
   return 'label';
 }
 
+// ─── Resync diff helpers ──────────────────────────────────────────────────────
+
+// Computes all diff categories between prevItems (current project) and newItems (PCO, post-filter).
+// pcoIgnoredMapped: items that were filtered out by pcoIgnore (for display in diff modal).
+// allPcoMapped: all PCO items including ignored, used for insert-position calculation.
+function buildResyncDiff(prevItems, newItems, pcoIgnoredMapped, allPcoMapped) {
+  const prevNorms = new Set(prevItems.map(i => normTitle(i.title)));
+  const newNorms  = new Set(newItems.map(i => normTitle(i.title)));
+  const lastNorms = new Set(pcoLastImportedTitles.map(t => normTitle(t)));
+
+  // New in PCO: in newItems, not in prevItems, and not in last import
+  // (genuinely added to the PCO plan since last import)
+  const newInPco = newItems.filter(item => {
+    const n = normTitle(item.title);
+    return !prevNorms.has(n) && !lastNorms.has(n);
+  });
+
+  // Removed from project: in newItems, not in prevItems, but WAS in last import
+  // (user deleted it from their bulletin since last import; still exists in PCO)
+  const removedFromProject = newItems.filter(item => {
+    const n = normTitle(item.title);
+    return !prevNorms.has(n) && lastNorms.has(n);
+  });
+
+  // Title or type changes: matched items (same normalized title) where PCO differs
+  const titleTypeChanges = [];
+  newItems.forEach(newItem => {
+    const match = prevItems.find(p => normTitle(p.title) === normTitle(newItem.title));
+    if (match && (match.title !== newItem.title || match.type !== newItem.type)) {
+      titleTypeChanges.push({
+        normKey:   normTitle(newItem.title),
+        prevTitle: match.title,
+        newTitle:  newItem.title,
+        prevType:  match.type,
+        newType:   newItem.type,
+      });
+    }
+  });
+
+  // Order changes: compare relative sequence of items present in both
+  const prevMatchedNorms = prevItems.map(i => normTitle(i.title)).filter(n => newNorms.has(n));
+  const newMatchedNorms  = newItems.map(i => normTitle(i.title)).filter(n => prevNorms.has(n));
+  const orderChanged = prevMatchedNorms.length > 1 &&
+                       prevMatchedNorms.join('|') !== newMatchedNorms.join('|');
+
+  return {
+    newInPco, removedFromProject, pcoIgnoredMapped, titleTypeChanges,
+    orderChanged, prevMatchedNorms, newMatchedNorms, allPcoMapped,
+  };
+}
+
+// Returns the index in items[] at which to insert a new item to best match PCO order.
+// Looks backwards through allPcoMapped for the closest preceding item already in items[].
+function findInsertPosition(targetItem, allPcoMapped) {
+  const targetNorm = normTitle(targetItem.title);
+  const pcoIdx = allPcoMapped.findIndex(i => normTitle(i.title) === targetNorm);
+  if (pcoIdx <= 0) return 0;
+  for (let i = pcoIdx - 1; i >= 0; i--) {
+    const precedingNorm = normTitle(allPcoMapped[i].title);
+    const localIdx = items.findIndex(li => normTitle(li.title) === precedingNorm);
+    if (localIdx >= 0) return localIdx + 1;
+  }
+  return 0;
+}
+
+// Re-sorts items[] to match the PCO order given by pcoNormsOrdered.
+// Items not present in the PCO order (e.g. page-breaks, manual items) move to the end.
+function applyCPcoOrder(pcoNormsOrdered) {
+  const pcoRank = new Map(pcoNormsOrdered.map((n, i) => [n, i]));
+  items.sort((a, b) => {
+    const ra = pcoRank.has(normTitle(a.title)) ? pcoRank.get(normTitle(a.title)) : Infinity;
+    const rb = pcoRank.has(normTitle(b.title)) ? pcoRank.get(normTitle(b.title)) : Infinity;
+    return ra - rb;
+  });
+}
 
 // ─── Serving schedule fetch ───────────────────────────────────────────────────
 
