@@ -483,6 +483,29 @@ function closeImportReviewDialog() {
   document.getElementById('import-review-modal').style.display = 'none';
 }
 
+// ─── PCO ignore list chip UI ──────────────────────────────────────────────────
+function renderPcoIgnoreChips() {
+  const container = document.getElementById('pco-ignore-chips');
+  if (!container) return;
+  container.innerHTML = '';
+  pcoIgnore.forEach((name, i) => {
+    const chip = document.createElement('span');
+    chip.style.cssText = 'display:inline-flex;align-items:center;gap:0.25rem;background:var(--border);border-radius:3px;padding:0.1rem 0.4rem;font-size:0.75rem;';
+    chip.appendChild(document.createTextNode(name));
+    const x = document.createElement('button');
+    x.textContent = '×';
+    x.title = 'Remove';
+    x.style.cssText = 'background:none;border:none;cursor:pointer;padding:0 0 0 0.1rem;font-size:0.9rem;line-height:1;color:var(--muted);';
+    x.addEventListener('click', () => {
+      pcoIgnore.splice(i, 1);
+      renderPcoIgnoreChips();
+      scheduleProjectPersist();
+    });
+    chip.appendChild(x);
+    container.appendChild(chip);
+  });
+}
+
 function irmRadioRow(groupName, labelText, checked, onChange) {
   const label = document.createElement('label');
   label.className = 'irm-radio-row';
@@ -1045,4 +1068,23 @@ function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnm
   document.getElementById('irm-title').textContent = hasExtra ? 'Review Imported Plan' : 'Review Refreshed Plan';
   document.getElementById('import-review-modal').style.display = 'flex';
 }
+
+// ─── PCO ignore list event handlers ──────────────────────────────────────────
+document.getElementById('pco-ignore-add-btn').addEventListener('click', () => {
+  const input = document.getElementById('pco-ignore-input');
+  const name = (input.value || '').trim();
+  if (!name) return;
+  const normName = normTitle(name);
+  if (!pcoIgnore.some(n => normTitle(n) === normName)) {
+    pcoIgnore.push(name);
+    renderPcoIgnoreChips();
+    scheduleProjectPersist();
+  }
+  input.value = '';
+  input.focus();
+});
+
+document.getElementById('pco-ignore-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('pco-ignore-add-btn').click();
+});
 
