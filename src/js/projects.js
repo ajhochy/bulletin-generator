@@ -65,6 +65,8 @@ function collectCurrentProjectState() {
     giveOnlineUrl: giveOnlineUrl || '',
     servingSchedule: servingSchedule || null,
     calEvents: Array.isArray(calEvents) ? calEvents.map(e => Object.assign({}, e, { start: Object.assign({}, e.start), end: e.end ? Object.assign({}, e.end) : null })) : null,
+    pcoIgnore: pcoIgnore.slice(),
+    pcoLastImportedTitles: pcoLastImportedTitles.slice(),
   };
 }
 
@@ -114,6 +116,9 @@ function applyProjectState(state) {
   calEvents = Array.isArray(safe.calEvents) ? safe.calEvents : null;
   calLastFetch = Array.isArray(safe.calEvents) ? Date.now() : 0;
   renderCalEventEditor();
+  pcoIgnore = Array.isArray(safe.pcoIgnore) ? safe.pcoIgnore.slice() : [];
+  pcoLastImportedTitles = Array.isArray(safe.pcoLastImportedTitles) ? safe.pcoLastImportedTitles.slice() : [];
+  if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   updateDocTitle();
   applyingProjectState = false;
   renderPreview();
@@ -471,6 +476,9 @@ function clearEditorForNewProject() {
   welcomeHeadingInput.value = welcomeHeading;
   welcomeRender();
   items = [];
+  pcoIgnore = [];
+  pcoLastImportedTitles = [];
+  if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   renderItemList();
   applyCoverImage(null, '');
   // Logo & Give Online URL are global settings — not cleared on new project
