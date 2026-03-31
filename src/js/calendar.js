@@ -258,7 +258,8 @@ function volRender() {
         return;
       }
 
-      if (servingTeamFilter[team.name] === false || volTeamFilter[team.name] === false) return;
+      if (servingTeamFilter[team.name] === false) return;
+      const teamHidden = volTeamFilter[team.name] === false;
 
       // ── Service time group transition ───────────────────────────────────────
       if (team.serviceTime !== lastServiceTime) {
@@ -321,20 +322,21 @@ function volRender() {
       // ── Team name row ───────────────────────────────────────────────────────
       const teamNameRow = document.createElement('div');
       teamNameRow.style.cssText =
-        'display:flex; align-items:center; justify-content:space-between; margin-bottom:0;';
+        'display:flex; align-items:center; justify-content:space-between; margin-bottom:0;' +
+        (teamHidden ? 'opacity:0.45;' : '');
       teamNameRow.dataset.volWeekIdx = wi;
       teamNameRow.dataset.volTeamIdx = ti;
 
       const teamNameEl = document.createElement('div');
       teamNameEl.className   = 'vol-team-name';
       teamNameEl.style.marginBottom = '0';
-      teamNameEl.textContent = team.name;
+      teamNameEl.textContent = team.name + (teamHidden ? ' (hidden)' : '');
       teamNameRow.appendChild(teamNameEl);
 
       const visBtn = document.createElement('button');
       visBtn.className = 'vol-vis-btn';
       visBtn.title = 'Toggle visibility in bulletin';
-      visBtn.textContent = volTeamFilter[team.name] === false ? 'Show' : 'Hide';
+      visBtn.textContent = teamHidden ? 'Show' : 'Hide';
       visBtn.addEventListener('click', () => {
         volTeamFilter[team.name] = volTeamFilter[team.name] === false ? true : false;
         volRender(); schedulePreviewUpdate(); autosaveProjectState();
@@ -353,7 +355,8 @@ function volRender() {
       teamNameRow.appendChild(delTeamBtn);
       currentContainer.appendChild(teamNameRow);
 
-      // ── Position rows ───────────────────────────────────────────────────────
+      // ── Position rows (skipped for hidden teams) ────────────────────────────
+      if (teamHidden) return;
       team.positions.forEach((pos, pi) => {
         const row = document.createElement('div');
         row.className = 'vol-pos-row';
