@@ -539,7 +539,8 @@ function renderPcoIgnoreChips() {
     x.addEventListener('click', () => {
       pcoIgnore.splice(i, 1);
       renderPcoIgnoreChips();
-      scheduleProjectPersist();
+      if (typeof autosaveProjectState === 'function') autosaveProjectState();
+      else scheduleProjectPersist();
     });
     chip.appendChild(x);
     container.appendChild(chip);
@@ -1472,7 +1473,8 @@ document.getElementById('pco-ignore-add-btn').addEventListener('click', () => {
   if (!pcoIgnore.some(n => normTitle(n) === normName)) {
     pcoIgnore.push(name);
     renderPcoIgnoreChips();
-    scheduleProjectPersist();
+    if (typeof autosaveProjectState === 'function') autosaveProjectState();
+    else scheduleProjectPersist();
   }
   input.value = '';
   input.focus();
