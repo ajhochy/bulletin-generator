@@ -136,7 +136,9 @@ function renderBodyText(el, text, prose = false) {
   // render all lines bold. Produced when user selects all and clicks Bold.
   const BLOCK_BOLD_RE = /^\*\*([\s\S]*)\*\*$/;
   const blockBoldMatch = BLOCK_BOLD_RE.exec(text.trim());
-  if (blockBoldMatch) {
+  // Only treat as block-bold if the inner content has no further ** pairs.
+  // If it does, these are multiple inline bolds — don't collapse them into one block.
+  if (blockBoldMatch && !blockBoldMatch[1].includes('**')) {
     text = blockBoldMatch[1];
   }
   // Block-level * wrapping: "*entire\nblock*" → strip markers,

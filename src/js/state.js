@@ -9,6 +9,7 @@ let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
 let giveOnlineUrl = '';
 let servingSchedule = null; // { weeks: [{date, planId, teams:[{name,serviceTime,positions:[{role,names[]}]}]}, ...] }
 let servingTeamFilter = {}; // { teamName: true/false } — persisted in settings.json
+let volTeamFilter = {};     // { teamName: true/false } — per-project visibility override
 let calEvents = null;  // array from /cal endpoint, null = not yet fetched, false = fetch failed
 let calLastFetch = 0;  // ms timestamp of last successful fetch
 let coverImageUrl = null;

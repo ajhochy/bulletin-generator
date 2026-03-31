@@ -707,6 +707,10 @@ function renderPreview() {
     // A {type:'page-break'} in a week's teams forces a new page for remaining teams.
     const pages = [[]];
     sWeeks.forEach((week, wi) => {
+      const allHidden = (week.teams || []).filter(t => t.type !== 'page-break').every(
+        t => servingTeamFilter[t.name] === false || volTeamFilter[t.name] === false
+      );
+      if (allHidden) return; // skip entire week including header
       const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
       // A _breakBefore flag on a week (wi > 0) forces it onto a new page
       if (wi > 0 && week._breakBefore) pages.push([]);
