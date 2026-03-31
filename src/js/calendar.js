@@ -21,6 +21,115 @@ function formatNameList(names) {
 }
 
 // ─── Volunteer editor (sidebar) ───────────────────────────────────────────────
+
+function getVolCollapseState() {
+  try { return JSON.parse(localStorage.getItem('vol-collapse') || '{}'); }
+  catch { return {}; }
+}
+
+function saveVolCollapseState(state) {
+  localStorage.setItem('vol-collapse', JSON.stringify(state));
+}
+
+// Expand the volunteers section + the week and service-time containers that
+// contain the target team, then scroll to its editor row and flash it.
+function scrollEditorToVolTeam(weekIdx, teamIdx) {
+  // 1. Expand the volunteers panel section
+  scrollEditorToSection('panel-section-volunteers');
+
+  // 2. Expand the week body for weekIdx
+  const volEditor = document.getElementById('vol-editor');
+  if (!volEditor) return;
+  const weekBodies = volEditor.querySelectorAll('.vol-week-body');
+  // weekBodies[weekIdx] corresponds to week wi = weekIdx
+  // The week bodies are rendered in order, one per week.
+  const weekBody = weekBodies[weekIdx];
+  if (weekBody && weekBody.classList.contains('collapsed')) {
+    weekBody.classList.remove('collapsed');
+    // Update the toggle arrow for this week
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}`];
+    saveVolCollapseState(s);
+    const weekHeader = weekBody.previousElementSibling;
+    if (weekHeader && weekHeader.classList.contains('vol-week-header')) {
+      const toggle = weekHeader.querySelector('.vol-collapse-toggle');
+      if (toggle) toggle.textContent = '▼';
+    }
+  }
+
+  // 3. Find the target team row and expand its service-time body if needed
+  const teamRow = volEditor.querySelector(
+    `[data-vol-week-idx="${weekIdx}"][data-vol-team-idx="${teamIdx}"]`
+  );
+  if (!teamRow) return;
+
+  // Walk up to see if teamRow is inside a vol-st-body
+  const stBody = teamRow.closest('.vol-st-body');
+  if (stBody && stBody.classList.contains('collapsed')) {
+    stBody.classList.remove('collapsed');
+    const stHeader = stBody.previousElementSibling;
+    if (stHeader && stHeader.classList.contains('vol-st-header')) {
+      const toggle = stHeader.querySelector('.vol-collapse-toggle');
+      const st = stHeader.dataset.volSt;
+      if (toggle) toggle.textContent = '▼';
+      const s = getVolCollapseState();
+      delete s[`w${weekIdx}:st:${st}`];
+      saveVolCollapseState(s);
+    }
+  }
+
+  // 4. Scroll to team row and flash is-linked
+  const aside = document.querySelector('aside');
+  scrollElementIntoContainer(aside, teamRow, 'smooth');
+  teamRow.classList.add('is-linked');
+  setTimeout(() => teamRow.classList.remove('is-linked'), 1600);
+}
+
+// Expand the volunteers section + the week, then scroll to the service-time
+// subheading and flash it.
+function scrollEditorToVolServiceTime(weekIdx, st) {
+  scrollEditorToSection('panel-section-volunteers');
+
+  const volEditor = document.getElementById('vol-editor');
+  if (!volEditor) return;
+
+  // Expand the week body
+  const weekBodies = volEditor.querySelectorAll('.vol-week-body');
+  const weekBody   = weekBodies[weekIdx];
+  if (weekBody && weekBody.classList.contains('collapsed')) {
+    weekBody.classList.remove('collapsed');
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}`];
+    saveVolCollapseState(s);
+    const weekHeader = weekBody.previousElementSibling;
+    if (weekHeader && weekHeader.classList.contains('vol-week-header')) {
+      const toggle = weekHeader.querySelector('.vol-collapse-toggle');
+      if (toggle) toggle.textContent = '▼';
+    }
+  }
+
+  // Find and expand the service-time header
+  const stHeader = volEditor.querySelector(
+    `[data-vol-week-idx="${weekIdx}"][data-vol-st="${st}"]`
+  );
+  if (!stHeader) return;
+
+  const stBody = stHeader.nextElementSibling;
+  if (stBody && stBody.classList.contains('vol-st-body') && stBody.classList.contains('collapsed')) {
+    stBody.classList.remove('collapsed');
+    const toggle = stHeader.querySelector('.vol-collapse-toggle');
+    if (toggle) toggle.textContent = '▼';
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}:st:${st}`];
+    saveVolCollapseState(s);
+  }
+
+  const aside = document.querySelector('aside');
+  scrollElementIntoContainer(aside, stHeader, 'smooth');
+  stHeader.classList.add('is-linked');
+  setTimeout(() => stHeader.classList.remove('is-linked'), 1600);
+}
+
 function volRender() {
   const editor   = document.getElementById('vol-editor');
   const emptyMsg = document.getElementById('vol-empty');
@@ -32,13 +141,26 @@ function volRender() {
   }
   emptyMsg.style.display = 'none';
 
-  const weeks = servingSchedule.weeks || [];
+  const weeks    = servingSchedule.weeks || [];
+  const colState = getVolCollapseState();
+
+  // Initialise collapse state on first load: default all weeks collapsed.
+  let stateChanged = false;
+  weeks.forEach((_, wi) => {
+    if (!((`w${wi}`) in colState)) {
+      colState[`w${wi}`] = true;
+      stateChanged = true;
+    }
+  });
+  if (stateChanged) saveVolCollapseState(colState);
 
   weeks.forEach((data, wi) => {
-    const label = wi === 0 ? 'This Week' : (weeks.length === 2 ? 'Next Week' : data.date || `Week ${wi + 1}`);
+    const label = wi === 0
+      ? 'This Week'
+      : (weeks.length === 2 ? 'Next Week' : data.date || `Week ${wi + 1}`);
     const weekEl = document.createElement('div');
 
-    // For weeks after the first, allow a page break before the entire week heading
+    // ── Page-break before week (always visible, only wi > 0) ─────────────────
     if (wi > 0) {
       if (data._breakBefore) {
         const pbRow = document.createElement('div');
@@ -51,9 +173,7 @@ function volRender() {
         removeBtn.textContent = '✕';
         removeBtn.addEventListener('click', () => {
           delete servingSchedule.weeks[wi]._breakBefore;
-          volRender();
-          schedulePreviewUpdate();
-          scheduleProjectPersist();
+          volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
         });
         pbRow.appendChild(lbl);
         pbRow.appendChild(removeBtn);
@@ -65,32 +185,60 @@ function volRender() {
         wBreakBtn.textContent = '⊞ Add page break before ' + label;
         wBreakBtn.addEventListener('click', () => {
           servingSchedule.weeks[wi]._breakBefore = true;
-          volRender();
-          schedulePreviewUpdate();
-          scheduleProjectPersist();
+          volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
         });
         weekEl.appendChild(wBreakBtn);
       }
     }
 
-    const weekLabel = document.createElement('div');
-    weekLabel.className = 'vol-week-label';
-    weekLabel.textContent = label + (wi === 0 && data.date ? ' — ' + data.date : (wi > 0 && label !== data.date && data.date ? ' — ' + data.date : ''));
-    weekEl.appendChild(weekLabel);
+    // ── Week header: toggle button + label ────────────────────────────────────
+    const weekCollapseKey = `w${wi}`;
+    const weekCollapsed   = colState[weekCollapseKey] !== false;
 
-    // Track service time headers so we insert them before the first team in each group
+    const weekHeader = document.createElement('div');
+    weekHeader.className = 'vol-week-header';
+
+    const weekToggle = document.createElement('button');
+    weekToggle.className = 'vol-collapse-toggle';
+    weekToggle.textContent = weekCollapsed ? '▶' : '▼';
+
+    const weekLabelEl = document.createElement('span');
+    weekLabelEl.className = 'vol-week-header-text';
+    weekLabelEl.textContent = label
+      + (wi === 0 && data.date ? ' — ' + data.date
+        : (wi > 0 && label !== data.date && data.date ? ' — ' + data.date : ''));
+
+    weekHeader.appendChild(weekToggle);
+    weekHeader.appendChild(weekLabelEl);
+    weekEl.appendChild(weekHeader);
+
+    // ── Week body (collapsible) ───────────────────────────────────────────────
+    const weekBody = document.createElement('div');
+    weekBody.className = 'vol-week-body';
+    if (weekCollapsed) weekBody.classList.add('collapsed');
+
+    weekToggle.addEventListener('click', () => {
+      const s = getVolCollapseState();
+      const nowCollapsed = !weekBody.classList.contains('collapsed');
+      if (nowCollapsed) { s[weekCollapseKey] = true; } else { delete s[weekCollapseKey]; }
+      saveVolCollapseState(s);
+      weekBody.classList.toggle('collapsed');
+      weekToggle.textContent = weekBody.classList.contains('collapsed') ? '▶' : '▼';
+    });
+
     let lastServiceTime = undefined;
+    let currentContainer = weekBody; // where team content gets appended
 
-    // Whether this week uses service-time groupings — determines page-break button placement.
-    const hasServiceTimes = (data.teams || []).some(t => t.type !== 'page-break' && t.serviceTime);
-
-    // For non-service-time data: index of last real team (suppresses button on final team).
+    const hasServiceTimes = (data.teams || []).some(
+      t => t.type !== 'page-break' && t.serviceTime
+    );
     const lastRealTeamIdx = hasServiceTimes ? -1 : (data.teams || []).reduce(
-      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false) ? i : last, -1
+      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false) ? i : last,
+      -1
     );
 
     (data.teams || []).forEach((team, ti) => {
-      // Page break marker
+      // Page-break marker between teams
       if (team.type === 'page-break') {
         const pbRow = document.createElement('div');
         pbRow.className = 'vol-page-break-row';
@@ -102,24 +250,20 @@ function volRender() {
         removeBtn.textContent = '✕';
         removeBtn.addEventListener('click', () => {
           servingSchedule.weeks[wi].teams.splice(ti, 1);
-          volRender();
-          schedulePreviewUpdate();
-          scheduleProjectPersist();
+          volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
         });
         pbRow.appendChild(lbl);
         pbRow.appendChild(removeBtn);
-        weekEl.appendChild(pbRow);
+        weekBody.appendChild(pbRow);
         return;
       }
 
-      // Skip teams hidden by the serving team filter
       if (servingTeamFilter[team.name] === false) return;
 
-      // Insert a service-time subheading when the group changes
+      // ── Service time group transition ───────────────────────────────────────
       if (team.serviceTime !== lastServiceTime) {
         lastServiceTime = team.serviceTime;
         if (team.serviceTime) {
-          // "Add page break before this service time" — only when there's content above it
           if (ti > 0) {
             const stBreakBtn = document.createElement('button');
             stBreakBtn.className = 'vol-add-link';
@@ -128,53 +272,90 @@ function volRender() {
             stBreakBtn.title = 'Insert a page break before this service time';
             stBreakBtn.addEventListener('click', () => {
               servingSchedule.weeks[wi].teams.splice(ti, 0, { type: 'page-break' });
-              volRender();
-              schedulePreviewUpdate();
-              scheduleProjectPersist();
+              volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
             });
-            weekEl.appendChild(stBreakBtn);
+            weekBody.appendChild(stBreakBtn);
           }
-          const stHeader = document.createElement('div');
-          stHeader.className = 'vol-week-label';
-          stHeader.style.cssText = 'font-size:0.65rem; margin-top:0.4rem; margin-bottom:0.15rem; color:var(--accent-light); border-bottom-color:var(--border);';
-          stHeader.textContent = team.serviceTime;
-          weekEl.appendChild(stHeader);
+
+          const stCollapseKey = `w${wi}:st:${team.serviceTime}`;
+          const stCollapsed   = colState[stCollapseKey] !== false;
+
+          // Service time header: toggle + label
+          const stHeaderEl = document.createElement('div');
+          stHeaderEl.className = 'vol-st-header';
+          stHeaderEl.dataset.volWeekIdx = wi;
+          stHeaderEl.dataset.volSt      = team.serviceTime;
+
+          const stToggle = document.createElement('button');
+          stToggle.className = 'vol-collapse-toggle';
+          stToggle.textContent = stCollapsed ? '▶' : '▼';
+
+          const stLabelEl = document.createElement('span');
+          stLabelEl.className = 'vol-st-header-text';
+          stLabelEl.textContent = team.serviceTime;
+
+          stHeaderEl.appendChild(stToggle);
+          stHeaderEl.appendChild(stLabelEl);
+          weekBody.appendChild(stHeaderEl);
+
+          const stBody = document.createElement('div');
+          stBody.className = 'vol-st-body';
+          if (stCollapsed) stBody.classList.add('collapsed');
+
+          stToggle.addEventListener('click', () => {
+            const s = getVolCollapseState();
+            const nowC = !stBody.classList.contains('collapsed');
+            if (nowC) { s[stCollapseKey] = true; } else { delete s[stCollapseKey]; }
+            saveVolCollapseState(s);
+            stBody.classList.toggle('collapsed');
+            stToggle.textContent = stBody.classList.contains('collapsed') ? '▶' : '▼';
+          });
+
+          weekBody.appendChild(stBody);
+          currentContainer = stBody;
+        } else {
+          currentContainer = weekBody;
         }
       }
 
+      // ── Team name row ───────────────────────────────────────────────────────
       const teamNameRow = document.createElement('div');
-      teamNameRow.style.cssText = 'display:flex; align-items:center; justify-content:space-between; margin-bottom:0;';
+      teamNameRow.style.cssText =
+        'display:flex; align-items:center; justify-content:space-between; margin-bottom:0;';
+      teamNameRow.dataset.volWeekIdx = wi;
+      teamNameRow.dataset.volTeamIdx = ti;
+
       const teamNameEl = document.createElement('div');
-      teamNameEl.className = 'vol-team-name';
+      teamNameEl.className   = 'vol-team-name';
       teamNameEl.style.marginBottom = '0';
       teamNameEl.textContent = team.name;
       teamNameRow.appendChild(teamNameEl);
+
       const delTeamBtn = document.createElement('button');
       delTeamBtn.className = 'vol-remove-btn';
-      delTeamBtn.title = 'Remove this team';
+      delTeamBtn.title     = 'Remove this team';
       delTeamBtn.textContent = '✕';
       delTeamBtn.addEventListener('click', () => {
         if (!confirm(`Remove team "${team.name}"?`)) return;
         servingSchedule.weeks[wi].teams.splice(ti, 1);
-        volRender();
-        schedulePreviewUpdate();
-        scheduleProjectPersist();
+        volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
       });
       teamNameRow.appendChild(delTeamBtn);
-      weekEl.appendChild(teamNameRow);
+      currentContainer.appendChild(teamNameRow);
 
+      // ── Position rows ───────────────────────────────────────────────────────
       team.positions.forEach((pos, pi) => {
         const row = document.createElement('div');
         row.className = 'vol-pos-row';
 
         const roleLabel = document.createElement('span');
-        roleLabel.className = 'vol-role-label';
+        roleLabel.className   = 'vol-role-label';
         roleLabel.textContent = pos.role;
 
         const namesInput = document.createElement('input');
-        namesInput.type = 'text';
-        namesInput.className = 'vol-names-input';
-        namesInput.value = (pos.names || []).join(', ');
+        namesInput.type        = 'text';
+        namesInput.className   = 'vol-names-input';
+        namesInput.value       = (pos.names || []).join(', ');
         namesInput.placeholder = 'Names, comma-separated';
         namesInput.addEventListener('input', () => {
           servingSchedule.weeks[wi].teams[ti].positions[pi].names =
@@ -185,25 +366,23 @@ function volRender() {
         });
 
         const removeBtn = document.createElement('button');
-        removeBtn.className = 'vol-remove-btn';
-        removeBtn.title = 'Remove this role';
+        removeBtn.className   = 'vol-remove-btn';
+        removeBtn.title       = 'Remove this role';
         removeBtn.textContent = '✕';
         removeBtn.addEventListener('click', () => {
           servingSchedule.weeks[wi].teams[ti].positions.splice(pi, 1);
-          volRender();
-          schedulePreviewUpdate();
-          scheduleProjectPersist();
+          volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
         });
 
         row.appendChild(roleLabel);
         row.appendChild(namesInput);
         row.appendChild(removeBtn);
-        weekEl.appendChild(row);
+        currentContainer.appendChild(row);
       });
 
-      // Add role button
+      // ── Add role button ─────────────────────────────────────────────────────
       const addRoleBtn = document.createElement('button');
-      addRoleBtn.className = 'vol-add-link';
+      addRoleBtn.className   = 'vol-add-link';
       addRoleBtn.textContent = '+ Add role';
       addRoleBtn.addEventListener('click', () => {
         const role = prompt('Role name (e.g. GREETER):');
@@ -211,48 +390,42 @@ function volRender() {
         servingSchedule.weeks[wi].teams[ti].positions.push({
           role: role.trim().toUpperCase(), names: []
         });
-        volRender();
-        schedulePreviewUpdate();
-        scheduleProjectPersist();
+        volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
       });
-      weekEl.appendChild(addRoleBtn);
+      currentContainer.appendChild(addRoleBtn);
 
-      // Add page break button after each team — only for non-service-time data,
-      // and only when there are more teams after this one.
+      // ── Add page break after team (non-service-time data, not the last team) ─
       if (!hasServiceTimes && ti < lastRealTeamIdx) {
         const addBreakBtn = document.createElement('button');
-        addBreakBtn.className = 'vol-add-link';
+        addBreakBtn.className   = 'vol-add-link';
         addBreakBtn.style.cssText = 'color:var(--muted); margin-left:0.6rem;';
         addBreakBtn.textContent = '⊞ Add page break';
-        addBreakBtn.title = 'Insert a page break after this team group';
+        addBreakBtn.title       = 'Insert a page break after this team group';
         addBreakBtn.addEventListener('click', () => {
           servingSchedule.weeks[wi].teams.splice(ti + 1, 0, { type: 'page-break' });
-          volRender();
-          schedulePreviewUpdate();
-          scheduleProjectPersist();
+          volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
         });
-        weekEl.appendChild(addBreakBtn);
+        currentContainer.appendChild(addBreakBtn);
       }
     });
 
-    // Add team button
+    // ── Add team button ───────────────────────────────────────────────────────
     const footer = document.createElement('div');
     footer.className = 'vol-week-footer';
     const addTeamBtn = document.createElement('button');
-    addTeamBtn.className = 'btn-sm';
+    addTeamBtn.className   = 'btn-sm';
     addTeamBtn.style.cssText = 'width:100%; font-size:0.7rem;';
     addTeamBtn.textContent = '+ Add Team';
     addTeamBtn.addEventListener('click', () => {
       const name = prompt('Team name (e.g. Greeter):');
       if (!name || !name.trim()) return;
       servingSchedule.weeks[wi].teams.push({ name: name.trim(), positions: [] });
-      volRender();
-      schedulePreviewUpdate();
-      scheduleProjectPersist();
+      volRender(); schedulePreviewUpdate(); scheduleProjectPersist();
     });
     footer.appendChild(addTeamBtn);
-    weekEl.appendChild(footer);
+    weekBody.appendChild(footer);
 
+    weekEl.appendChild(weekBody);
     editor.appendChild(weekEl);
   });
 }
@@ -524,11 +697,13 @@ function renderCalendarPage(container, church, date) {
   });
 }
 
-function renderServingTeam(container, team) {
+function renderServingTeam(container, team, weekIdx, teamIdx) {
   // Team name subheading removed — only position rows are shown
   team.positions.forEach(pos => {
     const row = document.createElement('div');
-    row.className = 'serving-row';
+    row.className = 'serving-row preview-linkable';
+    row.dataset.previewVolWeekIdx = weekIdx;
+    row.dataset.previewVolTeamIdx = teamIdx;
     const roleSpan = document.createElement('span');
     roleSpan.className = 'serving-role';
     roleSpan.textContent = pos.role + ': ';
@@ -538,14 +713,16 @@ function renderServingTeam(container, team) {
   });
 }
 
-function renderServingWeek(container, weekData, labelText) {
+function renderServingWeek(container, weekData, labelText, weekIdx) {
   const wLabel = document.createElement('div');
   wLabel.className = 'serving-week-label';
   wLabel.textContent = labelText;
   container.appendChild(wLabel);
 
   // Filter out page-break markers and hidden teams
-  const visibleTeams = (weekData.teams || []).filter(t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false);
+  const visibleTeams = (weekData.teams || []).filter(
+    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false
+  );
 
   if (visibleTeams.length === 0) {
     const empty = document.createElement('div');
@@ -559,8 +736,12 @@ function renderServingWeek(container, weekData, labelText) {
   const hasServiceTimes = visibleTeams.some(t => t.serviceTime);
 
   if (!hasServiceTimes) {
-    // Legacy / manually-entered data — render flat list as before
-    visibleTeams.forEach(team => renderServingTeam(container, team));
+    // Legacy / manually-entered data — render flat list
+    // teamIdx is the original index in weekData.teams (needed for editor navigation)
+    visibleTeams.forEach(team => {
+      const teamIdx = (weekData.teams || []).indexOf(team);
+      renderServingTeam(container, team, weekIdx, teamIdx);
+    });
     return;
   }
 
@@ -576,11 +757,16 @@ function renderServingWeek(container, weekData, labelText) {
   timeOrder.forEach(svcTime => {
     if (svcTime) {
       const stLabel = document.createElement('div');
-      stLabel.className = 'serving-service-time';
+      stLabel.className = 'serving-service-time preview-linkable';
+      stLabel.dataset.previewVolWeekIdx = weekIdx;
+      stLabel.dataset.previewVolSt      = svcTime;
       stLabel.textContent = svcTime;
       container.appendChild(stLabel);
     }
-    timeGroups[svcTime].forEach(team => renderServingTeam(container, team));
+    timeGroups[svcTime].forEach(team => {
+      const teamIdx = (weekData.teams || []).indexOf(team);
+      renderServingTeam(container, team, weekIdx, teamIdx);
+    });
   });
 }
 

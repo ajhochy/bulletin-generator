@@ -727,7 +727,8 @@ function renderPreview() {
       servingContent.classList.add('preview-linkable');
       servingContent.dataset.previewSection = 'volunteers';
       pageItems.forEach(({ week, segTeams, label }) => {
-        renderServingWeek(servingContent, { ...week, teams: segTeams }, label);
+        const weekIdx = (servingSchedule.weeks || []).indexOf(week);
+        renderServingWeek(servingContent, { ...week, teams: segTeams }, label, weekIdx);
       });
       if (pi === 0) {
         appendBottomSection(servingContent, 'serving');
