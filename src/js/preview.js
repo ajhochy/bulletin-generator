@@ -708,7 +708,7 @@ function renderPreview() {
     const pages = [[]];
     sWeeks.forEach((week, wi) => {
       const allHidden = (week.teams || []).filter(t => t.type !== 'page-break').every(
-        t => servingTeamFilter[t.name] === false || volTeamFilter['w'+wi+':'+t.name] === false
+        t => servingTeamFilter[t.name] === false || volTeamFilter['w'+wi+':'+(t.serviceTime||'')+':'+t.name] === false
       );
       if (allHidden) return; // skip entire week including header
       const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);

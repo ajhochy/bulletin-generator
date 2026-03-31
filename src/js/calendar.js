@@ -233,7 +233,7 @@ function volRender() {
       t => t.type !== 'page-break' && t.serviceTime
     );
     const lastRealTeamIdx = hasServiceTimes ? -1 : (data.teams || []).reduce(
-      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+wi+':'+t.name] !== false) ? i : last,
+      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+wi+':'+(t.serviceTime||'')+':'+t.name] !== false) ? i : last,
       -1
     );
 
@@ -259,7 +259,7 @@ function volRender() {
       }
 
       if (servingTeamFilter[team.name] === false) return;
-      const volKey = 'w'+wi+':'+team.name;
+      const volKey = 'w'+wi+':'+(team.serviceTime||'')+':'+team.name;
       const teamHidden = volTeamFilter[volKey] === false;
 
       // ── Service time group transition ───────────────────────────────────────
@@ -282,7 +282,11 @@ function volRender() {
           const stCollapseKey = `w${wi}:st:${team.serviceTime}`;
           const stCollapsed   = colState[stCollapseKey] !== false;
 
-          // Service time header: toggle + label
+          // Determine if all teams in this service time are hidden
+          const stTeams = (data.teams || []).filter(t => t.type !== 'page-break' && t.serviceTime === team.serviceTime);
+          const allStHidden = stTeams.length > 0 && stTeams.every(t => volTeamFilter['w'+wi+':'+t.serviceTime+':'+t.name] === false);
+
+          // Service time header: toggle + label + hide-all button
           const stHeaderEl = document.createElement('div');
           stHeaderEl.className = 'vol-st-header';
           stHeaderEl.dataset.volWeekIdx = wi;
@@ -294,10 +298,24 @@ function volRender() {
 
           const stLabelEl = document.createElement('span');
           stLabelEl.className = 'vol-st-header-text';
-          stLabelEl.textContent = team.serviceTime;
+          stLabelEl.textContent = team.serviceTime + (allStHidden ? ' (hidden)' : '');
+          if (allStHidden) stLabelEl.style.opacity = '0.45';
+
+          const stVisBtn = document.createElement('button');
+          stVisBtn.className = 'vol-vis-btn';
+          stVisBtn.style.cssText = 'margin-left:auto;font-size:0.75rem;';
+          stVisBtn.textContent = allStHidden ? 'Show all' : 'Hide all';
+          stVisBtn.addEventListener('click', () => {
+            const hide = !allStHidden;
+            stTeams.forEach(t => {
+              volTeamFilter['w'+wi+':'+t.serviceTime+':'+t.name] = hide ? false : true;
+            });
+            volRender(); schedulePreviewUpdate(); autosaveProjectState();
+          });
 
           stHeaderEl.appendChild(stToggle);
           stHeaderEl.appendChild(stLabelEl);
+          stHeaderEl.appendChild(stVisBtn);
           weekBody.appendChild(stHeaderEl);
 
           const stBody = document.createElement('div');
@@ -730,7 +748,7 @@ function renderServingTeam(container, team, weekIdx, teamIdx) {
 function renderServingWeek(container, weekData, labelText, weekIdx) {
   // Filter out page-break markers and hidden teams
   const visibleTeams = (weekData.teams || []).filter(
-    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+weekIdx+':'+t.name] !== false
+    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+weekIdx+':'+(t.serviceTime||'')+':'+t.name] !== false
   );
 
   if (visibleTeams.length === 0) return; // hide header too when all teams are filtered
