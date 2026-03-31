@@ -233,7 +233,7 @@ function volRender() {
       t => t.type !== 'page-break' && t.serviceTime
     );
     const lastRealTeamIdx = hasServiceTimes ? -1 : (data.teams || []).reduce(
-      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter[t.name] !== false) ? i : last,
+      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+wi+':'+t.name] !== false) ? i : last,
       -1
     );
 
@@ -259,7 +259,8 @@ function volRender() {
       }
 
       if (servingTeamFilter[team.name] === false) return;
-      const teamHidden = volTeamFilter[team.name] === false;
+      const volKey = 'w'+wi+':'+team.name;
+      const teamHidden = volTeamFilter[volKey] === false;
 
       // ── Service time group transition ───────────────────────────────────────
       if (team.serviceTime !== lastServiceTime) {
@@ -338,7 +339,7 @@ function volRender() {
       visBtn.title = 'Toggle visibility in bulletin';
       visBtn.textContent = teamHidden ? 'Show' : 'Hide';
       visBtn.addEventListener('click', () => {
-        volTeamFilter[team.name] = volTeamFilter[team.name] === false ? true : false;
+        volTeamFilter[volKey] = volTeamFilter[volKey] === false ? true : false;
         volRender(); schedulePreviewUpdate(); autosaveProjectState();
       });
       teamNameRow.appendChild(visBtn);
@@ -729,7 +730,7 @@ function renderServingTeam(container, team, weekIdx, teamIdx) {
 function renderServingWeek(container, weekData, labelText, weekIdx) {
   // Filter out page-break markers and hidden teams
   const visibleTeams = (weekData.teams || []).filter(
-    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter[t.name] !== false
+    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter['w'+weekIdx+':'+t.name] !== false
   );
 
   if (visibleTeams.length === 0) return; // hide header too when all teams are filtered
