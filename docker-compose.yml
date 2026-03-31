@@ -8,6 +8,10 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      # Bind-mount: project data lives on the HOST at ./data, not inside the container.
+      # Data persists across 'docker compose pull && docker compose up -d' updates
+      # and across all container restarts. Never run 'docker compose down -v' — that
+      # flag removes named volumes, though this bind mount is unaffected by it.
       - ./data:/app/data
     restart: unless-stopped
     labels:

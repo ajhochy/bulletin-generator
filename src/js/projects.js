@@ -1,3 +1,31 @@
+// ─── Sync diff helper ─────────────────────────────────────────────────────────
+// Builds a human-readable diff message for confirm() before overwriting local data.
+function buildSyncDiffMessage(incomingProject) {
+  const incomingState = incomingProject.state || {};
+  const localState    = collectCurrentProjectState();
+
+  const incomingItems = Array.isArray(incomingState.items) ? incomingState.items : [];
+  const localItems    = Array.isArray(localState.items)    ? localState.items    : [];
+
+  const byStr   = incomingProject.updatedBy  ? ` by ${incomingProject.updatedBy}`               : '';
+  const whenStr = incomingProject.updatedAt  ? ` at ${shortTimestamp(incomingProject.updatedAt)}` : '';
+
+  const formatItemList = (list) => {
+    const MAX = 12;
+    const lines = list.slice(0, MAX).map((item, i) => `  ${i + 1}. ${item.title || '(untitled)'}`);
+    if (list.length > MAX) lines.push(`  … and ${list.length - MAX} more`);
+    return lines.join('\n') || '  (no items)';
+  };
+
+  let msg = `Load server version${byStr}${whenStr}?\n\n`;
+  msg += `SERVER VERSION (${incomingItems.length} item${incomingItems.length !== 1 ? 's' : ''}):\n`;
+  msg += formatItemList(incomingItems);
+  msg += `\n\nYOUR LOCAL VERSION (${localItems.length} item${localItems.length !== 1 ? 's' : ''}):\n`;
+  msg += formatItemList(localItems);
+  msg += '\n\nYour local changes will be replaced. Continue?';
+  return msg;
+}
+
 // ─── Project persistence ─────────────────────────────────────────────────────
 function cloneItems(list) {
   return list.map(item => {
@@ -95,7 +123,9 @@ async function saveProjectToServer(project) {
   if (isServerMode() && _editorDisplayName) {
     project.updatedBy = _editorDisplayName;
   }
-  if (isServerMode() && _loadedRevision !== null) {
+  if (isServerMode()) {
+    // Always send, even when null — server uses this to detect silent overwrites
+    // of versioned projects by clients that didn't know the current revision.
     project._clientRevision = _loadedRevision;
   }
   try {
@@ -118,7 +148,18 @@ async function saveProjectToServer(project) {
       reloadLink.href = '#';
       reloadLink.textContent = ' Reload latest';
       reloadLink.style.marginLeft = '0.4rem';
-      reloadLink.addEventListener('click', e => { e.preventDefault(); loadProjectById(project.id); });
+      reloadLink.addEventListener('click', e => {
+        e.preventDefault();
+        // Fetch fresh state from server (local cache may be stale — stale check only
+        // updates metadata, not the full project state) then show a diff before applying.
+        apiFetch('/api/projects').then(d => {
+          const fresh = (d.projects || []).find(p => p.id === project.id);
+          if (!fresh) { loadProjectById(project.id); return; }
+          if (!confirm(buildSyncDiffMessage(fresh))) return;
+          projects = projects.map(p => p.id === fresh.id ? fresh : p);
+          loadProjectById(fresh.id);
+        }).catch(() => loadProjectById(project.id));
+      });
       banner.appendChild(reloadLink);
     } else {
       setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
@@ -383,7 +424,10 @@ function startStaleCheck() {
           e.preventDefault();
           apiFetch('/api/projects').then(d => {
             const fresh = (d.projects || []).find(p => p.id === activeProjectId);
-            if (fresh) { projects = projects.map(p => p.id === fresh.id ? fresh : p); loadProjectById(fresh.id); }
+            if (!fresh) return;
+            if (!confirm(buildSyncDiffMessage(fresh))) return;
+            projects = projects.map(p => p.id === fresh.id ? fresh : p);
+            loadProjectById(fresh.id);
           }).catch(() => {});
         });
         banner.style.display = '';
