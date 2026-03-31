@@ -9,6 +9,7 @@ Register this in your PCO developer app:
 """
 
 import os
+import subprocess
 import sys
 import time
 import signal
@@ -181,13 +182,16 @@ def _make_menu_bar_app():
         def __init__(self):
             super().__init__('', icon=_icon_path(), template=True, quit_button=None)
             self.menu = [
-                rumps.MenuItem('Open Bulletin Generator', callback=self._open),
+                rumps.MenuItem('Open in Browser', callback=self._open),
                 None,  # separator
                 rumps.MenuItem('Quit', callback=self._quit),
             ]
 
         def _open(self, _):
-            webbrowser.open(APP_URL)
+            try:
+                subprocess.Popen(['open', '-a', 'Google Chrome', APP_URL])
+            except Exception:
+                webbrowser.open(APP_URL)
 
         def _quit(self, _):
             rumps.quit_application()
