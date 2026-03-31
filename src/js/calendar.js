@@ -233,7 +233,7 @@ function volRender() {
       t => t.type !== 'page-break' && t.serviceTime
     );
     const lastRealTeamIdx = hasServiceTimes ? -1 : (data.teams || []).reduce(
-      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false) ? i : last,
+      (last, t, i) => (t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter[t.name] !== false) ? i : last,
       -1
     );
 
@@ -258,7 +258,7 @@ function volRender() {
         return;
       }
 
-      if (servingTeamFilter[team.name] === false) return;
+      if (servingTeamFilter[team.name] === false || volTeamFilter[team.name] === false) return;
 
       // ── Service time group transition ───────────────────────────────────────
       if (team.serviceTime !== lastServiceTime) {
@@ -330,6 +330,16 @@ function volRender() {
       teamNameEl.style.marginBottom = '0';
       teamNameEl.textContent = team.name;
       teamNameRow.appendChild(teamNameEl);
+
+      const visBtn = document.createElement('button');
+      visBtn.className = 'vol-vis-btn';
+      visBtn.title = 'Toggle visibility in bulletin';
+      visBtn.textContent = volTeamFilter[team.name] === false ? 'Show' : 'Hide';
+      visBtn.addEventListener('click', () => {
+        volTeamFilter[team.name] = volTeamFilter[team.name] === false ? true : false;
+        volRender(); schedulePreviewUpdate(); autosaveProjectState();
+      });
+      teamNameRow.appendChild(visBtn);
 
       const delTeamBtn = document.createElement('button');
       delTeamBtn.className = 'vol-remove-btn';
@@ -714,23 +724,17 @@ function renderServingTeam(container, team, weekIdx, teamIdx) {
 }
 
 function renderServingWeek(container, weekData, labelText, weekIdx) {
+  // Filter out page-break markers and hidden teams
+  const visibleTeams = (weekData.teams || []).filter(
+    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false && volTeamFilter[t.name] !== false
+  );
+
+  if (visibleTeams.length === 0) return; // hide header too when all teams are filtered
+
   const wLabel = document.createElement('div');
   wLabel.className = 'serving-week-label';
   wLabel.textContent = labelText;
   container.appendChild(wLabel);
-
-  // Filter out page-break markers and hidden teams
-  const visibleTeams = (weekData.teams || []).filter(
-    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false
-  );
-
-  if (visibleTeams.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'serving-empty';
-    empty.textContent = 'No schedule available.';
-    container.appendChild(empty);
-    return;
-  }
 
   // Check whether any teams carry service-time info (from PCO import)
   const hasServiceTimes = visibleTeams.some(t => t.serviceTime);

@@ -67,6 +67,7 @@ function collectCurrentProjectState() {
     calEvents: Array.isArray(calEvents) ? calEvents.map(e => Object.assign({}, e, { start: Object.assign({}, e.start), end: e.end ? Object.assign({}, e.end) : null })) : null,
     pcoIgnore: pcoIgnore.slice(),
     pcoLastImportedTitles: pcoLastImportedTitles.slice(),
+    volTeamFilter: Object.assign({}, volTeamFilter),
   };
 }
 
@@ -118,6 +119,7 @@ function applyProjectState(state) {
   renderCalEventEditor();
   pcoIgnore = Array.isArray(safe.pcoIgnore) ? safe.pcoIgnore.slice() : [];
   pcoLastImportedTitles = Array.isArray(safe.pcoLastImportedTitles) ? safe.pcoLastImportedTitles.slice() : [];
+  volTeamFilter = (typeof safe.volTeamFilter === 'object' && safe.volTeamFilter) ? Object.assign({}, safe.volTeamFilter) : {};
   if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   updateDocTitle();
   applyingProjectState = false;
@@ -447,6 +449,7 @@ function clearEditorForNewProject() {
   svcDate.value = '';
   svcChurch.value = _serverSettings.churchName || ''; // inherit org-level default
   servingSchedule = null;
+  volTeamFilter = {};
   volRender();
   optCover.checked = true;
   optFooter.checked = false;
