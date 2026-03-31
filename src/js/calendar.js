@@ -598,11 +598,13 @@ function renderCalendarPage(container, church, date) {
   });
 }
 
-function renderServingTeam(container, team) {
+function renderServingTeam(container, team, weekIdx, teamIdx) {
   // Team name subheading removed — only position rows are shown
   team.positions.forEach(pos => {
     const row = document.createElement('div');
-    row.className = 'serving-row';
+    row.className = 'serving-row preview-linkable';
+    row.dataset.previewVolWeekIdx = weekIdx;
+    row.dataset.previewVolTeamIdx = teamIdx;
     const roleSpan = document.createElement('span');
     roleSpan.className = 'serving-role';
     roleSpan.textContent = pos.role + ': ';
@@ -612,14 +614,16 @@ function renderServingTeam(container, team) {
   });
 }
 
-function renderServingWeek(container, weekData, labelText) {
+function renderServingWeek(container, weekData, labelText, weekIdx) {
   const wLabel = document.createElement('div');
   wLabel.className = 'serving-week-label';
   wLabel.textContent = labelText;
   container.appendChild(wLabel);
 
   // Filter out page-break markers and hidden teams
-  const visibleTeams = (weekData.teams || []).filter(t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false);
+  const visibleTeams = (weekData.teams || []).filter(
+    t => t.type !== 'page-break' && servingTeamFilter[t.name] !== false
+  );
 
   if (visibleTeams.length === 0) {
     const empty = document.createElement('div');
@@ -633,8 +637,12 @@ function renderServingWeek(container, weekData, labelText) {
   const hasServiceTimes = visibleTeams.some(t => t.serviceTime);
 
   if (!hasServiceTimes) {
-    // Legacy / manually-entered data — render flat list as before
-    visibleTeams.forEach(team => renderServingTeam(container, team));
+    // Legacy / manually-entered data — render flat list
+    // teamIdx is the original index in weekData.teams (needed for editor navigation)
+    visibleTeams.forEach(team => {
+      const teamIdx = (weekData.teams || []).indexOf(team);
+      renderServingTeam(container, team, weekIdx, teamIdx);
+    });
     return;
   }
 
@@ -650,11 +658,16 @@ function renderServingWeek(container, weekData, labelText) {
   timeOrder.forEach(svcTime => {
     if (svcTime) {
       const stLabel = document.createElement('div');
-      stLabel.className = 'serving-service-time';
+      stLabel.className = 'serving-service-time preview-linkable';
+      stLabel.dataset.previewVolWeekIdx = weekIdx;
+      stLabel.dataset.previewVolSt      = svcTime;
       stLabel.textContent = svcTime;
       container.appendChild(stLabel);
     }
-    timeGroups[svcTime].forEach(team => renderServingTeam(container, team));
+    timeGroups[svcTime].forEach(team => {
+      const teamIdx = (weekData.teams || []).indexOf(team);
+      renderServingTeam(container, team, weekIdx, teamIdx);
+    });
   });
 }
 
