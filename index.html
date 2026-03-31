@@ -75,6 +75,15 @@
             <div id="pco-last-plan-label" style="font-size:0.78rem; color:var(--text); margin-bottom:0.4rem;"></div>
             <button class="btn btn-full" id="pco-refresh-btn">↺ Refresh from PCO</button>
             <div id="pco-refresh-msg" class="pco-msg"></div>
+            <div id="pco-ignore-wrap" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+              <div style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.35rem;">Ignore Items Named</div>
+              <div id="pco-ignore-chips" style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.35rem;min-height:0.5rem;"></div>
+              <div style="display:flex;gap:0.3rem;">
+                <input type="text" id="pco-ignore-input" placeholder="Item name…" style="flex:1;font-size:0.8rem;" />
+                <button class="btn-sm" id="pco-ignore-add-btn">Add</button>
+              </div>
+              <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">Items with these names are skipped on import and refresh.</div>
+            </div>
           </div>
         </div>
       </div>
