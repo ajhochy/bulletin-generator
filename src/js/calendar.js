@@ -31,6 +31,105 @@ function saveVolCollapseState(state) {
   localStorage.setItem('vol-collapse', JSON.stringify(state));
 }
 
+// Expand the volunteers section + the week and service-time containers that
+// contain the target team, then scroll to its editor row and flash it.
+function scrollEditorToVolTeam(weekIdx, teamIdx) {
+  // 1. Expand the volunteers panel section
+  scrollEditorToSection('panel-section-volunteers');
+
+  // 2. Expand the week body for weekIdx
+  const volEditor = document.getElementById('vol-editor');
+  if (!volEditor) return;
+  const weekBodies = volEditor.querySelectorAll('.vol-week-body');
+  // weekBodies[weekIdx] corresponds to week wi = weekIdx
+  // The week bodies are rendered in order, one per week.
+  const weekBody = weekBodies[weekIdx];
+  if (weekBody && weekBody.classList.contains('collapsed')) {
+    weekBody.classList.remove('collapsed');
+    // Update the toggle arrow for this week
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}`];
+    saveVolCollapseState(s);
+    const weekHeader = weekBody.previousElementSibling;
+    if (weekHeader && weekHeader.classList.contains('vol-week-header')) {
+      const toggle = weekHeader.querySelector('.vol-collapse-toggle');
+      if (toggle) toggle.textContent = '▼';
+    }
+  }
+
+  // 3. Find the target team row and expand its service-time body if needed
+  const teamRow = volEditor.querySelector(
+    `[data-vol-week-idx="${weekIdx}"][data-vol-team-idx="${teamIdx}"]`
+  );
+  if (!teamRow) return;
+
+  // Walk up to see if teamRow is inside a vol-st-body
+  const stBody = teamRow.closest('.vol-st-body');
+  if (stBody && stBody.classList.contains('collapsed')) {
+    stBody.classList.remove('collapsed');
+    const stHeader = stBody.previousElementSibling;
+    if (stHeader && stHeader.classList.contains('vol-st-header')) {
+      const toggle = stHeader.querySelector('.vol-collapse-toggle');
+      const st = stHeader.dataset.volSt;
+      if (toggle) toggle.textContent = '▼';
+      const s = getVolCollapseState();
+      delete s[`w${weekIdx}:st:${st}`];
+      saveVolCollapseState(s);
+    }
+  }
+
+  // 4. Scroll to team row and flash is-linked
+  const aside = document.querySelector('aside');
+  scrollElementIntoContainer(aside, teamRow, 'smooth');
+  teamRow.classList.add('is-linked');
+  setTimeout(() => teamRow.classList.remove('is-linked'), 1600);
+}
+
+// Expand the volunteers section + the week, then scroll to the service-time
+// subheading and flash it.
+function scrollEditorToVolServiceTime(weekIdx, st) {
+  scrollEditorToSection('panel-section-volunteers');
+
+  const volEditor = document.getElementById('vol-editor');
+  if (!volEditor) return;
+
+  // Expand the week body
+  const weekBodies = volEditor.querySelectorAll('.vol-week-body');
+  const weekBody   = weekBodies[weekIdx];
+  if (weekBody && weekBody.classList.contains('collapsed')) {
+    weekBody.classList.remove('collapsed');
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}`];
+    saveVolCollapseState(s);
+    const weekHeader = weekBody.previousElementSibling;
+    if (weekHeader && weekHeader.classList.contains('vol-week-header')) {
+      const toggle = weekHeader.querySelector('.vol-collapse-toggle');
+      if (toggle) toggle.textContent = '▼';
+    }
+  }
+
+  // Find and expand the service-time header
+  const stHeader = volEditor.querySelector(
+    `[data-vol-week-idx="${weekIdx}"][data-vol-st="${st}"]`
+  );
+  if (!stHeader) return;
+
+  const stBody = stHeader.nextElementSibling;
+  if (stBody && stBody.classList.contains('vol-st-body') && stBody.classList.contains('collapsed')) {
+    stBody.classList.remove('collapsed');
+    const toggle = stHeader.querySelector('.vol-collapse-toggle');
+    if (toggle) toggle.textContent = '▼';
+    const s = getVolCollapseState();
+    delete s[`w${weekIdx}:st:${st}`];
+    saveVolCollapseState(s);
+  }
+
+  const aside = document.querySelector('aside');
+  scrollElementIntoContainer(aside, stHeader, 'smooth');
+  stHeader.classList.add('is-linked');
+  setTimeout(() => stHeader.classList.remove('is-linked'), 1600);
+}
+
 function volRender() {
   const editor   = document.getElementById('vol-editor');
   const emptyMsg = document.getElementById('vol-empty');
