@@ -546,6 +546,13 @@ function renderPcoIgnoreChips() {
   });
 }
 
+function irmAddSection(body, labelText) {
+  const el = document.createElement('div');
+  el.className = 'irm-section-label';
+  el.textContent = labelText;
+  body.appendChild(el);
+}
+
 function irmRadioRow(groupName, labelText, checked, onChange) {
   const label = document.createElement('label');
   label.className = 'irm-radio-row';
@@ -1187,6 +1194,272 @@ function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnm
 
   const hasExtra = pendingWithNotes.length || pendingUnmatched.length;
   document.getElementById('irm-title').textContent = hasExtra ? 'Review Imported Plan' : 'Review Refreshed Plan';
+  document.getElementById('import-review-modal').style.display = 'flex';
+}
+
+// ─── Full resync diff dialogue ────────────────────────────────────────────────
+// Shows all inconsistencies between the current project and the live PCO plan.
+// Called only on resync (isResync=true in applyPcoData), not on initial import.
+// serveCallback: () => void called from Apply if the volunteer checkbox is checked.
+function showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback) {
+  const body = document.getElementById('irm-body');
+  body.innerHTML = '';
+
+  // Track selections per category
+  const newInPcoSels   = new Map(); // normTitle → 'add' | 'ignore'
+  const removedSels    = new Map(); // normTitle → 'keep' | 'readd'
+  const ignoredSels    = new Map(); // normTitle → 'keep' | 'unignore'
+  const titleTypeSels  = new Map(); // normKey   → 'mine' | 'pco'
+  const conflictSels   = new Map(); // idx       → 'mine' | 'pco'
+  let   orderApplyPco  = false;
+  let   applyServing   = true;
+
+  // ── New items in PCO ──────────────────────────────────────────────────────
+  if (diff.newInPco.length) {
+    irmAddSection(body, 'New Items in PCO Plan');
+    diff.newInPco.forEach(item => {
+      const key = normTitle(item.title);
+      newInPcoSels.set(key, 'add');
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = item.title;
+      card.appendChild(titleEl);
+      const gn = 'irm-new-' + Math.random().toString(36).slice(2);
+      const { row: r1 } = irmRadioRow(gn, 'Add to bulletin', true,
+        () => newInPcoSels.set(key, 'add'));
+      const { row: r2 } = irmRadioRow(gn, 'Ignore (add to ignore list)', false,
+        () => newInPcoSels.set(key, 'ignore'));
+      card.appendChild(r1);
+      card.appendChild(r2);
+      body.appendChild(card);
+    });
+  }
+
+  // ── Items removed from bulletin (still in PCO) ───────────────────────────
+  if (diff.removedFromProject.length) {
+    irmAddSection(body, 'Removed from Your Bulletin (still in PCO)');
+    diff.removedFromProject.forEach(item => {
+      const key = normTitle(item.title);
+      removedSels.set(key, 'keep');
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = item.title;
+      card.appendChild(titleEl);
+      const gn = 'irm-rem-' + Math.random().toString(36).slice(2);
+      const { row: r1 } = irmRadioRow(gn, 'Keep removed', true,
+        () => removedSels.set(key, 'keep'));
+      const { row: r2 } = irmRadioRow(gn, 'Re-add to bulletin', false,
+        () => removedSels.set(key, 'readd'));
+      card.appendChild(r1);
+      card.appendChild(r2);
+      body.appendChild(card);
+    });
+  }
+
+  // ── Ignored items ─────────────────────────────────────────────────────────
+  if (diff.pcoIgnoredMapped.length) {
+    irmAddSection(body, 'Ignored Items (in PCO, skipped by your ignore list)');
+    diff.pcoIgnoredMapped.forEach(item => {
+      const key = normTitle(item.title);
+      ignoredSels.set(key, 'keep');
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
+      card.style.opacity = '0.65';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = item.title + ' (ignored)';
+      card.appendChild(titleEl);
+      const gn = 'irm-ign-' + Math.random().toString(36).slice(2);
+      const { row: r1 } = irmRadioRow(gn, 'Keep ignoring', true, () => {
+        ignoredSels.set(key, 'keep');
+        card.style.opacity = '0.65';
+      });
+      const { row: r2 } = irmRadioRow(gn, 'Un-ignore and add to bulletin', false, () => {
+        ignoredSels.set(key, 'unignore');
+        card.style.opacity = '1';
+      });
+      card.appendChild(r1);
+      card.appendChild(r2);
+      body.appendChild(card);
+    });
+  }
+
+  // ── Title / type changes ──────────────────────────────────────────────────
+  if (diff.titleTypeChanges.length) {
+    irmAddSection(body, 'Title or Type Changes in PCO');
+    diff.titleTypeChanges.forEach(({ normKey, prevTitle, newTitle, prevType, newType }) => {
+      titleTypeSels.set(normKey, 'mine');
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = prevTitle;
+      card.appendChild(titleEl);
+      const gn = 'irm-ttc-' + Math.random().toString(36).slice(2);
+      const { row: r1 } = irmRadioRow(gn,
+        'Keep mine: "' + prevTitle + '" (' + prevType + ')', true,
+        () => titleTypeSels.set(normKey, 'mine'));
+      const { row: r2 } = irmRadioRow(gn,
+        'Use PCO: "' + newTitle + '" (' + newType + ')', false,
+        () => titleTypeSels.set(normKey, 'pco'));
+      card.appendChild(r1);
+      card.appendChild(r2);
+      body.appendChild(card);
+    });
+  }
+
+  // ── Note / detail conflicts (existing behaviour) ──────────────────────────
+  if (refreshConflicts.length) {
+    irmAddSection(body, 'Items with Updated Content from Planning Center');
+    const desc = document.createElement('p');
+    desc.className = 'irm-desc';
+    desc.textContent = 'Planning Center has different content for the items below. Your edits have been kept by default — choose "Use PCO" for any item you want to override.';
+    body.appendChild(desc);
+    refreshConflicts.forEach(({ idx, title, prevDetail, pcoDetail }) => {
+      conflictSels.set(idx, 'mine');
+      const card = document.createElement('div');
+      card.className = 'irm-song-card';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'irm-song-title';
+      titleEl.textContent = title;
+      card.appendChild(titleEl);
+      const gn = 'irm-rc-' + Math.random().toString(36).slice(2);
+      const { row: r1 } = irmRadioRow(gn, 'Keep my current edit', true,
+        () => conflictSels.set(idx, 'mine'));
+      card.appendChild(r1);
+      const prevFirst = prevDetail.split('\n').map(l => l.trim()).find(l => l) || '';
+      if (prevFirst) {
+        const pv = document.createElement('div');
+        pv.className = 'irm-preview-text';
+        pv.textContent = '"' + prevFirst.slice(0, 90) + (prevFirst.length > 90 ? '…' : '') + '"';
+        card.appendChild(pv);
+      }
+      const { row: r2 } = irmRadioRow(gn, 'Use Planning Center data', false,
+        () => conflictSels.set(idx, 'pco'));
+      card.appendChild(r2);
+      const pcoFirst = pcoDetail.split('\n').map(l => l.trim()).find(l => l) || '';
+      if (pcoFirst) {
+        const pv2 = document.createElement('div');
+        pv2.className = 'irm-preview-text';
+        pv2.textContent = '"' + pcoFirst.slice(0, 90) + (pcoFirst.length > 90 ? '…' : '') + '"';
+        card.appendChild(pv2);
+      }
+      body.appendChild(card);
+    });
+  }
+
+  // ── Order changes ─────────────────────────────────────────────────────────
+  if (diff.orderChanged) {
+    irmAddSection(body, 'Order Changes');
+    const card = document.createElement('div');
+    card.className = 'irm-song-card';
+    const desc = document.createElement('div');
+    desc.style.cssText = 'font-size:0.82rem;margin-bottom:0.4rem;';
+    desc.textContent = 'The sequence of items in PCO differs from your bulletin order.';
+    card.appendChild(desc);
+    const gn = 'irm-ord-' + Math.random().toString(36).slice(2);
+    const { row: r1 } = irmRadioRow(gn, 'Keep my order', true,  () => { orderApplyPco = false; });
+    const { row: r2 } = irmRadioRow(gn, 'Apply PCO order', false, () => { orderApplyPco = true; });
+    card.appendChild(r1);
+    card.appendChild(r2);
+    body.appendChild(card);
+  }
+
+  // ── Volunteer schedule ────────────────────────────────────────────────────
+  {
+    irmAddSection(body, 'Volunteer Schedule');
+    const card = document.createElement('div');
+    card.className = 'irm-song-card';
+    const lbl = document.createElement('label');
+    lbl.className = 'opt-row';
+    lbl.style.cssText = 'font-size:0.82rem;margin:0.1rem 0;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = true;
+    cb.addEventListener('change', () => { applyServing = cb.checked; });
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' Apply updated volunteer schedule from PCO'));
+    card.appendChild(lbl);
+    body.appendChild(card);
+  }
+
+  // ── Song review sections (existing) ──────────────────────────────────────
+  const withNotesSels = irmBuildWithNotesSection(body, pendingWithNotes);
+  const unmatchedSels = irmBuildUnmatchedSection(body, pendingUnmatched);
+
+  // ── Wire buttons ──────────────────────────────────────────────────────────
+  document.getElementById('irm-apply-btn').onclick = () => {
+    // New in PCO: add at correct position, or push to ignore list
+    diff.newInPco.forEach(item => {
+      const key = normTitle(item.title);
+      if (newInPcoSels.get(key) === 'add') {
+        items.splice(findInsertPosition(item, diff.allPcoMapped), 0, item);
+      } else {
+        if (!pcoIgnore.some(n => normTitle(n) === key)) {
+          pcoIgnore.push(item.title);
+          renderPcoIgnoreChips();
+        }
+      }
+    });
+
+    // Removed from project: optionally re-add
+    diff.removedFromProject.forEach(item => {
+      if (removedSels.get(normTitle(item.title)) === 'readd') {
+        items.splice(findInsertPosition(item, diff.allPcoMapped), 0, item);
+      }
+    });
+
+    // Ignored items: optionally un-ignore and add
+    diff.pcoIgnoredMapped.forEach(item => {
+      const key = normTitle(item.title);
+      if (ignoredSels.get(key) === 'unignore') {
+        pcoIgnore = pcoIgnore.filter(n => normTitle(n) !== key);
+        renderPcoIgnoreChips();
+        items.splice(findInsertPosition(item, diff.allPcoMapped), 0, item);
+      }
+    });
+
+    // Title / type changes
+    diff.titleTypeChanges.forEach(({ normKey, newTitle, newType }) => {
+      if (titleTypeSels.get(normKey) === 'pco') {
+        const live = items.find(i => normTitle(i.title) === normKey);
+        if (live) { live.title = newTitle; live.type = newType; }
+      }
+    });
+
+    // Note / detail conflicts
+    refreshConflicts.forEach(({ idx, pcoDetail }) => {
+      if (conflictSels.get(idx) === 'pco' && items[idx]) {
+        items[idx].detail = pcoDetail;
+      }
+    });
+
+    // Order
+    if (orderApplyPco && diff.orderChanged) {
+      applyCPcoOrder(diff.newMatchedNorms);
+    }
+
+    // Volunteer schedule (call async serving fetch if checkbox checked)
+    if (applyServing && serveCallback) serveCallback();
+
+    // Song review (existing)
+    irmApplyWithNotes(pendingWithNotes, withNotesSels);
+    irmApplyUnmatched(pendingUnmatched, unmatchedSels);
+
+    renderItemList();
+    renderPreview();
+    scheduleProjectPersist();
+    closeImportReviewDialog();
+  };
+
+  document.getElementById('irm-cancel-btn').onclick = closeImportReviewDialog;
+  document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
+
+  document.getElementById('irm-title').textContent = 'Review Plan Changes';
   document.getElementById('import-review-modal').style.display = 'flex';
 }
 
