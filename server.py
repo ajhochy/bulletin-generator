@@ -778,11 +778,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     stored = projects[idx]
                     stored_rev = stored.get("revision")
                     client_rev = project.pop("_clientRevision", None)
-                    # Conflict detection: reject if client is editing an older revision
+                    # Conflict detection: reject if client is editing an older revision.
+                    # Also reject when client_rev is None (client didn't know the revision) and
+                    # the server already has a versioned copy — prevents silent overwrites of
+                    # versioned projects by clients loading old pre-revision data.
                     if (APP_MODE == "server"
                             and stored_rev is not None
-                            and client_rev is not None
-                            and int(client_rev) < int(stored_rev)):
+                            and int(stored_rev) > 0
+                            and (client_rev is None or int(client_rev) < int(stored_rev))):
                         self._send_json({
                             "error": "conflict",
                             "projectId": project["id"],
@@ -1301,6 +1304,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not getattr(sys, 'frozen', False):
             self._send_json({"error": "Auto-update only works in the packaged .app build."}, 400)
             return
+        tmp_zip = None
         try:
             # 1. Fetch latest release metadata
             url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -1381,6 +1385,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                              "message": "Update downloaded. Quit and relaunch the app to use the new version."})
         except Exception as e:
             import traceback; traceback.print_exc()
+            if tmp_zip:
+                Path(tmp_zip).unlink(missing_ok=True)
             self._send_json({"error": str(e)}, 500)
 
     # ── Calendar endpoint ──────────────────────────────────────────────────────
