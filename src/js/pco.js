@@ -125,7 +125,7 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
   }
 });
 
-function applyPcoData(planResp, itemsResp, notesResp) {
+function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingParams = null) {
   const planAttrs = planResp.data.attributes;
 
   // Snapshot current items so user edits can be preserved on re-sync
@@ -151,7 +151,9 @@ function applyPcoData(planResp, itemsResp, notesResp) {
     (a.attributes.sequence || 0) - (b.attributes.sequence || 0)
   );
 
-  items = sorted.map(item => {
+  // Map all PCO items (including those that will be ignored) so we can
+  // track them for the resync diff and for pcoLastImportedTitles.
+  const allPcoMapped = pcoDeduplicateItems(sorted.map(item => {
     const a    = item.attributes;
     const type = pcoMapItemType(a);
     let title  = (a.title || '').trim();
@@ -183,9 +185,12 @@ function applyPcoData(planResp, itemsResp, notesResp) {
     if (type === 'section') title = title.toUpperCase();
 
     return { type, title, detail };
-  }).filter(item => item.title);
+  }).filter(item => item.title));
 
-  items = pcoDeduplicateItems(items);
+  // Apply per-project ignore filter
+  const ignoredNorms     = new Set(pcoIgnore.map(n => normTitle(n)));
+  const pcoIgnoredMapped = allPcoMapped.filter(item => ignoredNorms.has(normTitle(item.title)));
+  items = allPcoMapped.filter(item => !ignoredNorms.has(normTitle(item.title)));
   const enrichResult = enrichItemsFromDb(items);
 
   // Map plan-level notes onto matching items (fill blank detail only).
@@ -256,6 +261,41 @@ function applyPcoData(planResp, itemsResp, notesResp) {
     pendingWithNotes = enrichResult.withNotes.filter(e => !prevKeys.has(e.item.type + '|' + normTitle(e.item.title)));
   }
 
+  // Track all PCO item titles from this import for future resync diff detection
+  pcoLastImportedTitles = allPcoMapped.map(i => i.title);
+
+  // ── Resync path: full diff dialogue ──────────────────────────────────────
+  if (isResync && prevItems.length > 0) {
+    const diff = buildResyncDiff(prevItems, items, pcoIgnoredMapped, allPcoMapped);
+    const hasChanges =
+      diff.newInPco.length || diff.removedFromProject.length ||
+      diff.pcoIgnoredMapped.length || diff.titleTypeChanges.length ||
+      diff.orderChanged || refreshConflicts.length ||
+      pendingWithNotes.length || pendingUnmatched.length;
+
+    if (!hasChanges) {
+      setStatus('Plan is up to date — no changes detected.', 'success');
+      if (servingParams) {
+        pcoFetchAndApplyServing(
+          servingParams.stId, servingParams.planId,
+          servingParams.sortDate, servingParams.date
+        );
+      }
+      return;
+    }
+
+    const serveCallback = servingParams
+      ? () => pcoFetchAndApplyServing(
+          servingParams.stId, servingParams.planId,
+          servingParams.sortDate, servingParams.date
+        )
+      : null;
+
+    showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback);
+    return;
+  }
+
+  // ── Initial import path (unchanged) ─────────────────────────────────────
   // Surface a per-item review dialog when PCO data differs from user edits.
   // Pass pending song reviews so they can be chained after conflict resolution.
   if (refreshConflicts.length > 0) {
@@ -832,13 +872,19 @@ document.getElementById('pco-refresh-btn').addEventListener('click', async () =>
       pcoGet(`/service_types/${last.serviceTypeId}/plans/${last.planId}/notes`).catch(() => ({ data: [] })),
     ]);
     savePreImportBackup(); // snapshot pre-import state before overwriting
-    applyPcoData(planResp, itemsResp, notesResp);
+    const _servingParams = {
+      stId:     last.serviceTypeId,
+      planId:   last.planId,
+      sortDate: planResp.data.attributes.sort_date,
+      date:     planResp.data.attributes.dates,
+    };
+    applyPcoData(planResp, itemsResp, notesResp, true, _servingParams);
     pcoSetMsg('pco-refresh-msg', `Updated — ${items.length} items refreshed.`, 'success');
     setStatus(`Refreshed from Planning Center (${items.length} items).`, 'success');
     document.querySelector('.tab-btn[data-tab="page-editor"]').click();
-    // Fetch serving schedule in background (non-blocking)
-    pcoFetchAndApplyServing(last.serviceTypeId, last.planId,
-      planResp.data.attributes.sort_date, planResp.data.attributes.dates);
+    // NOTE: pcoFetchAndApplyServing is now called from inside applyPcoData's
+    // resync path — either directly (no-changes case) or from showResyncDiffDialog's
+    // Apply button (when the volunteer checkbox is checked).
   } catch (err) {
     pcoSetMsg('pco-refresh-msg', err.message, 'error');
   } finally {
