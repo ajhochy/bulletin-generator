@@ -1113,6 +1113,28 @@ previewPane.addEventListener('click', e => {
     return;
   }
 
+  // ── Click on a volunteer serving row → navigate to that team in the editor
+  const volTeamEl = targetEl.closest('[data-preview-vol-team-idx]');
+  if (volTeamEl) {
+    const wi = parseInt(volTeamEl.dataset.previewVolWeekIdx, 10);
+    const ti = parseInt(volTeamEl.dataset.previewVolTeamIdx, 10);
+    if (Number.isInteger(wi) && Number.isInteger(ti)) {
+      scrollEditorToVolTeam(wi, ti);
+      return;
+    }
+  }
+
+  // ── Click on a volunteer service-time label → navigate to that service time
+  const volStEl = targetEl.closest('[data-preview-vol-st]');
+  if (volStEl) {
+    const wi = parseInt(volStEl.dataset.previewVolWeekIdx, 10);
+    const st = volStEl.dataset.previewVolSt;
+    if (Number.isInteger(wi) && st) {
+      scrollEditorToVolServiceTime(wi, st);
+      return;
+    }
+  }
+
   // ── Click on a section-linked preview element → scroll editor to panel section
   const sectionLinked = targetEl.closest('[data-preview-section]');
   if (sectionLinked) {
