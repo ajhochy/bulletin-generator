@@ -1,5 +1,7 @@
 // ─── State ────────────────────────────────────────────────────────────────────
 let items = [];
+let pcoIgnore = [];              // string[] — PCO item names to skip on import/resync
+let pcoLastImportedTitles = [];  // string[] — raw PCO item titles from last import/resync
 let annData = []; // [{ title: string, body: string, _breakBefore?: bool, _noBreakBefore?: bool }]
 let welcomeItems = []; // populated from WELCOME_ITEMS after staff.js loads
 let welcomeHeading = ''; // custom heading; empty = auto "Welcome to {church}"
