@@ -21,6 +21,16 @@ function formatNameList(names) {
 }
 
 // ─── Volunteer editor (sidebar) ───────────────────────────────────────────────
+
+function getVolCollapseState() {
+  try { return JSON.parse(localStorage.getItem('vol-collapse') || '{}'); }
+  catch { return {}; }
+}
+
+function saveVolCollapseState(state) {
+  localStorage.setItem('vol-collapse', JSON.stringify(state));
+}
+
 function volRender() {
   const editor   = document.getElementById('vol-editor');
   const emptyMsg = document.getElementById('vol-empty');
