@@ -752,6 +752,34 @@
       flex: 1; text-align: center;
       font-size: 0.63rem; color: var(--muted); font-style: italic;
     }
+    .vol-week-header {
+      display: flex; align-items: center; gap: 0.2rem;
+      margin: 0.6rem 0 0.3rem; padding-bottom: 0.2rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .vol-week-header:first-child { margin-top: 0; }
+    .vol-week-header-text {
+      flex: 1;
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted);
+    }
+    .vol-st-header {
+      display: flex; align-items: center; gap: 0.2rem;
+      margin-top: 0.4rem; margin-bottom: 0.15rem;
+    }
+    .vol-st-header-text {
+      flex: 1; font-size: 0.65rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--accent-light);
+    }
+    .vol-week-body.collapsed { display: none; }
+    .vol-st-body.collapsed   { display: none; }
+    .vol-collapse-toggle {
+      background: none; border: none; cursor: pointer;
+      font-size: 0.55rem; color: var(--muted);
+      padding: 0; flex-shrink: 0; line-height: 1;
+    }
+    .vol-collapse-toggle:hover { color: var(--text); }
 
     /* ─── Import Review Modal ───────────────────────────────────────────────── */
     .irm-overlay {
