@@ -48,7 +48,7 @@ function scrollEditorToVolTeam(weekIdx, teamIdx) {
     weekBody.classList.remove('collapsed');
     // Update the toggle arrow for this week
     const s = getVolCollapseState();
-    delete s[`w${weekIdx}`];
+    s[`w${weekIdx}`] = false;
     saveVolCollapseState(s);
     const weekHeader = weekBody.previousElementSibling;
     if (weekHeader && weekHeader.classList.contains('vol-week-header')) {
@@ -73,7 +73,7 @@ function scrollEditorToVolTeam(weekIdx, teamIdx) {
       const st = stHeader.dataset.volSt;
       if (toggle) toggle.textContent = '▼';
       const s = getVolCollapseState();
-      delete s[`w${weekIdx}:st:${st}`];
+      s[`w${weekIdx}:st:${st}`] = false;
       saveVolCollapseState(s);
     }
   }
@@ -220,7 +220,7 @@ function volRender() {
     weekToggle.addEventListener('click', () => {
       const s = getVolCollapseState();
       const nowCollapsed = !weekBody.classList.contains('collapsed');
-      if (nowCollapsed) { s[weekCollapseKey] = true; } else { delete s[weekCollapseKey]; }
+      s[weekCollapseKey] = nowCollapsed ? true : false;
       saveVolCollapseState(s);
       weekBody.classList.toggle('collapsed');
       weekToggle.textContent = weekBody.classList.contains('collapsed') ? '▶' : '▼';
@@ -307,7 +307,7 @@ function volRender() {
           stToggle.addEventListener('click', () => {
             const s = getVolCollapseState();
             const nowC = !stBody.classList.contains('collapsed');
-            if (nowC) { s[stCollapseKey] = true; } else { delete s[stCollapseKey]; }
+            s[stCollapseKey] = nowC ? true : false;
             saveVolCollapseState(s);
             stBody.classList.toggle('collapsed');
             stToggle.textContent = stBody.classList.contains('collapsed') ? '▶' : '▼';
