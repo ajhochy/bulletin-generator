@@ -34,6 +34,12 @@ import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+try:
+    from propresenter_export import export_items_to_zip
+    _PP_EXPORT_AVAILABLE = True
+except ImportError:
+    _PP_EXPORT_AVAILABLE = False
+
 # ── Directory setup ────────────────────────────────────────────────────────────
 if getattr(sys, 'frozen', False):
     # Running as a PyInstaller bundle — static files are in _MEIPASS (read-only)
@@ -861,6 +867,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_pdf()
             return
 
+        if path == "/api/propresenter-export":
+            self._handle_propresenter_export()
+            return
+
         if path == "/api/pco-disconnect":
             with _lock:
                 settings = _read_json(SETTINGS_FILE, {})
@@ -1277,6 +1287,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._apply_update_server()
         else:
             self._apply_update_desktop()
+
+    def _handle_propresenter_export(self):
+        """Export bulletin items as ProPresenter .pro files in a ZIP."""
+        if not _PP_EXPORT_AVAILABLE:
+            self._send_json({"error": "ProPresenter export module not available."}, 500)
+            return
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+
+        try:
+            items = body.get("items", [])
+            project_name = body.get("projectName", "bulletin")
+            song_db = body.get("songDb")
+
+            if not isinstance(items, list):
+                self._send_json({"error": "items must be an array"}, 400)
+                return
+
+            zip_bytes = export_items_to_zip(items, project_name, song_db=song_db)
+            safe_name = re.sub(r"[^A-Za-z0-9._()-]+", "-", str(project_name or "bulletin")).strip("-")[:40] or "bulletin"
+            filename = f"{safe_name}-propresenter.zip"
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Content-Length", str(len(zip_bytes)))
+            self._cors_headers()
+            self.end_headers()
+            self.wfile.write(zip_bytes)
+        except Exception as e:
+            self._send_json({"error": f"Export failed: {e}"}, 500)
 
     def _apply_update_server(self):
         """Trigger Watchtower to pull the latest image and restart the container."""

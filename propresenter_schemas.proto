@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package rv;
+
+// Minimal ProPresenter 7 .pro file schema (fields confirmed against exported files)
+// Field numbers from reverse engineering of ProPresenter 7.x binary files.
+
+message Presentation {
+  string uuid = 1;
+  string name = 2;
+  repeated Cue cues = 3;
+  repeated SlideGroup groups = 11;
+  CCLIData ccli = 4;
+  PresentationInfo info = 5;
+}
+
+message SlideGroup {
+  string uuid = 1;
+  string name = 2;
+  repeated Slide slides = 3;
+  string color = 4;
+}
+
+message Slide {
+  string uuid = 1;
+  repeated Element elements = 2;
+  string notes = 3;
+}
+
+message Element {
+  string uuid = 1;
+  TextData text = 2;
+}
+
+message TextData {
+  string rtfData = 1;
+  string plainText = 2;
+}
+
+message CCLIData {
+  string songNumber = 1;
+  string songTitle = 2;
+  string artist = 3;
+  string author = 4;
+  string copyright = 5;
+  string publisher = 6;
+  string year = 7;
+}
+
+message PresentationInfo {
+  string category = 1;
+  string notes = 2;
+}
+
+message Cue {
+  string uuid = 1;
+  string name = 2;
+}
