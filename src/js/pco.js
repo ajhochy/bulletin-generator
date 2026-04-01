@@ -1051,6 +1051,9 @@ function initGoogle() {
     icalCard.style.display = '';
   }
 
+  // Drive settings card (calendar.js)
+  if (typeof initDriveSettings === 'function') initDriveSettings();
+
   connectBtn.addEventListener('click', () => {
     window.location.href = '/oauth/google/start';
   });

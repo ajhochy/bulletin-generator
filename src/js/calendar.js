@@ -796,3 +796,64 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
   });
 }
 
+// ── Google Drive settings ──────────────────────────────────────────────────────
+
+function initDriveSettings() {
+  const card = document.getElementById('google-drive-card');
+  if (!card) return;
+
+  const googleConnected = _publicConfig && _publicConfig.googleConfigured;
+  if (!googleConnected) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const driveConfigured = _publicConfig && _publicConfig.driveConfigured;
+  const scopeWarn  = document.getElementById('google-drive-scope-warn');
+  const folderRow  = document.getElementById('google-drive-folder-row');
+
+  if (!driveConfigured) {
+    if (scopeWarn) scopeWarn.style.display = '';
+    if (folderRow) folderRow.style.display = 'none';
+    return;
+  }
+
+  if (scopeWarn) scopeWarn.style.display = 'none';
+  if (folderRow) folderRow.style.display = '';
+
+  // Populate saved folder ID
+  apiFetch('/api/settings').then(data => {
+    const folderInput = document.getElementById('google-drive-folder-id');
+    if (folderInput && data.googleDriveFolderId) {
+      folderInput.value = data.googleDriveFolderId;
+    }
+  }).catch(() => {});
+
+  // Wire save button (guard against double-wiring on re-init)
+  const saveBtn = document.getElementById('google-drive-save-btn');
+  if (saveBtn && !saveBtn._driveWired) {
+    saveBtn._driveWired = true;
+    saveBtn.addEventListener('click', saveDriveFolderId);
+  }
+}
+
+async function saveDriveFolderId() {
+  const input    = document.getElementById('google-drive-folder-id');
+  const msg      = document.getElementById('google-drive-msg');
+  const folderId = input ? input.value.trim() : '';
+
+  if (msg) { msg.textContent = 'Saving…'; msg.className = 'pco-msg'; }
+
+  try {
+    const settings = await apiFetch('/api/settings');
+    settings.googleDriveFolderId = folderId || null;
+    await apiFetch('/api/settings', 'POST', settings);
+    if (msg) {
+      msg.textContent = folderId
+        ? 'Folder saved.'
+        : 'Cleared — files will save to My Drive root.';
+      msg.className = 'pco-msg success';
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = `Save failed: ${e.message || e}`; msg.className = 'pco-msg error'; }
+  }
+}
+

@@ -226,6 +226,9 @@ def _public_config():
         "appVersion": APP_VERSION,
         "pcoConfigured": _pco_auth_header() is not None,
         "googleConfigured": _google_auth_header() is not None,
+        "driveConfigured": bool(
+            _read_json(SETTINGS_FILE, {}).get('googleDriveScopeGranted')
+        ),
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
             "exclude": _parse_list_env("CALENDAR_EXCLUDE_TITLES") or DEFAULT_EXCLUDE[:],
@@ -875,6 +878,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_propresenter_export()
             return
 
+        if path == "/api/drive/upload":
+            self._handle_drive_upload()
+            return
+
         if path == "/api/pco-disconnect":
             with _lock:
                 settings = _read_json(SETTINGS_FILE, {})
@@ -890,6 +897,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 settings.pop('googleAccessToken', None)
                 settings.pop('googleRefreshToken', None)
                 settings.pop('googleCalendarIds', None)
+                settings.pop('googleDriveScopeGranted', None)
+                settings.pop('googleDriveFolderId', None)
                 _write_json(SETTINGS_FILE, settings)
             self._send_json({"ok": True})
             return
@@ -1013,7 +1022,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
-            'scope':         'https://www.googleapis.com/auth/calendar.readonly',
+            'scope':         'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file',
             'access_type':   'offline',
             'prompt':        'consent',
         })
@@ -1060,7 +1069,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             with _lock:
                 s = _read_json(SETTINGS_FILE, {})
-                s['googleAccessToken']  = access_token
+                s['googleAccessToken']       = access_token
+                s['googleDriveScopeGranted'] = True
                 if refresh_token:
                     s['googleRefreshToken'] = refresh_token
                 _write_json(SETTINGS_FILE, s)
@@ -1342,6 +1352,107 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(zip_bytes)
         except Exception as e:
             self._send_json({"error": f"Export failed: {e}"}, 500)
+
+    def _handle_drive_upload(self):
+        """Upload a file to Google Drive. Body: {filename, content (base64), mimeType}."""
+        import base64 as _base64
+        settings = _read_json(SETTINGS_FILE, {})
+        auth = _google_auth_header()
+        if not auth or not settings.get('googleDriveScopeGranted'):
+            self._send_json({
+                "error": "Google Drive not connected. Reconnect Google in Settings to enable Drive.",
+            }, 401)
+            return
+
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "Invalid JSON body."}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "Invalid JSON body."}, 400)
+            return
+
+        filename    = (body.get('filename') or '').strip()
+        content_b64 = (body.get('content')  or '').strip()
+        mime_type   = (body.get('mimeType')  or 'application/octet-stream').strip()
+
+        if not filename or not content_b64:
+            self._send_json({"error": "Missing required fields: filename, content."}, 400)
+            return
+
+        try:
+            file_bytes = _base64.b64decode(content_b64)
+        except Exception:
+            self._send_json({"error": "content must be base64-encoded."}, 400)
+            return
+
+        folder_id = (settings.get('googleDriveFolderId') or '').strip()
+
+        # Build multipart/related body for Drive Files API v3
+        boundary  = f'bulletin_generator_boundary_{id(self)}'
+        metadata  = {"name": filename}
+        if folder_id:
+            metadata["parents"] = [folder_id]
+
+        meta_json  = json.dumps(metadata).encode('utf-8')
+        body_parts = (
+            f'--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'
+        ).encode() + meta_json + (
+            f'\r\n--{boundary}\r\nContent-Type: {mime_type}\r\n\r\n'
+        ).encode() + file_bytes + f'\r\n--{boundary}--'.encode()
+
+        url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink'
+
+        def _do_upload(a):
+            req = urllib.request.Request(
+                url, data=body_parts,
+                headers={
+                    'Authorization': a,
+                    'Content-Type':  f'multipart/related; boundary={boundary}',
+                    'Content-Length': str(len(body_parts)),
+                },
+                method='POST',
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return json.loads(resp.read())
+
+        try:
+            result = _do_upload(auth)
+        except urllib.error.HTTPError as e:
+            if e.code == 401:
+                new_auth = _refresh_google_token()
+                if new_auth:
+                    try:
+                        result = _do_upload(new_auth)
+                    except Exception as e2:
+                        self._send_json({"error": f"Drive upload failed after token refresh: {e2}"}, 502)
+                        return
+                else:
+                    self._send_json({
+                        "error": "Google Drive token expired. Reconnect Google in Settings.",
+                        "reconnectNeeded": True,
+                    }, 401)
+                    return
+            else:
+                err_body = ''
+                try:
+                    err_body = e.read().decode('utf-8', errors='replace')[:300]
+                except Exception:
+                    pass
+                self._send_json({"error": f"Drive API returned HTTP {e.code}: {err_body}"}, 502)
+                return
+        except Exception as e:
+            self._send_json({"error": f"Drive upload failed: {e}"}, 500)
+            return
+
+        self._send_json({
+            "ok":      True,
+            "fileId":  result.get("id"),
+            "fileUrl": result.get("webViewLink"),
+            "filename": filename,
+        })
 
     def _apply_update_server(self):
         """Trigger Watchtower to pull the latest image and restart the container."""
