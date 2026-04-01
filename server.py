@@ -1307,14 +1307,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                resp.read()
-            self._send_json({"ok": True, "mode": "server",
-                             "message": "Update triggered. Server will restart shortly."})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read().decode("utf-8", errors="replace")
+            self._send_json({
+                "ok": True,
+                "mode": "server",
+                "message": "Update triggered. The server will pull the new image and restart — this usually takes 1–3 minutes.",
+                "watchtowerResponse": body[:200] if body else None,
+            })
         except urllib.error.HTTPError as e:
-            self._send_json({"error": f"Watchtower returned {e.code}: {e.reason}"}, 502)
+            body = ""
+            try:
+                body = e.read().decode("utf-8", errors="replace")[:200]
+            except Exception:
+                pass
+            self._send_json({
+                "error": f"Watchtower returned HTTP {e.code}. Check that WATCHTOWER_TOKEN matches in docker-compose.yml.",
+                "detail": body,
+                "manualFallback": "SSH into your server and run: docker compose pull && docker compose up -d",
+            }, 502)
+        except urllib.error.URLError as e:
+            self._send_json({
+                "error": f"Could not reach Watchtower at {WATCHTOWER_URL}. Is the watchtower service running?",
+                "detail": str(e.reason),
+                "manualFallback": "SSH into your server and run: docker compose pull && docker compose up -d",
+            }, 502)
         except Exception as e:
-            self._send_json({"error": f"Could not reach Watchtower: {e}"}, 502)
+            self._send_json({
+                "error": f"Unexpected error triggering update: {e}",
+                "manualFallback": "SSH into your server and run: docker compose pull && docker compose up -d",
+            }, 500)
 
     def _apply_update_desktop(self):
         """Download the latest macOS .app zip from GitHub Releases, extract, replace bundle."""
