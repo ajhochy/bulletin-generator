@@ -757,6 +757,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_check_update()
             return
 
+        if path == "/api/admin/update-status":
+            self._handle_update_status()
+            return
+
         self._send_json({"error": f"Not found: {path}"}, 404)
 
     def do_POST(self):
@@ -1271,6 +1275,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             })
         except Exception as e:
             self._send_json({"error": f"Could not reach GitHub: {e}"}, 502)
+
+    def _handle_update_status(self):
+        """Return update environment info for diagnostics."""
+        import shutil
+        docker_available = shutil.which("docker") is not None
+        socket_exists    = os.path.exists("/var/run/docker.sock")
+        self._send_json({
+            "watchtowerUrl":      WATCHTOWER_URL,
+            "watchtowerToken":    bool(WATCHTOWER_TOKEN),
+            "dockerCliAvailable": docker_available,
+            "dockerSocketExists": socket_exists,
+            "mode":               "server" if not IS_DESKTOP else "desktop",
+        })
 
     def _handle_apply_update(self):
         if APP_MODE == "server":
