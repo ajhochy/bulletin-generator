@@ -75,7 +75,15 @@ async function applyUpdate() {
     const data = await apiFetch('/api/admin/apply-update', 'POST', {});
 
     if (data.error) {
-      if (status) { status.textContent = data.error; status.className = 'pco-msg error'; }
+      if (status) {
+        let msg = data.error;
+        if (data.manualFallback) {
+          msg += `\n\nManual fallback: ${data.manualFallback}`;
+        }
+        status.textContent      = msg;
+        status.style.whiteSpace = 'pre-wrap';
+        status.className        = 'pco-msg error';
+      }
       if (btn) btn.disabled = false;
       return;
     }
@@ -89,6 +97,10 @@ async function applyUpdate() {
     } else {
       // Server mode: poll until the restarted container responds with new version
       const currentVersion = _publicConfig.appVersion;
+      if (status) {
+        status.textContent = data.message || 'Update triggered. Waiting for restart…';
+        status.className   = 'pco-msg';
+      }
       _pollForRestart(currentVersion);
     }
   } catch (e) {
@@ -107,7 +119,7 @@ function _pollForRestart(oldVersion) {
   const bar      = document.getElementById('update-progress-bar');
   const barFill  = document.getElementById('update-progress-fill');
   const barText  = document.getElementById('update-progress-text');
-  const maxWait  = 180000; // 3 minutes
+  const maxWait  = 300000; // 5 minutes (Docker pull can be slow on first run)
   const interval = 3000;
   let elapsed    = 0;
   let phase      = 'pulling'; // pulling → restarting → done
@@ -165,9 +177,15 @@ function _pollForRestart(oldVersion) {
 
     if (elapsed >= maxWait) {
       clearInterval(timer);
-      updateProgress(0, 'Update is taking longer than expected. Try reloading manually.');
-      if (status) { status.className = 'pco-msg error'; }
       if (bar) bar.style.display = 'none';
+      if (status) {
+        status.textContent =
+          'The update is taking longer than expected. ' +
+          'It may still be running in the background — try reloading in a minute. ' +
+          'If the problem persists, SSH in and run: docker compose pull && docker compose up -d';
+        status.style.whiteSpace = 'pre-wrap';
+        status.className = 'pco-msg error';
+      }
     }
   }, interval);
 }
