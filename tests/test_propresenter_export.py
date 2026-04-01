@@ -177,16 +177,20 @@ class TestExportItemsToZip:
                 assert "name" in data
                 assert "groups" in data
 
-    def test_empty_items_returns_empty_zip(self):
+    def test_empty_items_returns_readme_fallback(self):
+        # When no items are exportable, a README.json is included to explain why
         result = export_items_to_zip([])
         with zipfile.ZipFile(io.BytesIO(result)) as zf:
-            assert zf.namelist() == []
+            names = zf.namelist()
+        assert names == ["README.json"]
 
-    def test_only_non_exportable_returns_empty_zip(self):
+    def test_only_non_exportable_returns_readme_fallback(self):
+        # sections and notes are skipped; README.json is the fallback
         items = [{"type": "section", "title": "GATHERING"}, {"type": "note", "title": "x"}]
         result = export_items_to_zip(items)
         with zipfile.ZipFile(io.BytesIO(result)) as zf:
-            assert zf.namelist() == []
+            names = zf.namelist()
+        assert names == ["README.json"]
 
     def test_project_name_used_in_no_filename(self):
         # project_name is used for ZIP naming at the route level, not filenames inside
