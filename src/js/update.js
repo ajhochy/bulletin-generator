@@ -75,7 +75,15 @@ async function applyUpdate() {
     const data = await apiFetch('/api/admin/apply-update', 'POST', {});
 
     if (data.error) {
-      if (status) { status.textContent = data.error; status.className = 'pco-msg error'; }
+      if (status) {
+        let msg = data.error;
+        if (data.manualFallback) {
+          msg += `\n\nManual fallback: ${data.manualFallback}`;
+        }
+        status.textContent      = msg;
+        status.style.whiteSpace = 'pre-wrap';
+        status.className        = 'pco-msg error';
+      }
       if (btn) btn.disabled = false;
       return;
     }
@@ -89,6 +97,10 @@ async function applyUpdate() {
     } else {
       // Server mode: poll until the restarted container responds with new version
       const currentVersion = _publicConfig.appVersion;
+      if (status) {
+        status.textContent = data.message || 'Update triggered. Waiting for restart…';
+        status.className   = 'pco-msg';
+      }
       _pollForRestart(currentVersion);
     }
   } catch (e) {
