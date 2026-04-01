@@ -27,6 +27,8 @@
   <div class="tab-bar-right">
     <div id="page-count-display"></div>
     <button class="btn" id="pp-export-btn" title="Export to ProPresenter 7 (Beta JSON format)">Export to ProPresenter</button>
+    <button class="btn" id="drive-save-json-btn" style="display:none;" title="Save project JSON to Google Drive">Save JSON to Drive</button>
+    <button class="btn" id="drive-save-pdf-btn" style="display:none;" title="Save PDF to Google Drive">Save PDF to Drive</button>
     <button class="btn btn-primary" id="btn-print" disabled>Download PDF</button>
   </div>
 </div>
@@ -439,6 +441,26 @@
           <button class="btn-sm btn-sm-primary" id="google-cal-save-btn">Save Selection</button>
           <button class="btn-sm" id="google-cal-refresh-list-btn">↺ Refresh List</button>
         </div>
+      </div>
+
+      <!-- Google Drive settings (shown when Google is connected) -->
+      <div class="stg-card" id="google-drive-card" style="display:none;">
+        <div class="stg-card-label">Google Drive</div>
+        <p class="section-hint">Save project JSON and PDF files to your Google Drive.</p>
+        <div id="google-drive-scope-warn" style="display:none;">
+          <p class="pco-msg error" style="margin-bottom:0.5rem;">Drive access not enabled. Disconnect and reconnect Google to grant Drive permission.</p>
+        </div>
+        <div id="google-drive-folder-row">
+          <label style="font-size:0.82rem;display:block;margin-bottom:0.25rem;">
+            Drive Folder ID <span style="font-weight:400;color:#888;">(optional — paste from Drive folder URL)</span>
+          </label>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="text" id="google-drive-folder-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="flex:1;font-size:0.82rem;padding:0.25rem 0.4rem;" />
+            <button class="btn-sm btn-sm-primary" id="google-drive-save-btn">Save</button>
+          </div>
+          <p class="section-hint" style="margin-top:0.25rem;">Leave blank to save to My Drive root. To find a folder ID: open the folder in Google Drive and copy the last part of the URL.</p>
+        </div>
+        <div id="google-drive-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
       </div>
 
       <!-- iCal fallback (shown when not connected via OAuth) -->

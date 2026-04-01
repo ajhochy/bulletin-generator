@@ -1000,3 +1000,91 @@ document.getElementById('project-browse-btn').addEventListener('click', () => {
   document.querySelector('.tab-btn[data-tab="page-files"]').click();
 });
 
+
+// ── Save to Google Drive ───────────────────────────────────────────────────────
+
+async function saveToDrive(type) {
+  if (type !== 'json' && type !== 'pdf') return;
+
+  const btnId = type === 'json' ? 'drive-save-json-btn' : 'drive-save-pdf-btn';
+  const btn   = document.getElementById(btnId);
+  if (btn) btn.disabled = true;
+
+  const project = projects.find(p => p.id === activeProjectId);
+  const title   = (project && project.name) ? project.name : 'bulletin';
+
+  setStatus(`Saving ${type.toUpperCase()} to Drive…`, 'info');
+
+  try {
+    let content_b64, mimeType, filename;
+
+    if (type === 'json') {
+      const state   = collectCurrentProjectState();
+      const jsonStr = JSON.stringify(state, null, 2);
+      const bytes   = new TextEncoder().encode(jsonStr);
+      // btoa handles only Latin-1 chars; encode via Uint8Array for full UTF-8
+      let b64 = '';
+      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+      content_b64 = btoa(b64);
+      mimeType    = 'application/json';
+      filename    = `${title}.json`;
+
+    } else {
+      // Collect rendered pages from the preview pane (same as the print button)
+      const previewPane = document.getElementById('preview-pane');
+      const pagesHtml   = previewPane
+        ? [...previewPane.querySelectorAll('.booklet-page')].map(el => el.outerHTML).join('\n')
+        : '';
+      if (!pagesHtml) throw new Error('No preview pages found — render a bulletin first.');
+
+      const printHtml = await buildPrintDocHtml(pagesHtml, title);
+      const inlined   = await inlineExternalImages(printHtml).catch(() => printHtml);
+
+      const pdfResp = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          html: inlined,
+          filename: `${title}.pdf`,
+          pageWidth:  getPageDims().w,
+          pageHeight: getPageDims().h,
+        }),
+      });
+      if (!pdfResp.ok) {
+        const err = await pdfResp.json().catch(() => ({}));
+        throw new Error(err.error || `PDF generation failed (HTTP ${pdfResp.status})`);
+      }
+      const arrBuf = await (await pdfResp.blob()).arrayBuffer();
+      const bytes  = new Uint8Array(arrBuf);
+      let b64 = '';
+      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
+      content_b64 = btoa(b64);
+      mimeType    = 'application/pdf';
+      filename    = `${title}.pdf`;
+    }
+
+    const result = await apiFetch('/api/drive/upload', 'POST', {
+      filename,
+      content:  content_b64,
+      mimeType,
+    });
+
+    if (result.reconnectNeeded) {
+      setStatus('Google Drive access expired. Reconnect Google in Settings.', 'error');
+      return;
+    }
+
+    const linkHtml = result.fileUrl
+      ? ` <a href="${result.fileUrl}" target="_blank" rel="noopener">Open in Drive</a>`
+      : '';
+    setStatus(`Saved ${filename} to Drive.${linkHtml}`, 'success');
+
+  } catch (e) {
+    setStatus(`Drive save failed: ${e.message || e}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('drive-save-json-btn')?.addEventListener('click', () => saveToDrive('json'));
+document.getElementById('drive-save-pdf-btn')?.addEventListener('click',  () => saveToDrive('pdf'));
