@@ -1013,7 +1013,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
-            'scope':         'https://www.googleapis.com/auth/calendar.readonly',
+            'scope':         'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file',
             'access_type':   'offline',
             'prompt':        'consent',
         })
@@ -1060,7 +1060,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
             with _lock:
                 s = _read_json(SETTINGS_FILE, {})
-                s['googleAccessToken']  = access_token
+                s['googleAccessToken']       = access_token
+                s['googleDriveScopeGranted'] = True
                 if refresh_token:
                     s['googleRefreshToken'] = refresh_token
                 _write_json(SETTINGS_FILE, s)
