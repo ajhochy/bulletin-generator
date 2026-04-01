@@ -1286,7 +1286,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             "watchtowerToken":    bool(WATCHTOWER_TOKEN),
             "dockerCliAvailable": docker_available,
             "dockerSocketExists": socket_exists,
-            "mode":               "server" if not IS_DESKTOP else "desktop",
+            "mode":               APP_MODE,
         })
 
     def _handle_apply_update(self):
