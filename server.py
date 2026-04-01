@@ -226,6 +226,9 @@ def _public_config():
         "appVersion": APP_VERSION,
         "pcoConfigured": _pco_auth_header() is not None,
         "googleConfigured": _google_auth_header() is not None,
+        "driveConfigured": bool(
+            _read_json(SETTINGS_FILE, {}).get('googleDriveScopeGranted')
+        ),
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
             "exclude": _parse_list_env("CALENDAR_EXCLUDE_TITLES") or DEFAULT_EXCLUDE[:],
@@ -890,6 +893,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 settings.pop('googleAccessToken', None)
                 settings.pop('googleRefreshToken', None)
                 settings.pop('googleCalendarIds', None)
+                settings.pop('googleDriveScopeGranted', None)
+                settings.pop('googleDriveFolderId', None)
                 _write_json(SETTINGS_FILE, settings)
             self._send_json({"ok": True})
             return
