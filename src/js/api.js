@@ -70,6 +70,16 @@ async function loadAllFromServer() {
     if (!isServerMode() && typeof _serverSettings.editorDisplayName === 'string') {
       _editorDisplayName = _serverSettings.editorDisplayName;
     }
+    // Show Drive export buttons if Drive scope is granted
+    const driveJson = document.getElementById('drive-save-json-btn');
+    const drivePdf  = document.getElementById('drive-save-pdf-btn');
+    if (_publicConfig.driveConfigured) {
+      if (driveJson) driveJson.style.display = '';
+      if (drivePdf)  drivePdf.style.display  = '';
+    } else {
+      if (driveJson) driveJson.style.display = 'none';
+      if (drivePdf)  drivePdf.style.display  = 'none';
+    }
   } catch (e) {
     setStatus('Could not reach server. Working offline.', 'error');
   }
