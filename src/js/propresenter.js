@@ -678,3 +678,52 @@ document.getElementById('pro-import-confirm-btn').addEventListener('click', () =
   setStatus(`ProPresenter import complete — ${imported} added, ${replaced} replaced.`, 'success');
 });
 
+async function exportToProPresenter() {
+  const btn = document.getElementById('pp-export-btn');
+  if (btn) btn.disabled = true;
+  setStatus('Preparing ProPresenter export…', 'info');
+
+  try {
+    const projectState = (typeof collectCurrentProjectState === 'function')
+      ? collectCurrentProjectState()
+      : { items };
+    const projectName =
+      (typeof bulletinTitleInput !== 'undefined' && bulletinTitleInput && bulletinTitleInput.value.trim())
+      || (typeof svcChurch !== 'undefined' && svcChurch && svcChurch.value.trim())
+      || (_serverSettings && _serverSettings.churchName)
+      || 'bulletin';
+
+    const response = await fetch('/api/propresenter-export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        items: projectState.items || items,
+        projectName,
+        songDb: Array.isArray(songDb) ? songDb : [],
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || `Server error ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${projectName.replace(/[^a-z0-9\-_.() ]/gi, '_')}-propresenter.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    setStatus('ProPresenter export downloaded.', 'success');
+  } catch (e) {
+    setStatus(`ProPresenter export failed: ${e.message}`, 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('pp-export-btn')?.addEventListener('click', exportToProPresenter);
