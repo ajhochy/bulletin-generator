@@ -1133,6 +1133,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── PDF generation ─────────────────────────────────────────────────────────
 
     def _handle_pdf(self):
+        MAX_PDF_HTML_BYTES = 5 * 1024 * 1024  # 5 MB
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length > MAX_PDF_HTML_BYTES:
+            self._send_json({'error': 'Request body too large (limit 5 MB)'}, 413)
+            return
+
         try:
             body = self._read_body_json()
         except Exception:
@@ -1143,6 +1149,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         html_content = body["html"]
+        if not isinstance(html_content, str) or not html_content.strip():
+            self._send_json({"error": "html must be a non-empty string"}, 400)
+            return
         raw_name     = body.get("filename") or "bulletin"
         filename     = re.sub(r'[^\w\s\-.]', '', raw_name).strip() or "bulletin"
         if not filename.lower().endswith(".pdf"):
@@ -1255,11 +1264,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     except urllib.error.HTTPError as e2:
                         e = e2
                     except Exception as e2:
-                        self.send_response(500)
-                        self.send_header('Content-Type', 'application/json')
-                        self._cors_headers()
-                        self.end_headers()
-                        self.wfile.write(f'{{"errors":[{{"detail":"{e2}"}}]}}'.encode())
+                        self._send_json({"errors": [{"detail": str(e2)}]}, 500)
                         return
             self.send_response(e.code)
             self.send_header('Content-Type', 'application/json')
@@ -1267,11 +1272,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(e.read())
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self._cors_headers()
-            self.end_headers()
-            self.wfile.write(f'{{"errors":[{{"detail":"{e}"}}]}}'.encode())
+            self._send_json({"errors": [{"detail": str(e)}]}, 500)
 
     # ── Update endpoints ────────────────────────────────────────────────────────
 

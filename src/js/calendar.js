@@ -865,7 +865,7 @@ function initDriveSettings() {
     if (folderInput && data.googleDriveFolderId) {
       folderInput.value = data.googleDriveFolderId;
     }
-  }).catch(() => {});
+  }).catch(() => {}); // non-critical prefetch — folder ID simply stays blank if unavailable
 
   // Wire save button (guard against double-wiring on re-init)
   const saveBtn = document.getElementById('google-drive-save-btn');

@@ -23,14 +23,14 @@ function applyStaffLogo(url, label) {
   staffLogoUrl = url || null;
   logoImgInput.value = '';
   if (staffLogoUrl) {
-    apiFetch('/api/settings', 'POST', { staffLogo: staffLogoUrl }).catch(() => {});
+    apiFetch('/api/settings', 'POST', { staffLogo: staffLogoUrl }).catch(err => setStatus('Logo save failed: ' + (err.message || err), 'error'));
     logoImgThumb.src = staffLogoUrl;
     logoImgName.textContent = label || '(saved logo)';
     logoImgLabel.textContent = '\u2713 Logo selected';
     logoImgZone.classList.add('has-image');
     logoImgPreviewWrap.style.display = 'flex';
   } else {
-    apiFetch('/api/settings', 'POST', { staffLogo: null }).catch(() => {});
+    apiFetch('/api/settings', 'POST', { staffLogo: null }).catch(err => setStatus('Logo remove failed: ' + (err.message || err), 'error'));
     logoImgThumb.src = '';
     logoImgName.textContent = '';
     logoImgLabel.textContent = 'Click to upload church logo';
@@ -93,14 +93,14 @@ function restoreChurchName() {
   if (saved) svcChurch.value = saved;
 }
 svcChurch.addEventListener('input', () => {
-  apiFetch('/api/settings', 'POST', { churchName: svcChurch.value }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { churchName: svcChurch.value }).catch(() => {}); // fires every keystroke — silent fail acceptable
   schedulePreviewUpdate();
 });
 
 // ─── Give Online URL (Feature 7) ──────────────────────────────────────────────
 giveOnlineUrlInput.addEventListener('input', () => {
   giveOnlineUrl = giveOnlineUrlInput.value;
-  apiFetch('/api/settings', 'POST', { giveOnlineUrl }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { giveOnlineUrl }).catch(() => {}); // fires every keystroke — silent fail acceptable
   schedulePreviewUpdate();
 });
 
@@ -115,7 +115,7 @@ editorDisplayNameInput.addEventListener('input', () => {
   if (isServerMode()) {
     try { localStorage.setItem('editorDisplayName', _editorDisplayName); } catch (_) {}
   } else {
-    apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {});
+    apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {}); // fires every keystroke — silent fail acceptable
   }
 });
 

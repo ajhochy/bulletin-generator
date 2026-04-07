@@ -755,7 +755,7 @@ async function pcoFetchPlanTeamMembers(stId, planId) {
 
 // Save serving team filter to settings.json
 function saveServingTeamFilter() {
-  apiFetch('/api/settings', 'POST', { servingTeamFilter }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { servingTeamFilter }).catch(err => setStatus('Team filter save failed: ' + (err.message || err), 'error'));
 }
 
 // Detect new team names not yet in servingTeamFilter. Returns array of new names.

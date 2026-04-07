@@ -2,7 +2,7 @@
 document.getElementById('doc-page-size-sel').addEventListener('change', e => {
   activeDocTemplate = Object.assign({}, activeDocTemplate, { pageSize: e.target.value });
   applyDocTemplate();
-  apiFetch('/api/settings', 'POST', { docTemplate: activeDocTemplate }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { docTemplate: activeDocTemplate }).catch(err => setStatus('Page size save failed: ' + (err.message || err), 'error'));
   schedulePreviewUpdate();
 });
 
@@ -60,7 +60,7 @@ document.getElementById('cal-settings-save-btn').addEventListener('click', () =>
   const urlsRaw = document.getElementById('cal-urls-input').value.trim();
   const urls = urlsRaw.split('\n').map(s => s.trim()).filter(Boolean);
   _calUrls = urls;
-  apiFetch('/api/settings', 'POST', { calUrls: _calUrls }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { calUrls: _calUrls }).catch(err => setStatus('Calendar URL save failed: ' + (err.message || err), 'error'));
   calEvents = null;
   calLastFetch = 0;
   calFetchAll(true);
@@ -71,7 +71,7 @@ document.getElementById('cal-excl-save-btn').addEventListener('click', () => {
   const exclRaw = document.getElementById('cal-excl-input').value.trim();
   const excl = exclRaw.split('\n').map(s => s.trim()).filter(Boolean);
   _calExclude = excl;
-  apiFetch('/api/settings', 'POST', { calExclude: _calExclude }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { calExclude: _calExclude }).catch(err => setStatus('Exclude list save failed: ' + (err.message || err), 'error'));
   calEvents = null;
   calLastFetch = 0;
   calFetchAll(true);
@@ -81,7 +81,7 @@ document.getElementById('cal-excl-save-btn').addEventListener('click', () => {
 document.getElementById('cal-settings-reset-btn').addEventListener('click', () => {
   _calUrls = null;
   _calExclude = null;
-  apiFetch('/api/settings', 'POST', { calUrls: null, calExclude: null }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { calUrls: null, calExclude: null }).catch(err => setStatus('Calendar reset failed: ' + (err.message || err), 'error'));
   calInitSettings();
   document.getElementById('cal-excl-input').value = calGetExclude().join('\n');
   calEvents = null;

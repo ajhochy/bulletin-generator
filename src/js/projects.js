@@ -186,7 +186,7 @@ async function saveProjectToServer(project) {
 
 function deleteProjectFromServer(projectId) {
   apiFetch('/api/projects/' + projectId, 'DELETE')
-    .catch(() => {});
+    .catch(err => setStatus('Delete failed: ' + (err.message || err), 'error'));
 }
 
 function projectById(id) {
@@ -445,7 +445,7 @@ function startStaleCheck() {
             if (!confirm(buildSyncDiffMessage(fresh))) return;
             projects = projects.map(p => p.id === fresh.id ? fresh : p);
             loadProjectById(fresh.id);
-          }).catch(() => {});
+          }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
         banner.style.display = '';
       }

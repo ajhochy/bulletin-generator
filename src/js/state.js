@@ -74,7 +74,7 @@ function applyDocTemplate() {
 }
 
 function saveTypeFormats() {
-  apiFetch('/api/settings', 'POST', { typeFormats }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { typeFormats }).catch(err => setStatus('Format save failed: ' + (err.message || err), 'error'));
 }
 
 // Merge per-type default with per-item override (_fmt); item-level wins.

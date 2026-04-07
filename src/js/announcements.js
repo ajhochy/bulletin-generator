@@ -135,7 +135,7 @@ function annRender() {
 }
 
 function saveAnnGlobal() {
-  apiFetch('/api/announcements', 'POST', annData).catch(() => {});
+  apiFetch('/api/announcements', 'POST', annData).catch(err => setStatus('Announcement save failed: ' + (err.message || err), 'error'));
 }
 
 function annAdd() {

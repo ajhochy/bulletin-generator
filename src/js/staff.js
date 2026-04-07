@@ -25,7 +25,7 @@ const STAFF_DEFAULT = [
 const STAFF_KEY = 'worshipStaffData';
 
 function saveStaffData() {
-  apiFetch('/api/settings', 'POST', { staffData }).catch(() => {});
+  apiFetch('/api/settings', 'POST', { staffData }).catch(err => setStatus('Staff save failed: ' + (err.message || err), 'error'));
 }
 
 let staffData = STAFF_DEFAULT.map(s => ({ ...s }));  // populated from server at startup
