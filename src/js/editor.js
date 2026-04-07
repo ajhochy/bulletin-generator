@@ -331,29 +331,18 @@ itemList.addEventListener('click', e => {
 });
 
 itemList.addEventListener('input', e => {
+  // Text input (title, detail): sync state + schedule preview — NO full re-render.
+  // Re-rendering on every keystroke would wipe the DOM, lose textarea focus, and
+  // cause visible jank on large bulletins. State stays in items[]; preview reads from it.
   if (e.target.classList.contains('item-detail-input')) autoResize(e.target);
   const card = e.target.closest('.item-card');
   if (!card) return;
   const idx = parseInt(card.dataset.idx, 10);
   syncItemFromCard(card, idx);
-  // Update section/hidden card styling and placeholders if type changed
+  // Type change is a structural change — full re-render to pick up para-break
+  // buttons for liturgy/label, hidden-type badge, song DB buttons, etc.
   if (e.target.classList.contains('item-type-select')) {
-    const newType = e.target.value;
-    card.classList.toggle('is-section-card', newType === 'section');
-    card.classList.toggle('is-hidden-card', ['note', 'media'].includes(newType));
-    card.classList.toggle('is-label-card', newType === 'label');
-    // Show/hide song DB buttons based on new type
-    const dbLookupBtn = card.querySelector('[data-action="db-lookup"]');
-    const dbSaveBtn   = card.querySelector('[data-action="db-save"]');
-    if (dbLookupBtn) dbLookupBtn.style.display = newType === 'song' ? '' : 'none';
-    if (dbSaveBtn)   dbSaveBtn.style.display   = newType === 'song' ? '' : 'none';
-    card.querySelector('.item-title-input').placeholder =
-      newType === 'section' ? 'Section name (e.g. GATHERING)' : 'Item heading…';
-    card.querySelector('.item-detail-input').placeholder =
-      newType === 'section' ? 'Optional subtitle' :
-      newType === 'song'    ? 'Lyrics — paste verses, label sections (Verse 1, Chorus, etc.), copyright on last line' :
-      newType === 'liturgy' ? 'Text — line breaks preserved' :
-      'Leave blank for title-only display, or add a subtitle/note';
+    renderItemList();
   }
   schedulePreviewUpdate();
 });
