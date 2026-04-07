@@ -255,19 +255,46 @@ def _initialize_local_file(path, example_path, default_value):
     except Exception as e:
         print(f"  [data] Failed to initialize {path.name}: {e}")
 
-# Auto-detect Chrome/Chromium binary — works on macOS (dev) and Linux/Docker (prod)
+# Auto-detect Chrome/Chromium binary — works on macOS, Linux, and Windows.
+# Override with CHROME_PATH env var for custom installs.
 def _find_chrome():
-    candidates = [
-        '/usr/bin/chromium',
-        '/usr/bin/chromium-browser',
-        '/usr/bin/google-chrome',
-        '/usr/bin/google-chrome-stable',
-        '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    ]
+    env_override = os.environ.get('CHROME_PATH', '').strip()
+    if env_override:
+        return env_override
+
+    import platform
+    system = platform.system()
+
+    if system == 'Windows':
+        candidates = [
+            os.path.join(os.environ.get('PROGRAMFILES', r'C:\Program Files'),
+                         r'Google\Chrome\Application\chrome.exe'),
+            os.path.join(os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)'),
+                         r'Google\Chrome\Application\chrome.exe'),
+            os.path.join(os.environ.get('LOCALAPPDATA', ''),
+                         r'Google\Chrome\Application\chrome.exe'),
+        ]
+    elif system == 'Darwin':
+        candidates = [
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            '/Applications/Chromium.app/Contents/MacOS/Chromium',
+        ]
+    else:  # Linux / Docker
+        candidates = [
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+        ]
+
     for c in candidates:
-        if os.path.isfile(c):
+        if c and os.path.isfile(c):
             return c
-    return candidates[-1]  # fallback to macOS path; will surface a clear error
+
+    raise RuntimeError(
+        'Chrome not found. Install Google Chrome or set the CHROME_PATH '
+        'environment variable to your Chrome/Chromium binary path.'
+    )
 
 CHROME_PATH = _find_chrome()
 
