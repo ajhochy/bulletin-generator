@@ -576,6 +576,21 @@ function renderCalEventEditor() {
   if (!container) return;
   container.innerHTML = '';
 
+  // "Start calendar on new page" toggle
+  const calForceBreakBtn = document.createElement('button');
+  calForceBreakBtn.className = 'vol-add-link';
+  calForceBreakBtn.style.cssText = 'color:var(--muted); display:block; margin:0.3rem 0 0.5rem;';
+  calForceBreakBtn.textContent = breakBeforeCalendar
+    ? '\u2193 Calendar on same page as previous'
+    : '\u2191 Start calendar on new page';
+  calForceBreakBtn.addEventListener('click', () => {
+    breakBeforeCalendar = !breakBeforeCalendar;
+    renderCalEventEditor();
+    schedulePreviewUpdate();
+    scheduleProjectPersist();
+  });
+  container.appendChild(calForceBreakBtn);
+
   // Show/hide add button depending on whether we have a fetched (or manual) array
   const ready = Array.isArray(calEvents);
   if (addBtn) addBtn.style.display = ready ? '' : 'none';
@@ -592,7 +607,31 @@ function renderCalEventEditor() {
     byDay.get(key).push(idx);
   });
 
+  let editorDayIndex = 0;
   byDay.forEach((indices, dayKey) => {
+    // Per-day-group break button (for days after the first)
+    if (editorDayIndex > 0) {
+      const hasBreak = calBreakBeforeDates.includes(dayKey);
+      const breakBtn = document.createElement('button');
+      breakBtn.className = 'vol-add-link';
+      breakBtn.style.cssText = 'color:var(--muted); margin-left:0.6rem; display:block; margin-top:0.2rem;';
+      breakBtn.textContent = hasBreak
+        ? '\u2715 Remove break before ' + calDayLabel(dayKey)
+        : '\u229e Add break before ' + calDayLabel(dayKey);
+      breakBtn.addEventListener('click', () => {
+        if (hasBreak) {
+          calBreakBeforeDates = calBreakBeforeDates.filter(d => d !== dayKey);
+        } else {
+          if (!calBreakBeforeDates.includes(dayKey)) calBreakBeforeDates.push(dayKey);
+        }
+        renderCalEventEditor();
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      });
+      container.appendChild(breakBtn);
+    }
+    editorDayIndex++;
+
     const dayH = document.createElement('div');
     dayH.className = 'cal-edit-daygroup';
     dayH.textContent = calDayLabel(dayKey);
@@ -652,39 +691,59 @@ function renderCalEventEditor() {
   });
 }
 
-function renderCalendarPage(container, church, date) {
+function buildCalEventRow(ev) {
+  const row = document.createElement('div');
+  row.className = 'cal-event-row';
+  const timeEl = document.createElement('div');
+  timeEl.className = 'cal-event-time';
+  timeEl.textContent = formatCalTime(ev.start.iso, ev.start.allDay);
+  row.appendChild(timeEl);
+  const info = document.createElement('div');
+  info.className = 'cal-event-info';
+  const titleSpan = document.createElement('div');
+  titleSpan.className = 'cal-event-title';
+  titleSpan.textContent = ev.title;
+  info.appendChild(titleSpan);
+  const isAtChurch = /1030\s*s\.?\s*linwood/i.test(ev.location);
+  if (ev.location && !isAtChurch) {
+    const locSpan = document.createElement('div');
+    locSpan.className = 'cal-event-loc';
+    locSpan.textContent = ev.location;
+    info.appendChild(locSpan);
+  }
+  row.appendChild(info);
+  return row;
+}
+
+function buildCalendarSegments(church) {
+  // Returns [{date: string|null, el: HTMLElement}]
+  // First segment has date: null (title + first day group, or loading/error msg).
+  // Subsequent segments have date: 'YYYY-MM-DD' (one per additional day group).
   const titleEl = document.createElement('div');
   titleEl.className = 'cal-page-title';
   titleEl.textContent = church ? `This Week at ${church}` : 'This Week';
-  container.appendChild(titleEl);
+
+  function singleSegment(msgClass, msgText) {
+    const container = document.createElement('div');
+    container.appendChild(titleEl);
+    const msg = document.createElement('div');
+    msg.className = msgClass;
+    msg.textContent = msgText;
+    container.appendChild(msg);
+    return [{ date: null, el: container }];
+  }
 
   if (calEvents === null) {
-    // Not yet fetched — kick off a fetch in background
     calFetchAll(false);
-    const msg = document.createElement('div');
-    msg.className = 'cal-empty';
-    msg.textContent = 'Loading calendar…';
-    container.appendChild(msg);
-    return;
+    return singleSegment('cal-empty', 'Loading calendar\u2026');
   }
-
   if (calEvents === false || !Array.isArray(calEvents)) {
-    const msg = document.createElement('div');
-    msg.className = 'cal-unavailable';
-    msg.textContent = 'Calendar unavailable — please add events manually.';
-    container.appendChild(msg);
-    return;
+    return singleSegment('cal-unavailable', 'Calendar unavailable \u2014 please add events manually.');
   }
-
   if (calEvents.length === 0) {
-    const msg = document.createElement('div');
-    msg.className = 'cal-empty';
-    msg.textContent = 'No events scheduled this week.';
-    container.appendChild(msg);
-    return;
+    return singleSegment('cal-empty', 'No events scheduled this week.');
   }
 
-  // Group by date
   const byDay = new Map();
   for (const ev of calEvents) {
     const dayKey = ev.start.iso.slice(0, 10);
@@ -692,41 +751,22 @@ function renderCalendarPage(container, church, date) {
     byDay.get(dayKey).push(ev);
   }
 
+  const segments = [];
+  let isFirst = true;
   byDay.forEach((evs, dayKey) => {
+    const container = document.createElement('div');
+    if (isFirst) {
+      container.appendChild(titleEl);
+      isFirst = false;
+    }
     const dayH = document.createElement('div');
     dayH.className = 'cal-day-heading';
     dayH.textContent = calDayLabel(dayKey);
     container.appendChild(dayH);
-
-    evs.forEach(ev => {
-      const row = document.createElement('div');
-      row.className = 'cal-event-row';
-
-      const timeEl = document.createElement('div');
-      timeEl.className = 'cal-event-time';
-      timeEl.textContent = formatCalTime(ev.start.iso, ev.start.allDay);
-      row.appendChild(timeEl);
-
-      const info = document.createElement('div');
-      info.className = 'cal-event-info';
-
-      const titleSpan = document.createElement('div');
-      titleSpan.className = 'cal-event-title';
-      titleSpan.textContent = ev.title;
-      info.appendChild(titleSpan);
-
-      const isAtChurch = /1030\s*s\.?\s*linwood/i.test(ev.location);
-      if (ev.location && !isAtChurch) {
-        const locSpan = document.createElement('div');
-        locSpan.className = 'cal-event-loc';
-        locSpan.textContent = ev.location;
-        info.appendChild(locSpan);
-      }
-
-      row.appendChild(info);
-      container.appendChild(row);
-    });
+    evs.forEach(ev => container.appendChild(buildCalEventRow(ev)));
+    segments.push({ date: dayKey, el: container });
   });
+  return segments;
 }
 
 function renderServingTeam(container, team, weekIdx, teamIdx) {

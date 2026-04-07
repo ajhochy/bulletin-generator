@@ -39,6 +39,10 @@ function cloneItems(list) {
       cloned._noBreakBeforeStanzas = [...item._noBreakBeforeStanzas];
     if (item._collapsed) cloned._collapsed = true;
     if (item._fmt && typeof item._fmt === 'object') cloned._fmt = Object.assign({}, item._fmt);
+    if (Array.isArray(item._forceBreakBeforeParagraph) && item._forceBreakBeforeParagraph.length > 0)
+      cloned._forceBreakBeforeParagraph = [...item._forceBreakBeforeParagraph];
+    if (Array.isArray(item._noBreakBeforeParagraph) && item._noBreakBeforeParagraph.length > 0)
+      cloned._noBreakBeforeParagraph = [...item._noBreakBeforeParagraph];
     return cloned;
   });
 }
@@ -68,6 +72,9 @@ function collectCurrentProjectState() {
     pcoIgnore: pcoIgnore.slice(),
     pcoLastImportedTitles: pcoLastImportedTitles.slice(),
     volTeamFilter: Object.assign({}, volTeamFilter),
+    breakBeforeCalendar: breakBeforeCalendar,
+    breakBeforeStaff:    breakBeforeStaff,
+    calBreakBeforeDates: calBreakBeforeDates.slice(),
   };
 }
 
@@ -120,6 +127,9 @@ function applyProjectState(state) {
   pcoIgnore = Array.isArray(safe.pcoIgnore) ? safe.pcoIgnore.slice() : [];
   pcoLastImportedTitles = Array.isArray(safe.pcoLastImportedTitles) ? safe.pcoLastImportedTitles.slice() : [];
   volTeamFilter = (typeof safe.volTeamFilter === 'object' && safe.volTeamFilter) ? Object.assign({}, safe.volTeamFilter) : {};
+  breakBeforeCalendar = !!safe.breakBeforeCalendar;
+  breakBeforeStaff    = !!safe.breakBeforeStaff;
+  calBreakBeforeDates = Array.isArray(safe.calBreakBeforeDates) ? safe.calBreakBeforeDates.slice() : [];
   if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   updateDocTitle();
   applyingProjectState = false;

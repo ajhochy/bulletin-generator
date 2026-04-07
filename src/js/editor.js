@@ -201,6 +201,39 @@ function renderItemList() {
                 placeholder="${escAttr(detailPlaceholder)}"
                 rows="2">${escAttr(item.detail)}</textarea>
     `;
+    // For liturgy/label items with multiple paragraphs: inject paragraph-break buttons
+    if (item.type === 'liturgy' || item.type === 'label') {
+      const detail = (item.detail || '').trim();
+      const paragraphs = detail.split(/\n\n+/);
+      if (paragraphs.length > 1) {
+        const forceBreakSet = new Set(
+          Array.isArray(item._forceBreakBeforeParagraph) ? item._forceBreakBeforeParagraph : []
+        );
+        const paraBreakZone = document.createElement('div');
+        paraBreakZone.className = 'para-break-zone';
+        paragraphs.forEach((para, pi) => {
+          if (pi > 0) {
+            const row = document.createElement('div');
+            row.className = 'para-break-row';
+            const hasBreak = forceBreakSet.has(pi);
+            const btn = document.createElement('button');
+            btn.className = hasBreak ? 'para-break-btn is-active' : 'para-break-btn';
+            btn.dataset.action        = 'toggle-para-break';
+            btn.dataset.itemIdx       = idx;
+            btn.dataset.paragraphIdx  = pi;
+            btn.title = hasBreak
+              ? 'Remove page break before this paragraph'
+              : 'Force page break before this paragraph';
+            btn.textContent = hasBreak
+              ? '\u2297 Remove break before paragraph ' + (pi + 1)
+              : '\u229e Break before paragraph ' + (pi + 1);
+            row.appendChild(btn);
+            paraBreakZone.appendChild(row);
+          }
+        });
+        card.appendChild(paraBreakZone);
+      }
+    }
     itemList.appendChild(card);
     // Auto-size the detail textarea to its content
     const ta = card.querySelector('.item-detail-input');
@@ -238,6 +271,21 @@ itemList.addEventListener('click', e => {
     renderItemList();
     schedulePreviewUpdate();
     autosaveProjectState(); // flush immediately — don't wait for the 350ms debounce
+    return;
+  }
+  if (btn.dataset.action === 'toggle-para-break') {
+    const itemIdx  = parseInt(btn.dataset.itemIdx, 10);
+    const paraIdx  = parseInt(btn.dataset.paragraphIdx, 10);
+    if (items[itemIdx]) {
+      const arr = Array.isArray(items[itemIdx]._forceBreakBeforeParagraph)
+        ? [...items[itemIdx]._forceBreakBeforeParagraph] : [];
+      const pos = arr.indexOf(paraIdx);
+      if (pos === -1) { arr.push(paraIdx); } else { arr.splice(pos, 1); }
+      items[itemIdx]._forceBreakBeforeParagraph = arr;
+      renderItemList();
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    }
     return;
   }
   const card = btn.closest('.item-card');

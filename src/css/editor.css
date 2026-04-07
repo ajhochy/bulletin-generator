@@ -471,3 +471,26 @@
       gap: 0.6rem;
       margin-top: 1.5rem;
     }
+
+    /* ─── Paragraph break buttons (liturgy/label items) ─────────────────────── */
+    .para-break-zone { padding: 0.2rem 0.5rem 0.1rem; }
+    .para-break-row  { margin: 0.15rem 0; }
+    .para-break-btn  {
+      font-size: 0.72rem;
+      color: var(--muted, #888);
+      background: none;
+      border: 1px dashed var(--muted, #aaa);
+      border-radius: 3px;
+      padding: 0.1rem 0.5rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .para-break-btn:hover {
+      color: var(--accent, #444);
+      border-color: var(--accent, #444);
+    }
+    .para-break-btn.is-active {
+      color: var(--accent, #444);
+      border-style: solid;
+      font-weight: 600;
+    }
