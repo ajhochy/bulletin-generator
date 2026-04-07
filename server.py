@@ -1220,63 +1220,55 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── PCO proxy ──────────────────────────────────────────────────────────────
 
+    _PCO_HEADERS = {
+        'Accept': 'application/json',
+        'User-Agent': 'WorshipBulletinProxy/1.0',
+    }
+
+    def _pco_build_request(self, auth):
+        """Build a urllib Request for the PCO API using this handler's path."""
+        url = PCO_BASE + self.path[len('/pco-proxy'):]
+        return urllib.request.Request(url, headers={**self._PCO_HEADERS, 'Authorization': auth})
+
+    def _pco_do_request(self, req):
+        """Execute a PCO request and return raw response bytes."""
+        with urllib.request.urlopen(req) as resp:
+            return resp.read()
+
+    def _pco_send_raw(self, data):
+        """Write raw PCO API bytes directly to the response (passthrough)."""
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _pco_passthrough_error(self, e):
+        """Forward a PCO HTTPError status + body to the client unchanged."""
+        self.send_response(e.code)
+        self.send_header('Content-Type', 'application/json')
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(e.read())
+
     def _proxy_pco(self):
-        pco_path = self.path[len('/pco-proxy'):]
-        url  = PCO_BASE + pco_path
         auth = _pco_auth_header()
         if not auth:
-            self._send_json({
-                "errors": [{
-                    "detail": "Planning Center credentials are not configured on the server."
-                }]
-            }, 503)
-            return
-
-        req = urllib.request.Request(url, headers={
-            'Authorization': auth,
-            'Accept': 'application/json',
-            'User-Agent': 'WorshipBulletinProxy/1.0',
-        })
-
-        def _do_request(r):
-            with urllib.request.urlopen(r) as resp:
-                return resp.read()
-
+            return self._send_json({"errors": [{"detail": "Planning Center credentials are not configured."}]}, 503)
         try:
-            data = _do_request(req)
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self._cors_headers()
-            self.end_headers()
-            self.wfile.write(data)
+            self._pco_send_raw(self._pco_do_request(self._pco_build_request(auth)))
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                # Token may be expired — attempt a silent refresh and retry once
                 new_auth = _refresh_pco_token()
                 if new_auth:
-                    req2 = urllib.request.Request(url, headers={
-                        'Authorization': new_auth,
-                        'Accept': 'application/json',
-                        'User-Agent': 'WorshipBulletinProxy/1.0',
-                    })
                     try:
-                        data = _do_request(req2)
-                        self.send_response(200)
-                        self.send_header('Content-Type', 'application/json')
-                        self._cors_headers()
-                        self.end_headers()
-                        self.wfile.write(data)
+                        self._pco_send_raw(self._pco_do_request(self._pco_build_request(new_auth)))
                         return
                     except urllib.error.HTTPError as e2:
                         e = e2
                     except Exception as e2:
-                        self._send_json({"errors": [{"detail": str(e2)}]}, 500)
-                        return
-            self.send_response(e.code)
-            self.send_header('Content-Type', 'application/json')
-            self._cors_headers()
-            self.end_headers()
-            self.wfile.write(e.read())
+                        self._send_json({"errors": [{"detail": str(e2)}]}, 500); return
+            self._pco_passthrough_error(e)
         except Exception as e:
             self._send_json({"errors": [{"detail": str(e)}]}, 500)
 
