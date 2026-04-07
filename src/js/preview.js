@@ -89,7 +89,9 @@ function buildChunks(item, idx) {
   if (item.type === 'page-break') {
     return [{ els: [], forceBreak: true, breakItemIdx: idx,
               separatorItemIdx: null, separatorStanzaIdx: null,
-              noBreakBefore: false, itemIdx: idx, stanzaIdx: null, stickyToNext: false }];
+              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+              noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
+              paragraphIdx: null, stickyToNext: false }];
   }
 
   // ── PCO note / media: hidden from print ───────────────────────────────────
@@ -101,7 +103,9 @@ function buildChunks(item, idx) {
   if (item.type === 'section') {
     return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
               separatorItemIdx: null, separatorStanzaIdx: null,
-              noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null, stickyToNext: true }];
+              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+              noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
+              paragraphIdx: null, stickyToNext: true }];
   }
 
   const d = (item.detail || '').trim();
@@ -121,7 +125,9 @@ function buildChunks(item, idx) {
       // Single block — no splitting needed
       return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
                 separatorItemIdx: null, separatorStanzaIdx: null,
-                noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null, stickyToNext: false }];
+                paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+                noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
+                paragraphIdx: null, stickyToNext: false }];
     }
 
     const t = (item.title || '').trim();
@@ -134,7 +140,9 @@ function buildChunks(item, idx) {
         // Insert forced-break sentinel between sections (from `---` in lyrics)
         chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
                       separatorItemIdx: idx, separatorStanzaIdx: globalStanzaIdx,
-                      noBreakBefore: false, itemIdx: idx, stanzaIdx: null, stickyToNext: false });
+                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+                      noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
+                      paragraphIdx: null, stickyToNext: false });
       }
 
       const stanzas = splitLyricSectionIntoStanzas(section);
@@ -173,17 +181,67 @@ function buildChunks(item, idx) {
         const noBreak = isVeryFirst ? !!item._noBreakBefore : noBreakStanzas.has(stanzaGlobalIdx);
         chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
                       separatorItemIdx: null, separatorStanzaIdx: null,
-                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: stanzaGlobalIdx, stickyToNext: false });
+                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: stanzaGlobalIdx,
+                      paragraphIdx: null, stickyToNext: false });
         globalStanzaIdx++;
       });
     });
     return chunks;
   }
 
-  // Everything else: one chunk, not sticky
+  // Liturgy and label: split multi-paragraph body into per-paragraph chunks.
+  // Mirrors the song-stanza pattern exactly.
+  if ((item.type === 'liturgy' || item.type === 'label') && d) {
+    const paragraphs = d.split(/\n\n+/);
+    if (paragraphs.length > 1) {
+      const t = (item.title || '').trim();
+      const fmt = getEffectiveFmt(item);
+      const forceBreakSet = new Set(Array.isArray(item._forceBreakBeforeParagraph) ? item._forceBreakBeforeParagraph : []);
+      const noBreakSet    = new Set(Array.isArray(item._noBreakBeforeParagraph)    ? item._noBreakBeforeParagraph    : []);
+      const chunks = [];
+      paragraphs.forEach((para, pi) => {
+        if (pi > 0 && forceBreakSet.has(pi)) {
+          // Forced-break sentinel — like the `---` sentinel in songs.
+          chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
+                        separatorItemIdx: null, separatorStanzaIdx: null,
+                        paragraphBreakItemIdx: idx, paragraphBreakIdx: pi,
+                        noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
+                        paragraphIdx: null, stickyToNext: false });
+        }
+        const wrap = document.createElement('div');
+        wrap.className = 'order-item' + (pi === 0 ? ' preview-linkable' : '');
+        wrap.dataset.previewIdx   = idx;
+        wrap.dataset.paragraphIdx = pi;
+        if (pi === 0 && t) {
+          const h = document.createElement('div');
+          h.className = 'item-heading has-rule';
+          h.textContent = t;
+          applyTitleFmt(h, fmt);
+          wrap.appendChild(h);
+        }
+        const body = document.createElement('div');
+        body.className = 'item-body';
+        applyBodyFmt(body, fmt);
+        renderBodyText(body, para);
+        wrap.appendChild(body);
+        const noBreak = pi === 0 ? !!item._noBreakBefore : noBreakSet.has(pi);
+        chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
+                      separatorItemIdx: null, separatorStanzaIdx: null,
+                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: null,
+                      paragraphIdx: pi, stickyToNext: false });
+      });
+      return chunks;
+    }
+  }
+
+  // Everything else (including single-paragraph liturgy/label): one chunk, not sticky.
   return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
             separatorItemIdx: null, separatorStanzaIdx: null,
-            noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null, stickyToNext: false }];
+            paragraphBreakItemIdx: null, paragraphBreakIdx: null,
+            noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
+            paragraphIdx: null, stickyToNext: false }];
 }
 
 // ─── Render booklet preview ───────────────────────────────────────────────────
@@ -508,12 +566,19 @@ function renderPreview() {
         // but only if the current page has content — otherwise skip it).
         if (pages[pages.length - 1].length > 0) {
           pages.push([]);
-          pageBreakSources.push({
-            type: chunk.breakItemIdx !== null ? 'item' : 'separator',
-            breakItemIdx:      chunk.breakItemIdx,
-            separatorItemIdx:  chunk.separatorItemIdx,
-            separatorStanzaIdx: chunk.separatorStanzaIdx,
-          });
+          let bsrc;
+          if (chunk.breakItemIdx !== null) {
+            bsrc = { type: 'item', breakItemIdx: chunk.breakItemIdx };
+          } else if (chunk.paragraphBreakItemIdx !== null) {
+            bsrc = { type: 'liturgy-para',
+                     paragraphBreakItemIdx: chunk.paragraphBreakItemIdx,
+                     paragraphBreakIdx:     chunk.paragraphBreakIdx };
+          } else {
+            bsrc = { type: 'separator',
+                     separatorItemIdx:   chunk.separatorItemIdx,
+                     separatorStanzaIdx: chunk.separatorStanzaIdx };
+          }
+          pageBreakSources.push(bsrc);
           used = 0;
         }
         continue;
@@ -528,6 +593,7 @@ function renderPreview() {
           type: 'auto',
           itemIdx: chunk.itemIdx,
           stanzaIdx: chunk.stanzaIdx,
+          paragraphIdx: chunk.paragraphIdx,
         });
         used = 0;
       }
@@ -543,6 +609,7 @@ function renderPreview() {
               type: 'auto',
               itemIdx: chunk.itemIdx,
               stanzaIdx: chunk.stanzaIdx,
+              paragraphIdx: chunk.paragraphIdx,
             });
             used = 0;
           }
@@ -589,10 +656,11 @@ function renderPreview() {
           const prev = pageChunks[ci - 1];
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-split-ctrl';
-          ctrl.dataset.splitAfterItemIdx    = prev.itemIdx;
-          ctrl.dataset.splitAfterStanzaIdx  = prev.stanzaIdx ?? '';
-          ctrl.dataset.splitBeforeItemIdx   = chunk.itemIdx;
-          ctrl.dataset.splitBeforeStanzaIdx = chunk.stanzaIdx ?? '';
+          ctrl.dataset.splitAfterItemIdx      = prev.itemIdx;
+          ctrl.dataset.splitAfterStanzaIdx   = prev.stanzaIdx ?? '';
+          ctrl.dataset.splitBeforeItemIdx    = chunk.itemIdx;
+          ctrl.dataset.splitBeforeStanzaIdx  = chunk.stanzaIdx ?? '';
+          ctrl.dataset.splitBeforeParagraphIdx = chunk.paragraphIdx ?? '';
           const ll = document.createElement('div'); ll.className = 'pg-split-line';
           const btn = document.createElement('button');
           btn.className = 'pg-split-add-btn';
@@ -758,11 +826,48 @@ function renderPreview() {
 
   // ── Calendar ────────────────────────────────────────────────────────────────
   if (optCal.checked) {
-    const calContent = document.createElement('div');
-    calContent.classList.add('preview-linkable');
-    calContent.dataset.previewSection = 'calendar';
-    renderCalendarPage(calContent, church, date);
-    appendBottomSection(calContent, 'calendar');
+    const segments = buildCalendarSegments(church);
+    segments.forEach((seg, si) => {
+      const calContent = document.createElement('div');
+      calContent.classList.add('preview-linkable');
+      calContent.dataset.previewSection = 'calendar';
+      calContent.dataset.calDate = seg.date || '';
+      calContent.appendChild(seg.el);
+
+      const forceNew = (si === 0 && breakBeforeCalendar) ||
+                       (si > 0 && calBreakBeforeDates.includes(seg.date));
+      if (forceNew) {
+        const pg = document.createElement('div');
+        pg.className = 'booklet-page';
+        pg.appendChild(calContent);
+        if (optFooter.checked) {
+          const footer = document.createElement('div');
+          footer.className = 'page-footer';
+          footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+          pg.appendChild(footer);
+        }
+        if (lastRenderedPageEl) {
+          const ctrl = document.createElement('div');
+          ctrl.className = 'pg-break-ctrl';
+          ctrl.dataset.breakType  = si === 0 ? 'cal-force' : 'cal-day';
+          ctrl.dataset.calDayDate = seg.date || '';
+          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
+          const btn = document.createElement('button');
+          btn.className   = 'pg-break-remove-btn';
+          btn.textContent = si === 0 ? '✕ Remove "start on new page"' : '✕ Remove calendar break';
+          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
+          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          lastRenderedPageEl.after(ctrl);
+          ctrl.after(pg);
+        } else {
+          previewPane.appendChild(pg);
+        }
+        lastRenderedPageEl = pg;
+        lastPageUsedH      = measureBottomContent(calContent);
+      } else {
+        appendBottomSection(calContent, 'calendar');
+      }
+    });
   }
 
   // ── Staff / Contact ─────────────────────────────────────────────────────────
@@ -850,7 +955,36 @@ function renderPreview() {
     }
     staffContent.appendChild(logoSection);
 
-    appendBottomSection(staffContent, 'staff');
+    if (breakBeforeStaff) {
+      const pg = document.createElement('div');
+      pg.className = 'booklet-page';
+      pg.appendChild(staffContent);
+      if (optFooter.checked) {
+        const footer = document.createElement('div');
+        footer.className = 'page-footer';
+        footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+        pg.appendChild(footer);
+      }
+      if (lastRenderedPageEl) {
+        const ctrl = document.createElement('div');
+        ctrl.className = 'pg-break-ctrl';
+        ctrl.dataset.breakType = 'staff-force';
+        const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
+        const btn = document.createElement('button');
+        btn.className   = 'pg-break-remove-btn';
+        btn.textContent = '✕ Remove "start on new page"';
+        const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
+        ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+        lastRenderedPageEl.after(ctrl);
+        ctrl.after(pg);
+      } else {
+        previewPane.appendChild(pg);
+      }
+      lastRenderedPageEl = pg;
+      lastPageUsedH      = measureBottomContent(staffContent);
+    } else {
+      appendBottomSection(staffContent, 'staff');
+    }
   }
 
   // ── Booklet size targeting: pad with blank pages or warn if over target ─────
@@ -936,12 +1070,18 @@ function addBreakControls(renderedPageEls, pageBreakSources) {
       ctrl.dataset.breakType          = 'separator';
       ctrl.dataset.separatorItemIdx   = src.separatorItemIdx;
       ctrl.dataset.separatorStanzaIdx = src.separatorStanzaIdx;
+    } else if (src.type === 'liturgy-para') {
+      label = '✕ Remove break (liturgy)';
+      ctrl.dataset.breakType             = 'liturgy-para';
+      ctrl.dataset.paragraphBreakItemIdx = src.paragraphBreakItemIdx;
+      ctrl.dataset.paragraphBreakIdx     = src.paragraphBreakIdx;
     } else {
       // auto break
       label = '✕ Merge with previous page';
-      ctrl.dataset.breakType     = 'auto';
-      ctrl.dataset.breakItemIdx  = src.itemIdx;
+      ctrl.dataset.breakType      = 'auto';
+      ctrl.dataset.breakItemIdx   = src.itemIdx;
       ctrl.dataset.breakStanzaIdx = src.stanzaIdx ?? '';
+      ctrl.dataset.breakParagraphIdx = src.paragraphIdx ?? '';
     }
 
     const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
@@ -1058,23 +1198,57 @@ previewPane.addEventListener('click', e => {
       const section = ctrl.dataset.bottomSection;
       bottomMerge[section] = false;
       schedulePreviewUpdate();
+    } else if (type === 'liturgy-para') {
+      const itemIdx = parseInt(ctrl.dataset.paragraphBreakItemIdx, 10);
+      const paraIdx = parseInt(ctrl.dataset.paragraphBreakIdx, 10);
+      if (items[itemIdx]) {
+        items[itemIdx]._forceBreakBeforeParagraph =
+          (items[itemIdx]._forceBreakBeforeParagraph || []).filter(p => p !== paraIdx);
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
+    } else if (type === 'staff-force') {
+      breakBeforeStaff = false;
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    } else if (type === 'cal-force') {
+      breakBeforeCalendar = false;
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    } else if (type === 'cal-day') {
+      const d = ctrl.dataset.calDayDate;
+      if (d) {
+        calBreakBeforeDates = calBreakBeforeDates.filter(x => x !== d);
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
     } else {
-      // Auto break (OOW): suppress it by setting a noBreakBefore flag on the item/stanza
-      const itemIdx     = parseInt(ctrl.dataset.breakItemIdx, 10);
+      // Auto break (OOW): suppress it by setting a noBreakBefore flag on the item/stanza/paragraph
+      const itemIdx      = parseInt(ctrl.dataset.breakItemIdx, 10);
       const stanzaIdxStr = ctrl.dataset.breakStanzaIdx;
+      const paraStr      = ctrl.dataset.breakParagraphIdx;
       if (!Number.isInteger(itemIdx) || !items[itemIdx]) return;
-      if (!stanzaIdxStr || stanzaIdxStr === '') {
-        // Item-level: suppress auto-break before the whole item
-        items[itemIdx]._noBreakBefore = true;
-      } else {
+      if (paraStr !== undefined && paraStr !== '') {
+        const paraIdx = parseInt(paraStr, 10);
+        const arr = Array.isArray(items[itemIdx]._noBreakBeforeParagraph)
+          ? [...items[itemIdx]._noBreakBeforeParagraph] : [];
+        if (!arr.includes(paraIdx)) arr.push(paraIdx);
+        items[itemIdx]._noBreakBeforeParagraph = arr;
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      } else if (stanzaIdxStr && stanzaIdxStr !== '') {
         // Stanza-level: suppress auto-break before this specific stanza
         const stanzaIdx = parseInt(stanzaIdxStr, 10);
         if (!Array.isArray(items[itemIdx]._noBreakBeforeStanzas))
           items[itemIdx]._noBreakBeforeStanzas = [];
         if (!items[itemIdx]._noBreakBeforeStanzas.includes(stanzaIdx))
           items[itemIdx]._noBreakBeforeStanzas.push(stanzaIdx);
+        schedulePreviewUpdate();
+      } else {
+        // Item-level: suppress auto-break before the whole item
+        items[itemIdx]._noBreakBefore = true;
+        schedulePreviewUpdate();
       }
-      schedulePreviewUpdate();
     }
     return;
   }
@@ -1100,12 +1274,25 @@ previewPane.addEventListener('click', e => {
     const afterStanzaStr  = ctrl.dataset.splitAfterStanzaIdx;
 
     if (afterItemIdx === beforeItemIdx) {
-      // Same item (song) — insert a --- separator after the stanza
-      const afterStanzaIdx = parseInt(afterStanzaStr, 10);
-      if (items[afterItemIdx]) {
-        items[afterItemIdx].detail = insertSongSeparatorAfter(items[afterItemIdx].detail, afterStanzaIdx);
-        renderItemList();
-        schedulePreviewUpdate();
+      const beforeParagraphStr = ctrl.dataset.splitBeforeParagraphIdx;
+      if (beforeParagraphStr !== undefined && beforeParagraphStr !== '') {
+        const paraIdx = parseInt(beforeParagraphStr, 10);
+        if (items[beforeItemIdx]) {
+          const arr = Array.isArray(items[beforeItemIdx]._forceBreakBeforeParagraph)
+            ? [...items[beforeItemIdx]._forceBreakBeforeParagraph] : [];
+          if (!arr.includes(paraIdx)) arr.push(paraIdx);
+          items[beforeItemIdx]._forceBreakBeforeParagraph = arr;
+          schedulePreviewUpdate();
+          scheduleProjectPersist();
+        }
+      } else {
+        // Same item (song) — insert a --- separator after the stanza
+        const afterStanzaIdx = parseInt(afterStanzaStr, 10);
+        if (items[afterItemIdx]) {
+          items[afterItemIdx].detail = insertSongSeparatorAfter(items[afterItemIdx].detail, afterStanzaIdx);
+          renderItemList();
+          schedulePreviewUpdate();
+        }
       }
     } else {
       // Different items — insert a {type:'page-break'} item right after afterItemIdx
