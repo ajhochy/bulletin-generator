@@ -11,8 +11,15 @@ let breakBeforeCalendar = false;
 let breakBeforeStaff    = false;
 let calBreakBeforeDates = []; // string[] of ISO date strings (YYYY-MM-DD) with forced page breaks
 let servingSchedule = null; // { weeks: [{date, planId, teams:[{name,serviceTime,positions:[{role,names[]}]}]}, ...] }
-let servingTeamFilter = {}; // { teamName: true/false } — persisted in settings.json
-let volTeamFilter = {};     // { teamName: true/false } — per-project visibility override
+// servingTeamFilter: global team visibility for the Settings → Serving Teams list.
+//   Key: teamName (string). Value: true/false.
+//   Persists in settings.json (global across all projects). Owned by pco.js / api.js.
+let servingTeamFilter = {};
+
+// volTeamFilter: per-week, per-service-time team visibility in the bulletin editor.
+//   Key: 'w<weekIndex>:<serviceTime>:<teamName>'. Value: true (visible) / false (hidden).
+//   Persists with the project in projects.json. Owned by calendar.js / projects.js.
+let volTeamFilter = {};
 let calEvents = null;  // array from /cal endpoint, null = not yet fetched, false = fetch failed
 let calLastFetch = 0;  // ms timestamp of last successful fetch
 let coverImageUrl = null;
