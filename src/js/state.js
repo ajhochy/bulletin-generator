@@ -7,6 +7,9 @@ let welcomeItems = []; // populated from WELCOME_ITEMS after staff.js loads
 let welcomeHeading = ''; // custom heading; empty = auto "Welcome to {church}"
 let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
 let giveOnlineUrl = '';
+let breakBeforeCalendar = false;
+let breakBeforeStaff    = false;
+let calBreakBeforeDates = []; // string[] of ISO date strings (YYYY-MM-DD) with forced page breaks
 let servingSchedule = null; // { weeks: [{date, planId, teams:[{name,serviceTime,positions:[{role,names[]}]}]}, ...] }
 let servingTeamFilter = {}; // { teamName: true/false } — persisted in settings.json
 let volTeamFilter = {};     // { teamName: true/false } — per-project visibility override
