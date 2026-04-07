@@ -1028,14 +1028,21 @@ async function saveToDrive(type) {
   try {
     let content_b64, mimeType, filename;
 
+    // Encode Uint8Array to base64 in chunks to avoid stack overflow on large files
+    function _bytesToB64(bytes) {
+      const CHUNK = 8192;
+      let bin = '';
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      return btoa(bin);
+    }
+
     if (type === 'json') {
       const state   = collectCurrentProjectState();
       const jsonStr = JSON.stringify(state, null, 2);
       const bytes   = new TextEncoder().encode(jsonStr);
-      // btoa handles only Latin-1 chars; encode via Uint8Array for full UTF-8
-      let b64 = '';
-      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
-      content_b64 = btoa(b64);
+      content_b64 = _bytesToB64(bytes);
       mimeType    = 'application/json';
       filename    = `${title}.json`;
 
@@ -1065,10 +1072,7 @@ async function saveToDrive(type) {
         throw new Error(err.error || `PDF generation failed (HTTP ${pdfResp.status})`);
       }
       const arrBuf = await (await pdfResp.blob()).arrayBuffer();
-      const bytes  = new Uint8Array(arrBuf);
-      let b64 = '';
-      for (let i = 0; i < bytes.length; i++) b64 += String.fromCharCode(bytes[i]);
-      content_b64 = btoa(b64);
+      content_b64 = _bytesToB64(new Uint8Array(arrBuf));
       mimeType    = 'application/pdf';
       filename    = `${title}.pdf`;
     }
