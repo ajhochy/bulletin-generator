@@ -1,11 +1,12 @@
 """
-Tests for propresenter_export.py (#77).
-Covers: _split_stanzas, _rtf_wrap, export_items_to_zip
+Tests for propresenter_export.py (#77 / #103).
+Covers: _split_stanzas, _rtf_encode, _build_presentation, export_items_to_zip
 """
 import io
 import json
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 import pytest
 from pathlib import Path
 
@@ -14,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from propresenter_export import (
         _split_stanzas,
-        _rtf_wrap,
+        _rtf_encode,
         _build_presentation,
         export_items_to_zip,
     )
@@ -24,7 +25,7 @@ except ImportError:
 
 pytestmark = pytest.mark.skipif(
     not _PP_AVAILABLE,
-    reason="propresenter_export.py not present (built on feat/issue-77 branch)"
+    reason="propresenter_export.py not present"
 )
 
 
@@ -59,25 +60,25 @@ class TestSplitStanzas:
         assert len(result) == 1
 
 
-# ── _rtf_wrap ─────────────────────────────────────────────────────────────────
+# ── _rtf_encode ───────────────────────────────────────────────────────────────
 
-class TestRtfWrap:
+class TestRtfEncode:
     def test_returns_string(self):
-        assert isinstance(_rtf_wrap("Hello"), str)
+        assert isinstance(_rtf_encode("Hello"), str)
 
     def test_contains_input_text(self):
-        assert "Hello" in _rtf_wrap("Hello")
+        assert "Hello" in _rtf_encode("Hello")
 
     def test_rtf_header_present(self):
-        result = _rtf_wrap("test")
+        result = _rtf_encode("test")
         assert result.startswith("{\\rtf1")
 
     def test_escapes_backslash(self):
-        result = _rtf_wrap("path\\to\\file")
+        result = _rtf_encode("path\\to\\file")
         assert "\\\\" in result
 
     def test_escapes_braces(self):
-        result = _rtf_wrap("{test}")
+        result = _rtf_encode("{test}")
         assert "\\{" in result
         assert "\\}" in result
 
@@ -169,33 +170,73 @@ class TestExportItemsToZip:
         assert names[0].startswith("01 -")
         assert names[1].startswith("02 -")
 
-    def test_files_contain_valid_json(self):
+    def test_files_have_pro6_extension(self):
+        """Exported files must be .pro6 (ProPresenter 6 XML), not .pro.json."""
         result = export_items_to_zip(self._make_items())
         with zipfile.ZipFile(io.BytesIO(result)) as zf:
             for name in zf.namelist():
-                data = json.loads(zf.read(name).decode("utf-8"))
-                assert "name" in data
-                assert "groups" in data
+                if name != "README.json":
+                    assert name.endswith(".pro6"), f"Expected .pro6 extension, got: {name}"
+
+    def test_files_contain_valid_xml(self):
+        """Exported .pro6 files must be parseable XML."""
+        result = export_items_to_zip(self._make_items())
+        with zipfile.ZipFile(io.BytesIO(result)) as zf:
+            for name in zf.namelist():
+                if name.endswith(".pro6"):
+                    xml_bytes = zf.read(name)
+                    root = ET.fromstring(xml_bytes)
+                    assert root.tag == "RVPresentationDocument"
+
+    def test_xml_contains_ccli_attributes(self):
+        """Root element must carry song metadata attributes."""
+        items = [{"type": "song", "title": "Test Song", "body": "lyrics", "author": "Author"}]
+        result = export_items_to_zip(items)
+        with zipfile.ZipFile(io.BytesIO(result)) as zf:
+            xml_bytes = zf.read(zf.namelist()[0])
+        root = ET.fromstring(xml_bytes)
+        assert root.get("CCLISongTitle") == "Test Song"
+        assert root.get("CCLIArtistCredits") == "Author"
+
+    def test_xml_contains_slide_groupings(self):
+        """Each .pro6 must contain at least one RVSlideGrouping element."""
+        items = [{"type": "song", "title": "Test", "body": "Stanza 1\n\nStanza 2"}]
+        result = export_items_to_zip(items)
+        with zipfile.ZipFile(io.BytesIO(result)) as zf:
+            xml_bytes = zf.read(zf.namelist()[0])
+        root = ET.fromstring(xml_bytes)
+        groupings = root.findall(".//RVSlideGrouping")
+        assert len(groupings) > 0
+
+    def test_xml_slides_contain_plain_text(self):
+        """NSString source elements must contain the lyric text."""
+        items = [{"type": "song", "title": "Test", "body": "Amazing grace"}]
+        result = export_items_to_zip(items)
+        with zipfile.ZipFile(io.BytesIO(result)) as zf:
+            xml_bytes = zf.read(zf.namelist()[0])
+        root = ET.fromstring(xml_bytes)
+        sources = [el for el in root.findall(".//NSString") if el.get("rvXMLIvarName") == "source"]
+        texts = " ".join(el.text or "" for el in sources)
+        assert "Amazing grace" in texts
 
     def test_empty_items_returns_readme_fallback(self):
-        # When no items are exportable, a README.json is included to explain why
         result = export_items_to_zip([])
         with zipfile.ZipFile(io.BytesIO(result)) as zf:
             names = zf.namelist()
         assert names == ["README.json"]
 
     def test_only_non_exportable_returns_readme_fallback(self):
-        # sections and notes are skipped; README.json is the fallback
         items = [{"type": "section", "title": "GATHERING"}, {"type": "note", "title": "x"}]
         result = export_items_to_zip(items)
         with zipfile.ZipFile(io.BytesIO(result)) as zf:
             names = zf.namelist()
         assert names == ["README.json"]
 
-    def test_project_name_used_in_no_filename(self):
-        # project_name is used for ZIP naming at the route level, not filenames inside
-        result = export_items_to_zip(self._make_items(), "my-church")
-        assert isinstance(result, bytes)
+    def test_project_name_in_readme_fallback(self):
+        result = export_items_to_zip([], project_name="my-church")
+        with zipfile.ZipFile(io.BytesIO(result)) as zf:
+            readme = json.loads(zf.read("README.json"))
+        assert readme["projectName"] == "my-church"
 
     def test_slash_in_title_sanitized(self):
         items = [{"type": "song", "title": "AC/DC Song", "body": "lyrics"}]
