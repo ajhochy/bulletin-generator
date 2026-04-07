@@ -1228,7 +1228,10 @@ previewPane.addEventListener('click', e => {
       const stanzaIdxStr = ctrl.dataset.breakStanzaIdx;
       const paraStr      = ctrl.dataset.breakParagraphIdx;
       if (!Number.isInteger(itemIdx) || !items[itemIdx]) return;
-      if (paraStr !== undefined && paraStr !== '') {
+      if (paraStr !== undefined && paraStr !== '' && parseInt(paraStr, 10) > 0) {
+        // Paragraph-level (pi > 0): suppress auto-break before this paragraph.
+        // pi === 0 falls through to the item-level path below because buildChunks
+        // uses item._noBreakBefore (not _noBreakBeforeParagraph) for the first paragraph.
         const paraIdx = parseInt(paraStr, 10);
         const arr = Array.isArray(items[itemIdx]._noBreakBeforeParagraph)
           ? [...items[itemIdx]._noBreakBeforeParagraph] : [];
