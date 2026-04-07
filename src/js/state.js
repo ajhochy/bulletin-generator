@@ -1,8 +1,24 @@
 // ─── State ────────────────────────────────────────────────────────────────────
+//
+// Ownership convention:
+//   OWNER  — the one module that may replace the whole array/value via setItems() etc.
+//   READER — any module may read the variable directly; in-place mutations are allowed
+//            for fine-grained updates (push/splice/property set) as long as a
+//            schedulePreviewUpdate() / scheduleProjectPersist() call follows.
+//
+// items[]     OWNER: projects.js (load/reset), pco.js (import)  READERS: all
+// annData[]   OWNER: projects.js (load/reset), api.js (initial load)  READERS: announcements.js, preview.js
+// All other state variables follow the same pattern — see comments below.
+
+// Setter functions for whole-array replacement — use these instead of direct assignment.
+// They document the write boundary and can be extended with side-effects later.
+function setItems(arr)   { items   = Array.isArray(arr) ? arr : []; }
+function setAnnData(arr) { annData = Array.isArray(arr) ? arr : []; }
+
 let items = [];
-let pcoIgnore = [];              // string[] — PCO item names to skip on import/resync
-let pcoLastImportedTitles = [];  // string[] — raw PCO item titles from last import/resync
-let annData = []; // [{ title: string, body: string, _breakBefore?: bool, _noBreakBefore?: bool }]
+let pcoIgnore = [];              // string[] — PCO item names to skip on import/resync  OWNER: pco.js
+let pcoLastImportedTitles = [];  // string[] — raw PCO item titles from last import/resync  OWNER: pco.js
+let annData = []; // [{ title, body, _breakBefore?, _noBreakBefore? }]
 let welcomeItems = []; // populated from WELCOME_ITEMS after staff.js loads
 let welcomeHeading = ''; // custom heading; empty = auto "Welcome to {church}"
 let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };

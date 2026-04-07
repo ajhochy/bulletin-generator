@@ -56,9 +56,9 @@ async function loadAllFromServer() {
       staffData = _serverSettings.staffData;
     if (Array.isArray(bootstrap.songDb))
       songDb = bootstrap.songDb;
-    annData = Array.isArray(annsData)
+    setAnnData(Array.isArray(annsData)
       ? annsData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '' }))
-      : [];
+      : []);
     servingTeamFilter = (_serverSettings.servingTeamFilter && typeof _serverSettings.servingTeamFilter === 'object')
       ? _serverSettings.servingTeamFilter : {};
     _calUrls = Array.isArray(_serverSettings.calUrls) ? _serverSettings.calUrls : null;

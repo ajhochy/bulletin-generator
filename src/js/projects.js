@@ -89,7 +89,7 @@ function applyProjectState(state) {
   welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
   welcomeRender();
   if (Array.isArray(safe.announcements)) {
-    annData = safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
+    setAnnData(safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })));
     saveAnnGlobal();
   }
   annRender();
@@ -100,7 +100,7 @@ function applyProjectState(state) {
   optAnnouncements.checked = safe.optAnnouncements !== false;
   optVolunteers.checked    = safe.optVolunteers !== false;
   optStaff.checked         = safe.optStaff !== false;
-  items = Array.isArray(safe.items) ? cloneItems(safe.items) : [];
+  setItems(Array.isArray(safe.items) ? cloneItems(safe.items) : []);
   renderItemList();
   applyCoverImage(safe.coverImageUrl || null, '(saved image)');
   // Logo is a global setting — only apply from project if it has one;
@@ -477,7 +477,7 @@ function clearEditorForNewProject() {
       return (b.updatedAt || '').localeCompare(a.updatedAt || '');
     });
   if (datedProjects.length > 0) {
-    annData = datedProjects[0].state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }));
+    setAnnData(datedProjects[0].state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })));
     welcomeHeading = typeof datedProjects[0].state.welcomeHeading === 'string' ? datedProjects[0].state.welcomeHeading : '';
     welcomeItems = Array.isArray(datedProjects[0].state.welcomeItems) ? datedProjects[0].state.welcomeItems.slice() : [...WELCOME_ITEMS];
     saveAnnGlobal();
@@ -488,7 +488,7 @@ function clearEditorForNewProject() {
   }
   welcomeHeadingInput.value = welcomeHeading;
   welcomeRender();
-  items = [];
+  setItems([]);
   pcoIgnore = [];
   pcoLastImportedTitles = [];
   if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
@@ -838,10 +838,10 @@ async function downloadProjectAsPdf(id) {
   optAnnouncements.checked = state.optAnnouncements !== false;
   optVolunteers.checked    = state.optVolunteers !== false;
   optStaff.checked         = state.optStaff !== false;
-  items = Array.isArray(state.items) ? cloneItems(state.items) : [];
-  annData = Array.isArray(state.announcements)
-    ? state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }))
-    : annData;
+  setItems(Array.isArray(state.items) ? cloneItems(state.items) : []);
+  if (Array.isArray(state.announcements)) {
+    setAnnData(state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })));
+  }
 
   // Render into previewPane (fully synchronous)
   renderPreview();
@@ -859,8 +859,8 @@ async function downloadProjectAsPdf(id) {
   optAnnouncements.checked = prevAnnouncements;
   optVolunteers.checked    = prevVolunteers;
   optStaff.checked         = prevStaff;
-  items = prevItems;
-  annData = prevAnnData;
+  setItems(prevItems);
+  setAnnData(prevAnnData);
   renderPreview();
   applyingProjectState = false;
 

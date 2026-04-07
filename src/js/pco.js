@@ -190,7 +190,7 @@ function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingP
   // Apply per-project ignore filter
   const ignoredNorms     = new Set(pcoIgnore.map(n => normTitle(n)));
   const pcoIgnoredMapped = allPcoMapped.filter(item => ignoredNorms.has(normTitle(item.title)));
-  items = allPcoMapped.filter(item => !ignoredNorms.has(normTitle(item.title)));
+  setItems(allPcoMapped.filter(item => !ignoredNorms.has(normTitle(item.title))));
   const enrichResult = enrichItemsFromDb(items);
 
   // Map plan-level notes onto matching items (fill blank detail only).
