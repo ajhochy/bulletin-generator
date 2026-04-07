@@ -95,6 +95,20 @@ function renderStaffEditor() {
     row.appendChild(delBtn);
     container.appendChild(row);
   });
+
+  const staffForceBreakBtn = document.createElement('button');
+  staffForceBreakBtn.className = 'vol-add-link';
+  staffForceBreakBtn.style.cssText = 'color:var(--muted); display:block; margin:0.4rem 0;';
+  staffForceBreakBtn.textContent = breakBeforeStaff
+    ? '\u2193 Staff on same page as previous'
+    : '\u2191 Start staff on new page';
+  staffForceBreakBtn.addEventListener('click', () => {
+    breakBeforeStaff = !breakBeforeStaff;
+    renderStaffEditor();
+    schedulePreviewUpdate();
+    scheduleProjectPersist();
+  });
+  container.appendChild(staffForceBreakBtn);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
