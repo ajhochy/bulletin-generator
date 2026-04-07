@@ -647,8 +647,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         # Block direct access to data files — same rule as do_GET
-        path = self.path.split("?")[0]
-        if path.startswith("/data/"):
+        if self.path.split("?")[0].startswith("/data/"):
             self._send_json({"error": "Forbidden"}, 403)
             return
         super().do_HEAD()
@@ -693,265 +692,245 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── Routing ────────────────────────────────────────────────────────────────
 
-    def do_GET(self):
+    # ── Routing tables ─────────────────────────────────────────────────────────
+    # Each entry: (path_pattern, handler_method_name)
+    # Patterns ending in '/' use startswith matching; others require exact equality.
+
+    _GET_ROUTES = [
+        ('/data/',                    '_handle_forbidden'),
+        ('/',                         '_handle_index'),
+        ('/index.html',               '_handle_index'),
+        ('/worship-booklet.html',     '_handle_index'),
+        ('/favicon.ico',              '_handle_favicon'),
+        ('/api/projects',             '_handle_get_projects'),
+        ('/api/announcements',        '_handle_get_announcements'),
+        ('/api/settings',             '_handle_get_settings'),
+        ('/api/songs',                '_handle_get_songs'),
+        ('/api/bootstrap',            '_handle_bootstrap'),
+        ('/api/google-calendars',     '_handle_google_calendars'),
+        ('/api/admin/check-update',   '_handle_check_update'),
+        ('/api/admin/update-status',  '_handle_update_status'),
+        ('/oauth/pco/start',          '_handle_pco_oauth_start'),
+        ('/oauth/pco/callback',       '_handle_pco_oauth_callback'),
+        ('/oauth/google/start',       '_handle_google_oauth_start'),
+        ('/oauth/google/callback',    '_handle_google_oauth_callback'),
+        ('/pco-proxy/',               '_proxy_pco'),
+        ('/cal',                      '_handle_cal'),
+        ('/src/',                     '_handle_static'),
+    ]
+
+    _POST_ROUTES = [
+        ('/api/projects',             '_handle_post_projects'),
+        ('/api/announcements',        '_handle_post_announcements'),
+        ('/api/settings',             '_handle_post_settings'),
+        ('/api/songs',                '_handle_post_songs'),
+        ('/api/pdf',                  '_handle_pdf'),
+        ('/api/propresenter-export',  '_handle_propresenter_export'),
+        ('/api/drive/upload',         '_handle_drive_upload'),
+        ('/api/pco-disconnect',       '_handle_pco_disconnect'),
+        ('/api/google-disconnect',    '_handle_google_disconnect'),
+        ('/api/admin/apply-update',   '_handle_apply_update'),
+    ]
+
+    _DELETE_ROUTES = [
+        ('/api/projects/',            '_handle_delete_project'),
+    ]
+
+    def _route(self, routes):
+        """Dispatch to the first matching handler. Returns True if matched."""
         path = self.path.split("?")[0]
+        for pattern, handler in routes:
+            matched = path.startswith(pattern) if pattern.endswith('/') else path == pattern
+            if matched:
+                getattr(self, handler)()
+                return True
+        return False
 
-        # Block direct access to raw data files — always serve via /api/* endpoints
-        if path.startswith("/data/"):
-            self._send_json({"error": "Forbidden"}, 403)
-            return
-
-        if path == "/" or path == "/index.html" or path == "/worship-booklet.html":
-            try:
-                content = (BASE_DIR / "index.html").read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Content-Length", str(len(content)))
-                self.end_headers()
-                self.wfile.write(content)
-            except Exception as e:
-                self.send_response(500)
-                self.end_headers()
-                self.wfile.write(f"Error loading app: {e}".encode())
-            return
-
-        if path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
-            return
-
-        if path == "/api/projects":
-            projects = _read_json(PROJECTS_FILE, [])
-            self._send_json({"projects": projects})
-            return
-
-        if path == "/api/announcements":
-            anns = _read_json(ANNOUNCEMENTS_FILE, [])
-            self._send_json(anns)
-            return
-
-        if path == "/api/settings":
-            settings = _read_json(SETTINGS_FILE, {})
-            self._send_json(settings)
-            return
-
-        if path == "/api/songs":
-            songs = _read_json(SONGS_FILE, [])
-            self._send_json(songs)
-            return
-
-        if path == "/api/bootstrap":
-            settings = _read_json(SETTINGS_FILE, {})
-            songs = _read_json(SONGS_FILE, [])
-            self._send_json({
-                "settings": settings,
-                "songDb": songs,
-                "config": _public_config(),
-            })
-            return
-
-        if path == "/oauth/pco/start":
-            self._handle_pco_oauth_start()
-            return
-
-        if path == "/oauth/pco/callback":
-            self._handle_pco_oauth_callback()
-            return
-
-        if path == "/oauth/google/start":
-            self._handle_google_oauth_start()
-            return
-
-        if path == "/oauth/google/callback":
-            self._handle_google_oauth_callback()
-            return
-
-        if path == "/api/google-calendars":
-            self._handle_google_calendars()
-            return
-
-        if self.path.startswith("/pco-proxy/"):
-            self._proxy_pco()
-            return
-
-        if self.path.startswith("/cal"):
-            self._handle_cal()
-            return
-
-        # Serve static files (CSS, JS, images) from BASE_DIR via SimpleHTTPRequestHandler.
-        # JS and CSS files get no-store so browser always fetches fresh copies during
-        # development — prevents stale cached code after a server update.
-        if path.startswith("/src/"):
-            if path.endswith(".js") or path.endswith(".css"):
-                # Intercept to inject cache-busting headers before delegating
-                self._serve_nocache_static()
-            else:
-                super().do_GET()
-            return
-
-        if path == "/api/admin/check-update":
-            self._handle_check_update()
-            return
-
-        if path == "/api/admin/update-status":
-            self._handle_update_status()
-            return
-
-        self._send_json({"error": f"Not found: {path}"}, 404)
+    def do_GET(self):
+        if not self._route(self._GET_ROUTES):
+            self._send_json({"error": f"Not found: {self.path.split('?')[0]}"}, 404)
 
     def do_POST(self):
-        path = self.path.split("?")[0]
-
-        if path == "/api/projects":
-            try:
-                project = self._read_body_json()
-            except Exception:
-                self._send_json({"error": "invalid JSON"}, 400)
-                return
-            if not isinstance(project, dict) or "id" not in project:
-                self._send_json({"error": "project must be an object with an id"}, 400)
-                return
-            with _lock:
-                projects = _read_json(PROJECTS_FILE, [])
-                idx = next((i for i, p in enumerate(projects) if p.get("id") == project["id"]), -1)
-                if idx >= 0:
-                    stored = projects[idx]
-                    stored_rev = stored.get("revision")
-                    client_rev = project.pop("_clientRevision", None)
-                    # Conflict detection: reject if client is editing an older revision.
-                    # Also reject when client_rev is None (client didn't know the revision) and
-                    # the server already has a versioned copy — prevents silent overwrites of
-                    # versioned projects by clients loading old pre-revision data.
-                    if (APP_MODE == "server"
-                            and stored_rev is not None
-                            and int(stored_rev) > 0
-                            and (client_rev is None or int(client_rev) < int(stored_rev))):
-                        self._send_json({
-                            "error": "conflict",
-                            "projectId": project["id"],
-                            "serverRevision": stored_rev,
-                            "serverUpdatedAt": stored.get("updatedAt"),
-                            "serverUpdatedBy": stored.get("updatedBy"),
-                        }, 409)
-                        return
-                    # Increment revision and stamp server-side metadata
-                    new_rev = int(stored_rev or 0) + 1
-                    project["revision"] = new_rev
-                    project["createdAt"] = stored.get("createdAt") or project.get("createdAt")
-                    project["createdBy"] = stored.get("createdBy") or project.get("createdBy")
-                    projects[idx] = project
-                else:
-                    project.pop("_clientRevision", None)
-                    project.setdefault("revision", 1)
-                    projects.append(project)
-                _write_json(PROJECTS_FILE, projects)
-                saved = projects[idx] if idx >= 0 else projects[-1]
-            self._send_json({"ok": True, "revision": saved.get("revision")})
-            return
-
-        if path == "/api/announcements":
-            try:
-                anns = self._read_body_json()
-            except Exception:
-                self._send_json({"error": "invalid JSON"}, 400)
-                return
-            if not isinstance(anns, list):
-                self._send_json({"error": "body must be an array"}, 400)
-                return
-            with _lock:
-                _write_json(ANNOUNCEMENTS_FILE, anns)
-            self._send_json({"ok": True})
-            return
-
-        if path == "/api/settings":
-            try:
-                partial = self._read_body_json()
-            except Exception:
-                self._send_json({"error": "invalid JSON"}, 400)
-                return
-            if not isinstance(partial, dict):
-                self._send_json({"error": "body must be an object"}, 400)
-                return
-            with _lock:
-                settings = _read_json(SETTINGS_FILE, {})
-                for key, value in partial.items():
-                    if value is None:
-                        settings.pop(key, None)
-                    else:
-                        settings[key] = value
-                _write_json(SETTINGS_FILE, settings)
-            self._send_json({"ok": True})
-            return
-
-        if path == "/api/songs":
-            try:
-                songs = self._read_body_json()
-            except Exception:
-                self._send_json({"error": "invalid JSON"}, 400)
-                return
-            if not isinstance(songs, list):
-                self._send_json({"error": "body must be an array"}, 400)
-                return
-            with _lock:
-                _write_json(SONGS_FILE, songs)
-            self._send_json({"ok": True})
-            return
-
-        if path == "/api/pdf":
-            self._handle_pdf()
-            return
-
-        if path == "/api/propresenter-export":
-            self._handle_propresenter_export()
-            return
-
-        if path == "/api/drive/upload":
-            self._handle_drive_upload()
-            return
-
-        if path == "/api/pco-disconnect":
-            with _lock:
-                settings = _read_json(SETTINGS_FILE, {})
-                settings.pop('pcoAccessToken', None)
-                settings.pop('pcoRefreshToken', None)
-                _write_json(SETTINGS_FILE, settings)
-            self._send_json({"ok": True})
-            return
-
-        if path == "/api/google-disconnect":
-            with _lock:
-                settings = _read_json(SETTINGS_FILE, {})
-                settings.pop('googleAccessToken', None)
-                settings.pop('googleRefreshToken', None)
-                settings.pop('googleCalendarIds', None)
-                settings.pop('googleDriveScopeGranted', None)
-                settings.pop('googleDriveFolderId', None)
-                _write_json(SETTINGS_FILE, settings)
-            self._send_json({"ok": True})
-            return
-
-        if path == "/api/admin/apply-update":
-            self._handle_apply_update()
-            return
-
-        self._send_json({"error": "not found"}, 404)
+        if not self._route(self._POST_ROUTES):
+            self._send_json({"error": "not found"}, 404)
 
     def do_DELETE(self):
+        if not self._route(self._DELETE_ROUTES):
+            self._send_json({"error": "not found"}, 404)
+
+    # ── Route handlers (GET) ───────────────────────────────────────────────────
+
+    def _handle_forbidden(self):
+        self._send_json({"error": "Forbidden"}, 403)
+
+    def _handle_index(self):
+        try:
+            content = (BASE_DIR / "index.html").read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(f"Error loading app: {e}".encode())
+
+    def _handle_favicon(self):
+        self.send_response(204)
+        self.end_headers()
+
+    def _handle_get_projects(self):
+        self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+
+    def _handle_get_announcements(self):
+        self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
+
+    def _handle_get_settings(self):
+        self._send_json(_read_json(SETTINGS_FILE, {}))
+
+    def _handle_get_songs(self):
+        self._send_json(_read_json(SONGS_FILE, []))
+
+    def _handle_bootstrap(self):
+        self._send_json({
+            "settings": _read_json(SETTINGS_FILE, {}),
+            "songDb":   _read_json(SONGS_FILE, []),
+            "config":   _public_config(),
+        })
+
+    def _handle_static(self):
+        """Serve static files; inject no-cache headers for JS/CSS."""
         path = self.path.split("?")[0]
+        if path.endswith(".js") or path.endswith(".css"):
+            self._serve_nocache_static()
+        else:
+            super().do_GET()
 
-        if path.startswith("/api/projects/"):
-            project_id = path[len("/api/projects/"):]
-            if not project_id:
-                self._send_json({"error": "missing project id"}, 400)
-                return
-            with _lock:
-                projects = _read_json(PROJECTS_FILE, [])
-                projects = [p for p in projects if p.get("id") != project_id]
-                _write_json(PROJECTS_FILE, projects)
-            self._send_json({"ok": True})
+    # ── Route handlers (POST) ──────────────────────────────────────────────────
+
+    def _handle_post_projects(self):
+        try:
+            project = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
             return
+        if not isinstance(project, dict) or "id" not in project:
+            self._send_json({"error": "project must be an object with an id"}, 400)
+            return
+        with _lock:
+            projects = _read_json(PROJECTS_FILE, [])
+            idx = next((i for i, p in enumerate(projects) if p.get("id") == project["id"]), -1)
+            if idx >= 0:
+                stored = projects[idx]
+                stored_rev = stored.get("revision")
+                client_rev = project.pop("_clientRevision", None)
+                # Conflict detection: reject if client is editing an older revision.
+                # Also reject when client_rev is None (client didn't know the revision) and
+                # the server already has a versioned copy — prevents silent overwrites of
+                # versioned projects by clients loading old pre-revision data.
+                if (APP_MODE == "server"
+                        and stored_rev is not None
+                        and int(stored_rev) > 0
+                        and (client_rev is None or int(client_rev) < int(stored_rev))):
+                    self._send_json({
+                        "error": "conflict",
+                        "projectId": project["id"],
+                        "serverRevision": stored_rev,
+                        "serverUpdatedAt": stored.get("updatedAt"),
+                        "serverUpdatedBy": stored.get("updatedBy"),
+                    }, 409)
+                    return
+                new_rev = int(stored_rev or 0) + 1
+                project["revision"] = new_rev
+                project["createdAt"] = stored.get("createdAt") or project.get("createdAt")
+                project["createdBy"] = stored.get("createdBy") or project.get("createdBy")
+                projects[idx] = project
+            else:
+                project.pop("_clientRevision", None)
+                project.setdefault("revision", 1)
+                projects.append(project)
+            _write_json(PROJECTS_FILE, projects)
+            saved = projects[idx] if idx >= 0 else projects[-1]
+        self._send_json({"ok": True, "revision": saved.get("revision")})
 
-        self._send_json({"error": "not found"}, 404)
+    def _handle_post_announcements(self):
+        try:
+            anns = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(anns, list):
+            self._send_json({"error": "body must be an array"}, 400)
+            return
+        with _lock:
+            _write_json(ANNOUNCEMENTS_FILE, anns)
+        self._send_json({"ok": True})
+
+    def _handle_post_settings(self):
+        try:
+            partial = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(partial, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+        with _lock:
+            settings = _read_json(SETTINGS_FILE, {})
+            for key, value in partial.items():
+                if value is None:
+                    settings.pop(key, None)
+                else:
+                    settings[key] = value
+            _write_json(SETTINGS_FILE, settings)
+        self._send_json({"ok": True})
+
+    def _handle_post_songs(self):
+        try:
+            songs = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(songs, list):
+            self._send_json({"error": "body must be an array"}, 400)
+            return
+        with _lock:
+            _write_json(SONGS_FILE, songs)
+        self._send_json({"ok": True})
+
+    def _handle_pco_disconnect(self):
+        with _lock:
+            settings = _read_json(SETTINGS_FILE, {})
+            settings.pop('pcoAccessToken', None)
+            settings.pop('pcoRefreshToken', None)
+            _write_json(SETTINGS_FILE, settings)
+        self._send_json({"ok": True})
+
+    def _handle_google_disconnect(self):
+        with _lock:
+            settings = _read_json(SETTINGS_FILE, {})
+            settings.pop('googleAccessToken', None)
+            settings.pop('googleRefreshToken', None)
+            settings.pop('googleCalendarIds', None)
+            settings.pop('googleDriveScopeGranted', None)
+            settings.pop('googleDriveFolderId', None)
+            _write_json(SETTINGS_FILE, settings)
+        self._send_json({"ok": True})
+
+    # ── Route handlers (DELETE) ────────────────────────────────────────────────
+
+    def _handle_delete_project(self):
+        path = self.path.split("?")[0]
+        project_id = path[len("/api/projects/"):]
+        if not project_id:
+            self._send_json({"error": "missing project id"}, 400)
+            return
+        with _lock:
+            projects = _read_json(PROJECTS_FILE, [])
+            projects = [p for p in projects if p.get("id") != project_id]
+            _write_json(PROJECTS_FILE, projects)
+        self._send_json({"ok": True})
 
     # ── PCO OAuth ──────────────────────────────────────────────────────────────
 
