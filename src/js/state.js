@@ -53,6 +53,8 @@ let suppressLinkedFocusSync = false;
 let _loadedRevision = null;   // revision of the project as loaded from server
 let _editorDisplayName = '';  // local editor identity
 let _staleCheckTimer = null;
+let _saveInFlight = false;    // true while a save request is awaiting response
+let _pendingSaveProject = null; // latest full project object deferred during an in-flight save
 
 // Note: both server mode and desktop mode persist projects through the local
 // Python server API (data/projects.json). localStorage is only used to track
@@ -238,4 +240,3 @@ function typeSelectHTML(selected) {
     `<option value="${val}"${val === selected ? ' selected' : ''}>${label}</option>`
   ).join('');
 }
-

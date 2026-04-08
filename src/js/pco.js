@@ -712,8 +712,10 @@ async function pcoFetchPlanTeamMembers(stId, planId) {
     // Each entry is a PlanTime reference. Pick only service-type times (not rehearsal).
     const memberSvcTimes = (tm.relationships?.service_times?.data || [])
       .filter(d => serviceTimeIds.has(d.id));
-    // If member is assigned to ALL service times (or none), group under '' (all services)
-    const assignedToAll = memberSvcTimes.length === 0 || memberSvcTimes.length >= serviceTimeIds.size;
+    // Only treat as "all services" when PCO gives no service-time assignment.
+    // If the member is explicitly assigned to multiple service times, keep them
+    // attached to each time-specific group instead of collapsing to whole-week.
+    const assignedToAll = memberSvcTimes.length === 0;
     const svcTimeKeys = assignedToAll ? [''] : memberSvcTimes.map(d => planTimeLabels[d.id] || d.id);
 
     svcTimeKeys.forEach(svcTime => {
@@ -1068,7 +1070,9 @@ function initGoogle() {
     const checks = document.querySelectorAll('#google-cal-list input[type=checkbox]');
     const ids = [...checks].filter(c => c.checked).map(c => c.value);
     await apiFetch('/api/settings', 'POST', { googleCalendarIds: ids });
+    _serverSettings.googleCalendarIds = ids;
     setStatus('Calendar selection saved.', 'success');
+    if (typeof calFetchAll === 'function') calFetchAll(true);
   });
 
   document.getElementById('google-cal-refresh-list-btn').addEventListener('click', googleLoadCalendarList);
@@ -1080,6 +1084,7 @@ async function googleLoadCalendarList() {
   try {
     const data = await apiFetch('/api/google-calendars');
     const savedIds = new Set(_serverSettings.googleCalendarIds || []);
+    const defaultIds = [];
     listEl.innerHTML = '';
     (data.calendars || []).forEach(cal => {
       const label = document.createElement('label');
@@ -1088,12 +1093,16 @@ async function googleLoadCalendarList() {
       cb.type = 'checkbox';
       cb.value = cal.id;
       cb.checked = savedIds.has(cal.id) || (cal.primary && savedIds.size === 0);
+      if (cb.checked) defaultIds.push(cal.id);
       label.appendChild(cb);
       label.appendChild(document.createTextNode(cal.summary + (cal.primary ? ' (primary)' : '')));
       listEl.appendChild(label);
     });
     if (!data.calendars || data.calendars.length === 0) {
       listEl.innerHTML = '<span style="font-size:0.78rem;color:var(--muted);">No calendars found.</span>';
+    } else if (savedIds.size === 0 && defaultIds.length > 0) {
+      await apiFetch('/api/settings', 'POST', { googleCalendarIds: defaultIds });
+      _serverSettings.googleCalendarIds = defaultIds;
     }
   } catch (e) {
     listEl.innerHTML = `<span style="font-size:0.78rem;color:var(--danger);">${e.message}</span>`;
@@ -1486,4 +1495,3 @@ document.getElementById('pco-ignore-add-btn').addEventListener('click', () => {
 document.getElementById('pco-ignore-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('pco-ignore-add-btn').click();
 });
-

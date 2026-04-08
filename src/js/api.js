@@ -71,8 +71,8 @@ async function loadAllFromServer() {
       _editorDisplayName = _serverSettings.editorDisplayName;
     }
     // Show Drive export buttons if Drive scope is granted
-    const driveJson = document.getElementById('drive-save-json-btn');
-    const drivePdf  = document.getElementById('drive-save-pdf-btn');
+    const driveJson = document.getElementById('bulk-drive-json');
+    const drivePdf  = document.getElementById('bulk-drive-pdf');
     if (_publicConfig.driveConfigured) {
       if (driveJson) driveJson.style.display = '';
       if (drivePdf)  drivePdf.style.display  = '';

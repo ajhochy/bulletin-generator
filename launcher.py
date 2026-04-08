@@ -138,7 +138,7 @@ def _is_our_server_current_version(port):
         conn.close()
         data = _json.loads(body)
         running_version = (data.get('config') or {}).get('appVersion', '')
-        this_version    = os.environ.get('APP_VERSION', '1.09').lstrip('v')
+        this_version    = os.environ.get('APP_VERSION', '1.10.1').lstrip('v')
         return bool(running_version) and running_version == this_version
     except Exception:
         return False

@@ -137,15 +137,22 @@ function applyProjectState(state) {
 }
 
 async function saveProjectToServer(project) {
-  if (isServerMode() && _editorDisplayName) {
-    project.updatedBy = _editorDisplayName;
+  // Guard against concurrent saves: if a save is already in-flight, queue this
+  // one to fire after it completes so _loadedRevision stays consistent.
+  if (_saveInFlight) {
+    _pendingSaveProject = project;
+    return;
   }
-  if (isServerMode()) {
-    // Always send, even when null — server uses this to detect silent overwrites
-    // of versioned projects by clients that didn't know the current revision.
-    project._clientRevision = _loadedRevision;
-  }
+  _saveInFlight = true;
   try {
+    if (isServerMode() && _editorDisplayName) {
+      project.updatedBy = _editorDisplayName;
+    }
+    if (isServerMode()) {
+      // Always send, even when null — server uses this to detect silent overwrites
+      // of versioned projects by clients that didn't know the current revision.
+      project._clientRevision = _loadedRevision;
+    }
     const result = await apiFetch('/api/projects', 'POST', project);
     // Server returns canonical revision — update local tracking
     if (isServerMode() && result && typeof result.revision === 'number') {
@@ -153,6 +160,7 @@ async function saveProjectToServer(project) {
       const stored = projectById(project.id);
       if (stored) stored.revision = result.revision;
     }
+    document.getElementById('stale-banner').style.display = 'none';
     document.getElementById('conflict-banner').style.display = 'none';
   } catch (err) {
     if (err.status === 409) {
@@ -180,6 +188,15 @@ async function saveProjectToServer(project) {
       banner.appendChild(reloadLink);
     } else {
       setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
+    }
+  } finally {
+    _saveInFlight = false;
+    // If a save was deferred while this one was in-flight, fire it now with
+    // the latest queued full project object.
+    if (_pendingSaveProject) {
+      const queuedProject = _pendingSaveProject;
+      _pendingSaveProject = null;
+      saveProjectToServer(queuedProject);
     }
   }
 }
@@ -421,9 +438,13 @@ function startStaleCheck() {
   _staleCheckTimer = setInterval(async () => {
     if (!activeProjectId) return;
     try {
+      const staleBanner = document.getElementById('stale-banner');
       const data = await apiFetch('/api/projects');
       const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
-      if (!serverProject) return;
+      if (!serverProject) {
+        staleBanner.style.display = 'none';
+        return;
+      }
       // Update local copy with latest metadata
       const local = projectById(activeProjectId);
       if (local) {
@@ -433,11 +454,10 @@ function startStaleCheck() {
       }
       const serverRev = serverProject.revision;
       if (typeof serverRev === 'number' && _loadedRevision !== null && serverRev > _loadedRevision) {
-        const banner = document.getElementById('stale-banner');
         const by = serverProject.updatedBy ? ` by ${serverProject.updatedBy}` : '';
         const when = shortTimestamp(serverProject.updatedAt) || '';
-        banner.innerHTML = `This bulletin was updated${by}${when ? ' at ' + when : ''}. <a href="#" style="color:inherit">Reload latest</a>`;
-        banner.querySelector('a').addEventListener('click', e => {
+        staleBanner.innerHTML = `This bulletin was updated${by}${when ? ' at ' + when : ''}. <a href="#" style="color:inherit">Reload latest</a>`;
+        staleBanner.querySelector('a').addEventListener('click', e => {
           e.preventDefault();
           apiFetch('/api/projects').then(d => {
             const fresh = (d.projects || []).find(p => p.id === activeProjectId);
@@ -447,7 +467,9 @@ function startStaleCheck() {
             loadProjectById(fresh.id);
           }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
-        banner.style.display = '';
+        staleBanner.style.display = '';
+      } else {
+        staleBanner.style.display = 'none';
       }
     } catch (e) { /* ignore poll errors */ }
   }, 30000);
@@ -696,6 +718,46 @@ function downloadProjectJson(id) {
   URL.revokeObjectURL(url);
 }
 
+function bytesToB64(bytes) {
+  const CHUNK = 8192;
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+}
+
+function applyProjectStateForExport(state) {
+  const safe = state || {};
+  svcTitle.value = safe.svcTitle || '';
+  svcDate.value = safe.svcDate || '';
+  svcChurch.value = safe.svcChurch || '';
+  welcomeHeading = typeof safe.welcomeHeading === 'string' ? safe.welcomeHeading : '';
+  welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
+  optCover.checked = safe.optCover !== false;
+  optFooter.checked = safe.optFooter === true;
+  optCal.checked = safe.optCal !== false;
+  optBookletSize.value = safe.optBookletSize || 'auto';
+  optAnnouncements.checked = safe.optAnnouncements !== false;
+  optVolunteers.checked = safe.optVolunteers !== false;
+  optStaff.checked = safe.optStaff !== false;
+  setItems(Array.isArray(safe.items) ? cloneItems(safe.items) : []);
+  setAnnData(Array.isArray(safe.announcements)
+    ? safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }))
+    : []);
+  coverImageUrl = safe.coverImageUrl || null;
+  if (safe.staffLogoUrl) staffLogoUrl = safe.staffLogoUrl;
+  giveOnlineUrl = safe.giveOnlineUrl || '';
+  giveOnlineUrlInput.value = giveOnlineUrl;
+  servingSchedule = safe.servingSchedule || null;
+  calEvents = Array.isArray(safe.calEvents)
+    ? safe.calEvents.map(e => Object.assign({}, e, { start: Object.assign({}, e.start), end: e.end ? Object.assign({}, e.end) : null }))
+    : null;
+  breakBeforeCalendar = !!safe.breakBeforeCalendar;
+  breakBeforeStaff = !!safe.breakBeforeStaff;
+  calBreakBeforeDates = Array.isArray(safe.calBreakBeforeDates) ? safe.calBreakBeforeDates.slice() : [];
+}
+
 // ── Server-side PDF helpers ────────────────────────────────────────────────────
 
 async function buildPrintDocHtml(pagesHtml, title) {
@@ -805,73 +867,68 @@ async function generateAndDownloadPdf(pagesHtml, filename) {
   setStatus('PDF downloaded!', 'success');
 }
 
-async function downloadProjectAsPdf(id) {
+async function buildProjectPdfBlob(id) {
   const project = projectById(id);
-  if (!project) return;
-  const state = project.state || {};
+  if (!project) return null;
 
-  // ── Snapshot current editor globals ────────────────────────────────────────
-  const prevTitle       = svcTitle.value;
-  const prevDate        = svcDate.value;
-  const prevChurch      = svcChurch.value;
-  const prevCover         = optCover.checked;
-  const prevFooter        = optFooter.checked;
-  const prevCal           = optCal.checked;
-  const prevBookletSize   = optBookletSize.value;
-  const prevAnnouncements = optAnnouncements.checked;
-  const prevVolunteers    = optVolunteers.checked;
-  const prevStaff         = optStaff.checked;
-  const prevItems       = items.slice();
-  const prevAnnData     = annData.map(a => ({...a}));
-
-  // Suppress autosave during the swap
+  const prevState = collectCurrentProjectState();
+  const prevStaffLogoUrl = staffLogoUrl;
+  let pagesHtml = '';
   applyingProjectState = true;
-
-  // ── Apply target project state to the variables renderPreview() reads ──────
-  svcTitle.value       = state.svcTitle  || '';
-  svcDate.value        = state.svcDate   || '';
-  svcChurch.value      = state.svcChurch || '';
-  optCover.checked         = !!state.optCover;
-  optFooter.checked        = !!state.optFooter;
-  optCal.checked           = !!state.optCal;
-  optBookletSize.value     = state.optBookletSize || 'auto';
-  optAnnouncements.checked = state.optAnnouncements !== false;
-  optVolunteers.checked    = state.optVolunteers !== false;
-  optStaff.checked         = state.optStaff !== false;
-  setItems(Array.isArray(state.items) ? cloneItems(state.items) : []);
-  if (Array.isArray(state.announcements)) {
-    setAnnData(state.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })));
+  try {
+    applyProjectStateForExport(project.state || {});
+    renderPreview();
+    const pageEls = [...previewPane.querySelectorAll('.booklet-page')];
+    pagesHtml = pageEls.map(el => el.outerHTML).join('\n');
+  } finally {
+    applyProjectStateForExport(prevState);
+    staffLogoUrl = prevStaffLogoUrl;
+    renderPreview();
+    applyingProjectState = false;
   }
-
-  // Render into previewPane (fully synchronous)
-  renderPreview();
-  const pageEls   = [...previewPane.querySelectorAll('.booklet-page')];
-  const pagesHtml = pageEls.map(el => el.outerHTML).join('\n');
-
-  // ── Restore original editor state ──────────────────────────────────────────
-  svcTitle.value       = prevTitle;
-  svcDate.value        = prevDate;
-  svcChurch.value      = prevChurch;
-  optCover.checked         = prevCover;
-  optFooter.checked        = prevFooter;
-  optCal.checked           = prevCal;
-  optBookletSize.value     = prevBookletSize;
-  optAnnouncements.checked = prevAnnouncements;
-  optVolunteers.checked    = prevVolunteers;
-  optStaff.checked         = prevStaff;
-  setItems(prevItems);
-  setAnnData(prevAnnData);
-  renderPreview();
-  applyingProjectState = false;
 
   if (!pagesHtml) {
     setStatus('Nothing to print for this project.', 'error');
-    return;
+    return null;
   }
 
   const sizeTag  = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
   const filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
-  await generateAndDownloadPdf(pagesHtml, filename);
+  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+  try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
+
+  const resp = await fetch('/api/pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
+  });
+
+  if (!resp.ok) {
+    let msg = 'PDF generation failed.';
+    try { const err = await resp.json(); msg = err.error || msg; } catch (e) {}
+    throw new Error(msg);
+  }
+
+  return { blob: await resp.blob(), filename, project };
+}
+
+async function downloadProjectAsPdf(id) {
+  setStatus('Generating PDF…', 'info');
+  try {
+    const result = await buildProjectPdfBlob(id);
+    if (!result) return;
+    const url = URL.createObjectURL(result.blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = result.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setStatus('PDF downloaded!', 'success');
+  } catch (e) {
+    setStatus(e.message || 'PDF generation failed.', 'error');
+  }
 }
 
 document.getElementById('files-list').addEventListener('click', e => {
@@ -923,6 +980,22 @@ document.getElementById('bulk-select-all').addEventListener('click', () => {
   }
   renderFilesList();
   updateBulkBar();
+});
+
+document.getElementById('bulk-export-pp').addEventListener('click', async function() {
+  const ids = [...selectedProjectIds];
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = `PP 0 / ${ids.length}`;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      btn.textContent = `PP ${i + 1} / ${ids.length}`;
+      await exportToProPresenter(ids[i]);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Export ProPresenter';
+  }
 });
 
 document.getElementById('bulk-download-json').addEventListener('click', () => {
@@ -1013,92 +1086,79 @@ document.getElementById('project-browse-btn').addEventListener('click', () => {
 
 // ── Save to Google Drive ───────────────────────────────────────────────────────
 
-async function saveToDrive(type) {
+async function saveProjectToDrive(projectId, type) {
   if (type !== 'json' && type !== 'pdf') return;
+  const project = projectById(projectId);
+  if (!project) throw new Error('Project not found.');
+  const title = project.name || 'bulletin';
 
-  const btnId = type === 'json' ? 'drive-save-json-btn' : 'drive-save-pdf-btn';
-  const btn   = document.getElementById(btnId);
-  if (btn) btn.disabled = true;
+  setStatus(`Saving ${type.toUpperCase()} for "${title}" to Drive…`, 'info');
 
-  const project = projects.find(p => p.id === activeProjectId);
-  const title   = (project && project.name) ? project.name : 'bulletin';
+  let content_b64, mimeType, filename;
+  if (type === 'json') {
+    const jsonStr = JSON.stringify(project, null, 2);
+    const bytes = new TextEncoder().encode(jsonStr);
+    content_b64 = bytesToB64(bytes);
+    mimeType = 'application/json';
+    filename = `${title}.json`;
+  } else {
+    const pdfResult = await buildProjectPdfBlob(projectId);
+    if (!pdfResult) return;
+    const arrBuf = await pdfResult.blob.arrayBuffer();
+    content_b64 = bytesToB64(new Uint8Array(arrBuf));
+    mimeType = 'application/pdf';
+    filename = pdfResult.filename;
+  }
 
-  setStatus(`Saving ${type.toUpperCase()} to Drive…`, 'info');
+  const result = await apiFetch('/api/drive/upload', 'POST', {
+    filename,
+    content: content_b64,
+    mimeType,
+  });
 
+  if (result.reconnectNeeded) {
+    setStatus('Google Drive access expired. Reconnect Google in Settings.', 'error');
+    return;
+  }
+
+  const linkHtml = result.fileUrl
+    ? ` <a href="${result.fileUrl}" target="_blank" rel="noopener">Open in Drive</a>`
+    : '';
+  setStatus(`Saved ${filename} to Drive.${linkHtml}`, 'success');
+}
+
+document.getElementById('bulk-drive-json').addEventListener('click', async function() {
+  const ids = [...selectedProjectIds];
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = `Drive JSON 0 / ${ids.length}`;
   try {
-    let content_b64, mimeType, filename;
-
-    // Encode Uint8Array to base64 in chunks to avoid stack overflow on large files
-    function _bytesToB64(bytes) {
-      const CHUNK = 8192;
-      let bin = '';
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-      }
-      return btoa(bin);
+    for (let i = 0; i < ids.length; i++) {
+      btn.textContent = `Drive JSON ${i + 1} / ${ids.length}`;
+      await saveProjectToDrive(ids[i], 'json');
     }
-
-    if (type === 'json') {
-      const state   = collectCurrentProjectState();
-      const jsonStr = JSON.stringify(state, null, 2);
-      const bytes   = new TextEncoder().encode(jsonStr);
-      content_b64 = _bytesToB64(bytes);
-      mimeType    = 'application/json';
-      filename    = `${title}.json`;
-
-    } else {
-      // Collect rendered pages from the preview pane (same as the print button)
-      const previewPane = document.getElementById('preview-pane');
-      const pagesHtml   = previewPane
-        ? [...previewPane.querySelectorAll('.booklet-page')].map(el => el.outerHTML).join('\n')
-        : '';
-      if (!pagesHtml) throw new Error('No preview pages found — render a bulletin first.');
-
-      const printHtml = await buildPrintDocHtml(pagesHtml, title);
-      const inlined   = await inlineExternalImages(printHtml).catch(() => printHtml);
-
-      const pdfResp = await fetch('/api/pdf', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          html: inlined,
-          filename: `${title}.pdf`,
-          pageWidth:  getPageDims().w,
-          pageHeight: getPageDims().h,
-        }),
-      });
-      if (!pdfResp.ok) {
-        const err = await pdfResp.json().catch(() => ({}));
-        throw new Error(err.error || `PDF generation failed (HTTP ${pdfResp.status})`);
-      }
-      const arrBuf = await (await pdfResp.blob()).arrayBuffer();
-      content_b64 = _bytesToB64(new Uint8Array(arrBuf));
-      mimeType    = 'application/pdf';
-      filename    = `${title}.pdf`;
-    }
-
-    const result = await apiFetch('/api/drive/upload', 'POST', {
-      filename,
-      content:  content_b64,
-      mimeType,
-    });
-
-    if (result.reconnectNeeded) {
-      setStatus('Google Drive access expired. Reconnect Google in Settings.', 'error');
-      return;
-    }
-
-    const linkHtml = result.fileUrl
-      ? ` <a href="${result.fileUrl}" target="_blank" rel="noopener">Open in Drive</a>`
-      : '';
-    setStatus(`Saved ${filename} to Drive.${linkHtml}`, 'success');
-
   } catch (e) {
     setStatus(`Drive save failed: ${e.message || e}`, 'error');
   } finally {
-    if (btn) btn.disabled = false;
+    btn.disabled = false;
+    btn.textContent = 'Save JSON to Drive';
   }
-}
+});
 
-document.getElementById('drive-save-json-btn')?.addEventListener('click', () => saveToDrive('json'));
-document.getElementById('drive-save-pdf-btn')?.addEventListener('click',  () => saveToDrive('pdf'));
+document.getElementById('bulk-drive-pdf').addEventListener('click', async function() {
+  const ids = [...selectedProjectIds];
+  const btn = this;
+  btn.disabled = true;
+  btn.textContent = `Drive PDF 0 / ${ids.length}`;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      btn.textContent = `Drive PDF ${i + 1} / ${ids.length}`;
+      await saveProjectToDrive(ids[i], 'pdf');
+    }
+  } catch (e) {
+    setStatus(`Drive save failed: ${e.message || e}`, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save PDF to Drive';
+  }
+});

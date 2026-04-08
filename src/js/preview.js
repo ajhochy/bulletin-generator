@@ -223,7 +223,7 @@ function buildChunks(item, idx) {
         const body = document.createElement('div');
         body.className = 'item-body';
         applyBodyFmt(body, fmt);
-        renderBodyText(body, para);
+        renderBodyText(body, para, true);
         wrap.appendChild(body);
         const noBreak = pi === 0 ? !!item._noBreakBefore : noBreakSet.has(pi);
         chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
@@ -772,8 +772,9 @@ function renderPreview() {
     const sWeeks = servingSchedule.weeks || [];
 
     // Build rendering pages: each entry is an array of {week, segTeams, label}.
-    // A {type:'page-break'} in a week's teams forces a new page for remaining teams.
+    // pageSources[i] explains why serving page (i+1) started.
     const pages = [[]];
+    const pageSources = [];
     sWeeks.forEach((week, wi) => {
       const allHidden = (week.teams || []).filter(t => t.type !== 'page-break').every(
         t => servingTeamFilter[t.name] === false || volTeamFilter['w'+wi+':'+(t.serviceTime||'')+':'+t.name] === false
@@ -781,7 +782,10 @@ function renderPreview() {
       if (allHidden) return; // skip entire week including header
       const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
       // A _breakBefore flag on a week (wi > 0) forces it onto a new page
-      if (wi > 0 && week._breakBefore) pages.push([]);
+      if (wi > 0 && week._breakBefore) {
+        pages.push([]);
+        pageSources.push({ type: 'serving-week', weekIdx: wi });
+      }
       volSegments(week.teams).forEach((segTeams, si) => {
         // Skip empty continuation segments (e.g. page break placed after last team)
         if (si > 0 && segTeams.length === 0) return;
@@ -789,7 +793,19 @@ function renderPreview() {
         if (si === 0) {
           pages[pages.length - 1].push({ week, segTeams, label });
         } else {
+          let teamBreakIdx = -1;
+          let breakCount = 0;
+          for (let ti = 0; ti < (week.teams || []).length; ti++) {
+            if (week.teams[ti]?.type === 'page-break') {
+              breakCount++;
+              if (breakCount === si) {
+                teamBreakIdx = ti;
+                break;
+              }
+            }
+          }
           pages.push([{ week, segTeams, label }]);
+          pageSources.push({ type: 'serving-team', weekIdx: wi, teamBreakIdx });
         }
       });
     });
@@ -798,8 +814,30 @@ function renderPreview() {
       const servingContent = document.createElement('div');
       servingContent.classList.add('preview-linkable');
       servingContent.dataset.previewSection = 'volunteers';
-      pageItems.forEach(({ week, segTeams, label }) => {
+      pageItems.forEach(({ week, segTeams, label }, itemIdx) => {
         const weekIdx = (servingSchedule.weeks || []).indexOf(week);
+        if (itemIdx > 0) {
+          const prevItem = pageItems[itemIdx - 1];
+          const ctrl = document.createElement('div');
+          ctrl.className = 'pg-split-ctrl';
+          ctrl.dataset.splitType = 'serving';
+          ctrl.dataset.servingWeekIdx = weekIdx;
+          if (prevItem.week === week) {
+            const firstTeam = (segTeams || []).find(t => t && t.type !== 'page-break');
+            const insertBeforeIdx = firstTeam ? (week.teams || []).indexOf(firstTeam) : -1;
+            ctrl.dataset.servingBoundary = 'team';
+            ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
+          } else {
+            ctrl.dataset.servingBoundary = 'week';
+          }
+          const ll = document.createElement('div'); ll.className = 'pg-split-line';
+          const btn = document.createElement('button');
+          btn.className = 'pg-split-add-btn';
+          btn.textContent = '⊞ Break here';
+          const rl = document.createElement('div'); rl.className = 'pg-split-line';
+          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          servingContent.appendChild(ctrl);
+        }
         renderServingWeek(servingContent, { ...week, teams: segTeams }, label, weekIdx);
       });
       if (pi === 0) {
@@ -816,8 +854,22 @@ function renderPreview() {
           footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
           pg.appendChild(footer);
         }
-        if (lastRenderedPageEl) lastRenderedPageEl.after(pg);
-        else previewPane.appendChild(pg);
+        if (lastRenderedPageEl) {
+          const ctrl = document.createElement('div');
+          ctrl.className = 'pg-break-ctrl';
+          const src = pageSources[pi - 1] || {};
+          ctrl.dataset.breakType = src.type || 'serving-team';
+          ctrl.dataset.servingWeekIdx = src.weekIdx ?? '';
+          ctrl.dataset.servingTeamBreakIdx = src.teamBreakIdx ?? '';
+          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
+          const btn = document.createElement('button');
+          btn.className = 'pg-break-remove-btn';
+          btn.textContent = '✕ Remove page break';
+          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
+          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          lastRenderedPageEl.after(ctrl);
+          ctrl.after(pg);
+        } else previewPane.appendChild(pg);
         lastRenderedPageEl = pg;
         lastPageUsedH = contentH;
       }
@@ -837,6 +889,7 @@ function renderPreview() {
       const forceNew = (si === 0 && breakBeforeCalendar) ||
                        (si > 0 && calBreakBeforeDates.includes(seg.date));
       if (forceNew) {
+        const contentH = measureBottomContent(calContent);
         const pg = document.createElement('div');
         pg.className = 'booklet-page';
         pg.appendChild(calContent);
@@ -863,9 +916,45 @@ function renderPreview() {
           previewPane.appendChild(pg);
         }
         lastRenderedPageEl = pg;
-        lastPageUsedH      = measureBottomContent(calContent);
-      } else {
+        lastPageUsedH      = contentH;
+      } else if (si === 0) {
+        // First segment: use appendBottomSection to control serving→calendar merge toggle
         appendBottomSection(calContent, 'calendar');
+      } else {
+        // Subsequent segments without a forced break: continuation — fit onto current page
+        // or overflow to a new page. No merge toggle (use the calendar editor's break buttons
+        // to place explicit breaks between days).
+        const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
+        const splitCtrl = document.createElement('div');
+        splitCtrl.className = 'pg-split-ctrl';
+        splitCtrl.dataset.splitType = 'calendar';
+        splitCtrl.dataset.calDayDate = seg.date || '';
+        const ll = document.createElement('div'); ll.className = 'pg-split-line';
+        const btn = document.createElement('button');
+        btn.className = 'pg-split-add-btn';
+        btn.textContent = '⊞ Break here';
+        const rl = document.createElement('div'); rl.className = 'pg-split-line';
+        splitCtrl.appendChild(ll); splitCtrl.appendChild(btn); splitCtrl.appendChild(rl);
+        const contentH = measureBottomContent(calContent);
+        if (lastRenderedPageEl !== null && lastPageUsedH + contentH <= AVAIL_H) {
+          lastRenderedPageEl.appendChild(splitCtrl);
+          lastRenderedPageEl.appendChild(calContent);
+          lastPageUsedH += contentH;
+        } else {
+          const pg = document.createElement('div');
+          pg.className = 'booklet-page';
+          pg.appendChild(calContent);
+          if (optFooter.checked) {
+            const footer = document.createElement('div');
+            footer.className = 'page-footer';
+            footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+            pg.appendChild(footer);
+          }
+          if (lastRenderedPageEl) lastRenderedPageEl.after(pg);
+          else previewPane.appendChild(pg);
+          lastRenderedPageEl = pg;
+          lastPageUsedH      = contentH;
+        }
       }
     });
   }
@@ -1211,6 +1300,21 @@ previewPane.addEventListener('click', e => {
       breakBeforeStaff = false;
       schedulePreviewUpdate();
       scheduleProjectPersist();
+    } else if (type === 'serving-week') {
+      const weekIdx = parseInt(ctrl.dataset.servingWeekIdx, 10);
+      if (Number.isInteger(weekIdx) && servingSchedule?.weeks?.[weekIdx]) {
+        delete servingSchedule.weeks[weekIdx]._breakBefore;
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
+    } else if (type === 'serving-team') {
+      const weekIdx = parseInt(ctrl.dataset.servingWeekIdx, 10);
+      const teamBreakIdx = parseInt(ctrl.dataset.servingTeamBreakIdx, 10);
+      if (Number.isInteger(weekIdx) && Number.isInteger(teamBreakIdx) && servingSchedule?.weeks?.[weekIdx]?.teams?.[teamBreakIdx]?.type === 'page-break') {
+        servingSchedule.weeks[weekIdx].teams.splice(teamBreakIdx, 1);
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
     } else if (type === 'cal-force') {
       breakBeforeCalendar = false;
       schedulePreviewUpdate();
@@ -1271,6 +1375,32 @@ previewPane.addEventListener('click', e => {
       return;
     }
 
+    if (ctrl.dataset.splitType === 'calendar') {
+      const d = ctrl.dataset.calDayDate;
+      if (d && !calBreakBeforeDates.includes(d)) {
+        calBreakBeforeDates.push(d);
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
+      return;
+    }
+
+    if (ctrl.dataset.splitType === 'serving') {
+      const weekIdx = parseInt(ctrl.dataset.servingWeekIdx, 10);
+      if (!Number.isInteger(weekIdx) || !servingSchedule?.weeks?.[weekIdx]) return;
+      if (ctrl.dataset.servingBoundary === 'week') {
+        servingSchedule.weeks[weekIdx]._breakBefore = true;
+      } else {
+        const insertBeforeIdx = parseInt(ctrl.dataset.servingInsertBeforeIdx, 10);
+        if (!Number.isInteger(insertBeforeIdx) || insertBeforeIdx < 0) return;
+        if (servingSchedule.weeks[weekIdx].teams[insertBeforeIdx - 1]?.type === 'page-break') return;
+        servingSchedule.weeks[weekIdx].teams.splice(insertBeforeIdx, 0, { type: 'page-break' });
+      }
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+      return;
+    }
+
     // OOW split
     const afterItemIdx    = parseInt(ctrl.dataset.splitAfterItemIdx, 10);
     const beforeItemIdx   = parseInt(ctrl.dataset.splitBeforeItemIdx, 10);
@@ -1323,4 +1453,3 @@ previewPane.addEventListener('click', e => {
   suppressLinkedFocusSync = true;
   setTimeout(() => { suppressLinkedFocusSync = false; }, 200);
 });
-
