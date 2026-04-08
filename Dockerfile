@@ -18,7 +18,7 @@ COPY . .
 # Ensure the data directory exists (will be overridden by volume mount in prod)
 RUN mkdir -p /app/data
 
-ARG APP_VERSION=1.09
+ARG APP_VERSION=1.10.1
 ENV APP_VERSION=$APP_VERSION
 
 EXPOSE 8080

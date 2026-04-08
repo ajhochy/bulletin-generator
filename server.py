@@ -69,7 +69,7 @@ ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
 
 # ── App version and update config ──────────────────────────────────────────────
-APP_VERSION    = os.environ.get("APP_VERSION", "1.10").lstrip("v")
+APP_VERSION    = os.environ.get("APP_VERSION", "1.10.1").lstrip("v")
 GITHUB_REPO    = "ajhochy/bulletin-generator"
 # Watchtower HTTP API — internal Docker network only, never exposed externally.
 # Token is a shared default between the app and the Watchtower sidecar in
@@ -740,7 +740,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """Dispatch to the first matching handler. Returns True if matched."""
         path = self.path.split("?")[0]
         for pattern, handler in routes:
-            matched = path.startswith(pattern) if pattern.endswith('/') else path == pattern
+            if pattern == '/':
+                matched = path == '/'
+            elif pattern.endswith('/'):
+                matched = path.startswith(pattern)
+            else:
+                matched = path == pattern
             if matched:
                 getattr(self, handler)()
                 return True

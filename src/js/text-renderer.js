@@ -138,23 +138,24 @@ function renderBodyText(el, text, prose = false) {
   const blockBoldMatch = BLOCK_BOLD_RE.exec(text.trim());
   // Only treat as block-bold if the inner content has no further ** pairs.
   // If it does, these are multiple inline bolds — don't collapse them into one block.
+  let blockBold = false;
   if (blockBoldMatch && !blockBoldMatch[1].includes('**')) {
     text = blockBoldMatch[1];
+    blockBold = true;
   }
   // Block-level * wrapping: "*entire\nblock*" → strip markers,
   // render all lines italic.
   let blockItalic = false;
-  if (!blockBoldMatch) {
+  if (!blockBold) {
     const BLOCK_ITALIC_RE = /^\*([\s\S]*)\*$/;
     const blockItalicMatch = BLOCK_ITALIC_RE.exec(text.trim());
-    if (blockItalicMatch) {
+    // Only treat as block-italic if the inner content has no further * pairs.
+    // If it does, these are multiple inline italics — don't collapse them into one block.
+    if (blockItalicMatch && !blockItalicMatch[1].includes('*')) {
       text = blockItalicMatch[1];
       blockItalic = true;
     }
   }
-  // NOTE: Do NOT add a whole-text blockBold flag for ALL: here.
-  // Per-line ALL: detection in Pass 2 handles it correctly line-by-line.
-  const blockBold = !!blockBoldMatch;
 
   // ── Pass 1: tokenise into events ──────────────────────────────────────────
   const events = [];

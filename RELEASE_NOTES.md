@@ -1,5 +1,14 @@
 # Release Notes
 
+## v1.10.1 — Collaboration, Calendar, and Projects Fixes
+
+- fixed false stale/conflict save warnings caused by overlapping project saves
+- moved ProPresenter and Google Drive exports into Projects bulk actions
+- fixed Google Calendar selection persistence and refresh behavior
+- fixed calendar and serving preview page-break controls
+- fixed text-section paragraph/superscript rendering edge cases
+- fixed Planning Center service-time imports for volunteers assigned to multiple services
+
 ## v1.09 — Phase 1 Bug Fixes
 
 - fixed staff page rendering issues

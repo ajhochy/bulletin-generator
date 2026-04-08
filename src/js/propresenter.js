@@ -678,20 +678,21 @@ document.getElementById('pro-import-confirm-btn').addEventListener('click', () =
   setStatus(`ProPresenter import complete — ${imported} added, ${replaced} replaced.`, 'success');
 });
 
-async function exportToProPresenter() {
-  const btn = document.getElementById('pp-export-btn');
-  if (btn) btn.disabled = true;
-  setStatus('Preparing ProPresenter export…', 'info');
-
+async function exportToProPresenter(projectOrId) {
+  const project = (typeof projectOrId === 'string')
+    ? (typeof projectById === 'function' ? projectById(projectOrId) : null)
+    : projectOrId;
   try {
-    const projectState = (typeof collectCurrentProjectState === 'function')
+    const projectState = project?.state || ((typeof collectCurrentProjectState === 'function')
       ? collectCurrentProjectState()
-      : { items };
-    const projectName =
-      (typeof bulletinTitleInput !== 'undefined' && bulletinTitleInput && bulletinTitleInput.value.trim())
+      : { items });
+    const projectName = project?.name
+      || (typeof bulletinTitleInput !== 'undefined' && bulletinTitleInput && bulletinTitleInput.value.trim())
       || (typeof svcChurch !== 'undefined' && svcChurch && svcChurch.value.trim())
       || (_serverSettings && _serverSettings.churchName)
       || 'bulletin';
+
+    setStatus(`Preparing ProPresenter export for "${projectName}"…`, 'info');
 
     const response = await fetch('/api/propresenter-export', {
       method: 'POST',
@@ -718,12 +719,10 @@ async function exportToProPresenter() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    setStatus('ProPresenter export downloaded.', 'success');
+    setStatus(`ProPresenter export downloaded for "${projectName}".`, 'success');
   } catch (e) {
     setStatus(`ProPresenter export failed: ${e.message}`, 'error');
-  } finally {
-    if (btn) btn.disabled = false;
   }
 }
 
-document.getElementById('pp-export-btn')?.addEventListener('click', exportToProPresenter);
+document.getElementById('pp-export-btn')?.addEventListener('click', () => exportToProPresenter());

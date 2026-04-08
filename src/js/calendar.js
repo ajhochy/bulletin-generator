@@ -804,7 +804,23 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
   if (!hasServiceTimes) {
     // Legacy / manually-entered data — render flat list
     // teamIdx is the original index in weekData.teams (needed for editor navigation)
-    visibleTeams.forEach(team => {
+    visibleTeams.forEach((team, vi) => {
+      if (vi > 0) {
+        const teamIdx = (weekData.teams || []).indexOf(team);
+        const ctrl = document.createElement('div');
+        ctrl.className = 'pg-split-ctrl';
+        ctrl.dataset.splitType = 'serving';
+        ctrl.dataset.servingWeekIdx = weekIdx;
+        ctrl.dataset.servingBoundary = 'team';
+        ctrl.dataset.servingInsertBeforeIdx = teamIdx;
+        const ll = document.createElement('div'); ll.className = 'pg-split-line';
+        const btn = document.createElement('button');
+        btn.className = 'pg-split-add-btn';
+        btn.textContent = '⊞ Break here';
+        const rl = document.createElement('div'); rl.className = 'pg-split-line';
+        ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+        container.appendChild(ctrl);
+      }
       const teamIdx = (weekData.teams || []).indexOf(team);
       renderServingTeam(container, team, weekIdx, teamIdx);
     });
@@ -820,7 +836,24 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     timeGroups[key].push(team);
   });
 
-  timeOrder.forEach(svcTime => {
+  timeOrder.forEach((svcTime, groupIdx) => {
+    if (groupIdx > 0) {
+      const firstTeam = timeGroups[svcTime][0];
+      const insertBeforeIdx = (weekData.teams || []).indexOf(firstTeam);
+      const ctrl = document.createElement('div');
+      ctrl.className = 'pg-split-ctrl';
+      ctrl.dataset.splitType = 'serving';
+      ctrl.dataset.servingWeekIdx = weekIdx;
+      ctrl.dataset.servingBoundary = 'team';
+      ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
+      const ll = document.createElement('div'); ll.className = 'pg-split-line';
+      const btn = document.createElement('button');
+      btn.className = 'pg-split-add-btn';
+      btn.textContent = '⊞ Break here';
+      const rl = document.createElement('div'); rl.className = 'pg-split-line';
+      ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+      container.appendChild(ctrl);
+    }
     if (svcTime) {
       const stLabel = document.createElement('div');
       stLabel.className = 'serving-service-time preview-linkable';
@@ -896,4 +929,3 @@ async function saveDriveFolderId() {
     if (msg) { msg.textContent = `Save failed: ${e.message || e}`; msg.className = 'pco-msg error'; }
   }
 }
-
