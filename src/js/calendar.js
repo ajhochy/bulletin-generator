@@ -13,6 +13,60 @@ function volSegments(teams) {
   return segs;
 }
 
+/**
+ * buildServingChunks(schedule, teamFilter, volFilter) → chunk[]
+ * Adapter that converts servingSchedule into the shared chunk contract.
+ * Each serving week-segment becomes one chunk with section:'serving'.
+ *
+ *   chunk.forceBreak      — resolved from _breakBefore flag and volSegments() si > 0
+ *   chunk.servingWeekIdx  — index into schedule.weeks[]
+ *   chunk.servingLabel    — display label ('Serving Today', 'Serving Next Week', etc.)
+ *   chunk.servingWeek     — the full week object from schedule.weeks[]
+ *   chunk.servingSegTeams — filtered teams for this segment (no page-break entries)
+ *   chunk.els             — empty; filled by renderServingWeek() at placement time
+ *
+ * Note: makeChunk() is defined in preview.js which loads after calendar.js, but
+ * buildServingChunks() is only ever called at render time (from renderPreview()),
+ * at which point preview.js is already loaded and makeChunk() is available.
+ *
+ * Called by: src/js/preview.js serving rendering block (Task 3 / #136).
+ */
+function buildServingChunks(schedule, teamFilter, volFilter) {
+  const sWeeks = schedule.weeks || [];
+  const chunks = [];
+
+  sWeeks.forEach((week, wi) => {
+    const allHidden = (week.teams || [])
+      .filter(t => t.type !== 'page-break')
+      .every(t => teamFilter[t.name] === false ||
+                  volFilter['w' + wi + ':' + (t.serviceTime || '') + ':' + t.name] === false);
+    if (allHidden) return;
+
+    const baseLabel = wi === 0 ? 'Serving Today'
+      : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
+
+    volSegments(week.teams).forEach((segTeams, si) => {
+      if (si > 0 && segTeams.length === 0) return;
+      const label = si === 0 ? baseLabel : baseLabel + ' (cont.)';
+      // forceBreak: week _breakBefore (first seg of a non-first week) OR intra-week continuation
+      const forceBreak = (si === 0 && wi > 0 && !!week._breakBefore) || si > 0;
+
+      chunks.push(makeChunk({
+        section:         'serving',
+        sourceId:        wi,
+        forceBreak,
+        servingWeekIdx:  wi,
+        servingLabel:    label,
+        servingWeek:     week,
+        servingSegTeams: segTeams,
+        els:             [],
+      }));
+    });
+  });
+
+  return chunks;
+}
+
 function formatNameList(names) {
   if (!names || names.length === 0) return '—';
   if (names.length === 1) return names[0];

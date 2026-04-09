@@ -107,6 +107,11 @@ function buildPreviewItemEl(item, idx) {
 //   paragraphIdx:          number|null      — paragraph index (liturgy/label chunks only)
 //   // Calendar-specific (null for non-calendar sections):
 //   calDate:               string|null      — 'YYYY-MM-DD' or null (calendar segments only; '' for title segment)
+//   // Serving-specific (null for non-serving sections):
+//   servingWeekIdx:        number|null      — index into servingSchedule.weeks[]
+//   servingLabel:          string|null      — display label ('Serving Today', etc.)
+//   servingWeek:           object|null      — the full week object from servingSchedule
+//   servingSegTeams:       array|null       — filtered teams for this segment (no page-break entries)
 // }
 //
 // ── BREAK-SOURCE CONTRACT ──────────────────────────────────────────────────────
@@ -211,6 +216,11 @@ function makeChunk(fields) {
     paragraphIdx:          fields.paragraphIdx          ?? null,
     // Calendar-specific (null for non-calendar sections)
     calDate:               fields.calDate               ?? null,
+    // Serving-specific (null for non-serving sections)
+    servingWeekIdx:        fields.servingWeekIdx        ?? null,
+    servingLabel:          fields.servingLabel          ?? null,
+    servingWeek:           fields.servingWeek           ?? null,
+    servingSegTeams:       fields.servingSegTeams       ?? null,
   };
 }
 
