@@ -1,5 +1,14 @@
 # Release Notes
 
+## v1.11.0 — Unified Section Layout Model & Bug Fixes
+
+- completed Unified Section Layout Model (#117): all page-break and split controls now use a consistent factory pattern throughout the preview
+- fixed bottomMerge (OOW/serving/calendar/staff merge toggles) not surviving project save/reload
+- fixed calendar showing "unavailable" after a failed fetch — server no longer caches failed calendar responses in the browser
+- fixed serving schedule intra-week break controls (between service times) silently not working after earlier refactor
+- fixed verse superscripts disappearing inside bold (`**`) and italic (`*`) markup in prose/scripture items
+- added layout regression checklist (`docs/layout-regression-checklist.md`) for verifying break control and persistence behavior
+
 ## v1.10.1 — Collaboration, Calendar, and Projects Fixes
 
 - fixed false stale/conflict save warnings caused by overlapping project saves
