@@ -168,6 +168,33 @@ function buildPreviewItemEl(item, idx) {
 //
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// ─── Chunk factory ────────────────────────────────────────────────────────────
+/**
+ * makeChunk(fields) → chunk
+ * Factory for the shared chunk contract (see CHUNK CONTRACT above).
+ * All producers MUST use this instead of raw object literals.
+ */
+function makeChunk(fields) {
+  return {
+    section:               fields.section               ?? 'oow',
+    sourceId:              fields.sourceId              ?? null,
+    els:                   fields.els                   ?? [],
+    forceBreak:            fields.forceBreak            ?? false,
+    noBreakBefore:         fields.noBreakBefore         ?? false,
+    stickyToNext:          fields.stickyToNext          ?? false,
+    breakableBefore:       fields.breakableBefore       ?? true,
+    // OOW-specific (null for non-OOW sections until migrated)
+    breakItemIdx:          fields.breakItemIdx          ?? null,
+    separatorItemIdx:      fields.separatorItemIdx      ?? null,
+    separatorStanzaIdx:    fields.separatorStanzaIdx    ?? null,
+    paragraphBreakItemIdx: fields.paragraphBreakItemIdx ?? null,
+    paragraphBreakIdx:     fields.paragraphBreakIdx     ?? null,
+    itemIdx:               fields.itemIdx               ?? null,
+    stanzaIdx:             fields.stanzaIdx             ?? null,
+    paragraphIdx:          fields.paragraphIdx          ?? null,
+  };
+}
+
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
@@ -175,11 +202,8 @@ function buildPreviewItemEl(item, idx) {
 function buildChunks(item, idx) {
   // ── Page-break item → forced break sentinel ───────────────────────────────
   if (item.type === 'page-break') {
-    return [{ els: [], forceBreak: true, breakItemIdx: idx,
-              separatorItemIdx: null, separatorStanzaIdx: null,
-              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-              noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-              paragraphIdx: null, stickyToNext: false }];
+    return [makeChunk({ section: 'oow', sourceId: idx, els: [],
+              forceBreak: true, breakItemIdx: idx, itemIdx: idx })];
   }
 
   // ── PCO note / media: hidden from print ───────────────────────────────────
@@ -189,11 +213,10 @@ function buildChunks(item, idx) {
 
   // ── Section heading: sticky to next item ──────────────────────────────────
   if (item.type === 'section') {
-    return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-              separatorItemIdx: null, separatorStanzaIdx: null,
-              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-              noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-              paragraphIdx: null, stickyToNext: true }];
+    return [makeChunk({ section: 'oow', sourceId: idx,
+              els: [buildPreviewItemEl(item, idx)],
+              noBreakBefore: !!item._noBreakBefore, itemIdx: idx,
+              stickyToNext: true })];
   }
 
   const d = (item.detail || '').trim();
@@ -211,11 +234,9 @@ function buildChunks(item, idx) {
 
     if (totalStanzas <= 1) {
       // Single block — no splitting needed
-      return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-                separatorItemIdx: null, separatorStanzaIdx: null,
-                paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-                paragraphIdx: null, stickyToNext: false }];
+      return [makeChunk({ section: 'oow', sourceId: idx,
+                els: [buildPreviewItemEl(item, idx)],
+                noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
     }
 
     const t = (item.title || '').trim();
@@ -226,11 +247,9 @@ function buildChunks(item, idx) {
     sections.forEach((section, sectionIdx) => {
       if (sectionIdx > 0) {
         // Insert forced-break sentinel between sections (from `---` in lyrics)
-        chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
-                      separatorItemIdx: idx, separatorStanzaIdx: globalStanzaIdx,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-                      paragraphIdx: null, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
+                      forceBreak: true, separatorItemIdx: idx,
+                      separatorStanzaIdx: globalStanzaIdx, itemIdx: idx }));
       }
 
       const stanzas = splitLyricSectionIntoStanzas(section);
@@ -267,11 +286,9 @@ function buildChunks(item, idx) {
         }
 
         const noBreak = isVeryFirst ? !!item._noBreakBefore : noBreakStanzas.has(stanzaGlobalIdx);
-        chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
-                      separatorItemIdx: null, separatorStanzaIdx: null,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: stanzaGlobalIdx,
-                      paragraphIdx: null, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
+                      els: [wrap], noBreakBefore: noBreak,
+                      itemIdx: idx, stanzaIdx: stanzaGlobalIdx }));
         globalStanzaIdx++;
       });
     });
@@ -291,11 +308,9 @@ function buildChunks(item, idx) {
       paragraphs.forEach((para, pi) => {
         if (pi > 0 && forceBreakSet.has(pi)) {
           // Forced-break sentinel — like the `---` sentinel in songs.
-          chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
-                        separatorItemIdx: null, separatorStanzaIdx: null,
-                        paragraphBreakItemIdx: idx, paragraphBreakIdx: pi,
-                        noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-                        paragraphIdx: null, stickyToNext: false });
+          chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
+                        forceBreak: true, paragraphBreakItemIdx: idx,
+                        paragraphBreakIdx: pi, itemIdx: idx }));
         }
         const wrap = document.createElement('div');
         wrap.className = 'order-item' + (pi === 0 ? ' preview-linkable' : '');
@@ -314,22 +329,18 @@ function buildChunks(item, idx) {
         renderBodyText(body, para, true);
         wrap.appendChild(body);
         const noBreak = pi === 0 ? !!item._noBreakBefore : noBreakSet.has(pi);
-        chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
-                      separatorItemIdx: null, separatorStanzaIdx: null,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: null,
-                      paragraphIdx: pi, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
+                      els: [wrap], noBreakBefore: noBreak,
+                      itemIdx: idx, paragraphIdx: pi }));
       });
       return chunks;
     }
   }
 
   // Everything else (including single-paragraph liturgy/label): one chunk, not sticky.
-  return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-            separatorItemIdx: null, separatorStanzaIdx: null,
-            paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-            noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-            paragraphIdx: null, stickyToNext: false }];
+  return [makeChunk({ section: 'oow', sourceId: idx,
+            els: [buildPreviewItemEl(item, idx)],
+            noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
 }
 
 // ─── Render booklet preview ───────────────────────────────────────────────────
