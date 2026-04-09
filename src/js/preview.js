@@ -6,7 +6,7 @@ function buildPreviewItemEl(item, idx) {
   if (item.type === 'section') {
     const wrapper = document.createElement('div');
     wrapper.className = 'liturgy-section preview-linkable';
-    wrapper.dataset.previewIdx = idx;
+    applyPreviewLinkMeta(wrapper, { section: 'oow', itemIdx: idx });
 
     const heading = document.createElement('div');
     heading.className = 'section-heading';
@@ -28,7 +28,7 @@ function buildPreviewItemEl(item, idx) {
   } else {
     const wrapper = document.createElement('div');
     wrapper.className = 'order-item preview-linkable';
-    wrapper.dataset.previewIdx = idx;
+    applyPreviewLinkMeta(wrapper, { section: 'oow', itemIdx: idx });
 
     if (t) {
       const heading = document.createElement('div');
@@ -68,30 +68,334 @@ function buildPreviewItemEl(item, idx) {
   }
 }
 
-// ─── Build page chunks for the interior page-split algorithm ─────────────────
-// Each chunk = {
-//   els: HTMLElement[],          — DOM elements for this chunk
-//   forceBreak: boolean,         — if true, always start a new page here
-//   breakItemIdx: number|null,   — items[] index of a page-break item (if forceBreak)
-//   separatorItemIdx: number|null, — items[] index of song item containing a --- (if forceBreak)
-//   separatorStanzaIdx: number|null, — global stanza index that starts AFTER this forced break
-//   noBreakBefore: boolean,      — suppress auto page-break before this chunk
-//   itemIdx: number,             — items[] index this chunk belongs to
-//   stanzaIdx: number|null,      — global stanza index (for song chunks), null otherwise
-//   stickyToNext: boolean,       — must share a page with the next chunk (section headings)
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED LAYOUT CONTRACT
+// All sections that participate in the preview/layout pipeline MUST emit objects
+// that conform to the shapes documented here.  Implementing a new section means:
+//   1. Producing chunks (see CHUNK CONTRACT) via makeChunk() [Task 1 / #125]
+//   2. Producing break-source entries (see BREAK-SOURCE CONTRACT) via makeBreakSrc() [Task 2 / #126]
+//   3. Stamping control metadata via applySplitCtrlMeta() / applyBreakCtrlMeta() [Task 3 / #127]
+//   4. Stamping navigation metadata via applyPreviewLinkMeta() [Task 4 / #128]
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// ── CHUNK CONTRACT ─────────────────────────────────────────────────────────────
+// A chunk is a layout unit passed to the page-packing algorithm.
+// All producers (buildChunks, bottom-section adapters) MUST emit this shape.
+//
+// {
+//   section:               string           — which section owns this chunk
+//                                             'oow' | 'serving' | 'calendar' | 'staff' | 'announcements'
+//   sourceId:              *                — stable identifier within the section
+//                                             OOW: items[] index (number)
+//                                             Future sections: define their own stable key
+//   els:                   HTMLElement[]    — DOM nodes to render on the page
+//   forceBreak:            boolean          — start a new page before this chunk
+//   noBreakBefore:         boolean          — suppress auto page-break before this chunk
+//   stickyToNext:          boolean          — must share a page with the following chunk
+//                                             (used for section headings so they never orphan)
+//   breakableBefore:       boolean          — auto page-break may occur before this chunk
+//                                             (false on noBreakBefore chunks and forceBreak sentinels)
+//
+//   // OOW-specific fields — null for non-OOW sections until migrated:
+//   breakItemIdx:          number|null      — items[] index of explicit page-break item
+//   separatorItemIdx:      number|null      — items[] index of song item with a '---' separator
+//   separatorStanzaIdx:    number|null      — global stanza index that starts after a separator break
+//   paragraphBreakItemIdx: number|null      — items[] index of liturgy/label item with a para break
+//   paragraphBreakIdx:     number|null      — paragraph index within that item
+//   itemIdx:               number|null      — items[] index (OOW only; equals sourceId for OOW)
+//   stanzaIdx:             number|null      — global stanza index (song chunks only)
+//   paragraphIdx:          number|null      — paragraph index (liturgy/label chunks only)
+//   // Calendar-specific (null for non-calendar sections):
+//   calDate:               string|null      — 'YYYY-MM-DD' or null (calendar segments only; '' for title segment)
+//   // Serving-specific (null for non-serving sections):
+//   servingWeekIdx:        number|null      — index into servingSchedule.weeks[]
+//   servingLabel:          string|null      — display label ('Serving Today', etc.)
+//   servingWeek:           object|null      — the full week object from servingSchedule
+//   servingSegTeams:       array|null       — filtered teams for this segment (no page-break entries)
 // }
 //
+// ── BREAK-SOURCE CONTRACT ──────────────────────────────────────────────────────
+// pageBreakSources[] is a parallel array to pages[] with one entry per page boundary
+// (pageBreakSources.length === pages.length - 1).
+// Each entry explains why a page break occurred so controls can remove or convert it.
+//
+// OOW break types:
+//   { type: 'item',         breakItemIdx }
+//   { type: 'separator',    separatorItemIdx, separatorStanzaIdx }
+//   { type: 'liturgy-para', paragraphBreakItemIdx, paragraphBreakIdx }
+//   { type: 'auto',         itemIdx, stanzaIdx, paragraphIdx }
+//
+// Bottom-section break types (appendBottomSection):
+//   { type: 'bottom-merged', bottomSection }   — section merged onto prior page
+//   { type: 'bottom-auto',   bottomSection }   — section placed on its own new page
+//
+// OOW/Announcements boundary:
+//   { type: 'oow-merged' }   — OOW merged onto last announcements page
+//   { type: 'oow-auto'   }   — OOW started on its own page after announcements
+//
+// Serving break types:
+//   { type: 'serving-week',  weekIdx }                              — forced break before a serving week
+//   { type: 'serving-team',  weekIdx, teamBreakIdx }                — intra-week team page-break
+//   { type: 'serving-split', weekIdx, boundary, insertBeforeIdx }   — "Break here" split control
+//
+// Calendar break types:
+//   { type: 'cal-force', calDayDate: '' }           — whole calendar section forced to new page
+//   { type: 'cal-day',   calDayDate: 'YYYY-MM-DD' } — forced break before a specific day group
+//   { type: 'cal-split', calDayDate: 'YYYY-MM-DD' } — "Break here" split control between day groups
+//
+// ── PREVIEW CONTROL METADATA ───────────────────────────────────────────────────
+// Split controls (.pg-split-ctrl) carry data-* attributes describing the two
+// adjacent chunks at the boundary.  Set via applySplitCtrlMeta() [Task 3 / #127]:
+//
+//   data-splitAfterItemIdx        — itemIdx of the chunk just above the control
+//   data-splitAfterStanzaIdx      — stanzaIdx of the chunk just above ('' if null)
+//   data-splitBeforeItemIdx       — itemIdx of the chunk just below the control
+//   data-splitBeforeStanzaIdx     — stanzaIdx of the chunk just below ('' if null)
+//   data-splitBeforeParagraphIdx  — paragraphIdx of the chunk just below ('' if null)
+//
+// Break controls (.pg-break-ctrl) carry data-* attributes from the break-source entry.
+// Set via applyBreakCtrlMeta() [Task 3 / #127]:
+//
+//   data-breakType                — break-source type string (see BREAK-SOURCE CONTRACT)
+//   data-breakItemIdx             — (type:'item') items[] index
+//   data-separatorItemIdx         — (type:'separator') items[] index
+//   data-separatorStanzaIdx       — (type:'separator') global stanza index
+//   data-paragraphBreakItemIdx    — (type:'liturgy-para') items[] index
+//   data-paragraphBreakIdx        — (type:'liturgy-para') paragraph index
+//   data-breakAutoItemIdx         — (type:'auto') items[] index
+//   data-breakAutoStanzaIdx       — (type:'auto') stanza index
+//   data-breakAutoParagraphIdx    — (type:'auto') paragraph index
+//   data-bottomSection            — (type:'bottom-*') section key ('serving'|'calendar'|'staff')
+//   data-fits                     — (type:'bottom-*') '1' if content fits on prior page, else '0'
+//   data-calDayDate               — (type:'cal-force'|'cal-day'|'cal-split') ISO date or ''
+//
+// ── PREVIEW-TO-EDITOR NAVIGATION CONTRACT ─────────────────────────────────────
+// Elements with class .preview-linkable are clickable in the preview pane to
+// scroll the editor to the corresponding source item.
+// Set via applyPreviewLinkMeta() [Task 4 / #128]:
+//
+//   OOW items:
+//     data-previewIdx      — items[] index
+//     data-stanzaIdx       — global stanza index (song chunks; omitted if null)
+//     data-paragraphIdx    — paragraph index (liturgy/label chunks; omitted if null)
+//
+//   Calendar items:
+//     data-previewSection  — 'calendar' (routes to scrollEditorToSection)
+//     data-calDate         — 'YYYY-MM-DD' or '' for first/title segment
+//
+//   Serving items:
+//     data-previewSection  — 'volunteers' (routes to scrollEditorToSection)
+//
+//   Future sections: extend applyPreviewLinkMeta() with a section-specific branch.
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Chunk factory ────────────────────────────────────────────────────────────
+/**
+ * makeChunk(fields) → chunk
+ * Factory for the shared chunk contract (see CHUNK CONTRACT above).
+ * All producers MUST use this instead of raw object literals.
+ */
+function makeChunk(fields) {
+  return {
+    section:               fields.section               ?? 'oow',
+    sourceId:              fields.sourceId              ?? null,
+    els:                   fields.els                   ?? [],
+    forceBreak:            fields.forceBreak            ?? false,
+    noBreakBefore:         fields.noBreakBefore         ?? false,
+    stickyToNext:          fields.stickyToNext          ?? false,
+    breakableBefore:       fields.breakableBefore       ?? true,
+    // OOW-specific (null for non-OOW sections until migrated)
+    breakItemIdx:          fields.breakItemIdx          ?? null,
+    separatorItemIdx:      fields.separatorItemIdx      ?? null,
+    separatorStanzaIdx:    fields.separatorStanzaIdx    ?? null,
+    paragraphBreakItemIdx: fields.paragraphBreakItemIdx ?? null,
+    paragraphBreakIdx:     fields.paragraphBreakIdx     ?? null,
+    itemIdx:               fields.itemIdx               ?? null,
+    stanzaIdx:             fields.stanzaIdx             ?? null,
+    paragraphIdx:          fields.paragraphIdx          ?? null,
+    // Calendar-specific (null for non-calendar sections)
+    calDate:               fields.calDate               ?? null,
+    // Serving-specific (null for non-serving sections)
+    servingWeekIdx:        fields.servingWeekIdx        ?? null,
+    servingLabel:          fields.servingLabel          ?? null,
+    servingWeek:           fields.servingWeek           ?? null,
+    servingSegTeams:       fields.servingSegTeams       ?? null,
+    servingTeamBreakIdx:   fields.servingTeamBreakIdx   ?? null,
+  };
+}
+
+// ─── Break-source factory ─────────────────────────────────────────────────────
+/**
+ * makeBreakSrc(type, fields) → breakSource entry
+ * Factory for the shared break-source contract (see BREAK-SOURCE CONTRACT above).
+ * Used to populate pageBreakSources[] (one entry per page boundary).
+ */
+function makeBreakSrc(type, fields) {
+  return Object.assign({ type }, fields);
+}
+
+// ─── Preview control metadata helpers ────────────────────────────────────────
+/**
+ * applySplitCtrlMeta(el, afterChunk, beforeChunk)
+ * Stamps data-* attributes on a .pg-split-ctrl element.
+ * afterChunk  — the chunk just above the control (already rendered)
+ * beforeChunk — the chunk just below the control (not yet rendered)
+ */
+function applySplitCtrlMeta(el, afterChunk, beforeChunk) {
+  el.dataset.splitAfterItemIdx       = afterChunk.itemIdx  ?? '';
+  el.dataset.splitAfterStanzaIdx     = afterChunk.stanzaIdx  ?? '';
+  el.dataset.splitBeforeItemIdx      = beforeChunk.itemIdx ?? '';
+  el.dataset.splitBeforeStanzaIdx    = beforeChunk.stanzaIdx ?? '';
+  el.dataset.splitBeforeParagraphIdx = beforeChunk.paragraphIdx ?? '';
+}
+
+/**
+ * applyBreakCtrlMeta(el, src) → label string
+ * Stamps data-* attributes on a .pg-break-ctrl element from a break-source entry.
+ * Returns the button label so the caller can set btn.textContent.
+ * Extend this function when adding break types for new sections.
+ */
+function applyBreakCtrlMeta(el, src) {
+  el.dataset.breakType = src.type;
+  switch (src.type) {
+    case 'item':
+      el.dataset.breakItemIdx = src.breakItemIdx;
+      return '✕ Remove page break';
+    case 'separator':
+      el.dataset.separatorItemIdx   = src.separatorItemIdx;
+      el.dataset.separatorStanzaIdx = src.separatorStanzaIdx;
+      return '✕ Remove break (lyrics)';
+    case 'liturgy-para':
+      el.dataset.paragraphBreakItemIdx = src.paragraphBreakItemIdx;
+      el.dataset.paragraphBreakIdx     = src.paragraphBreakIdx;
+      return '✕ Remove break (liturgy)';
+    case 'auto':
+      el.dataset.breakItemIdx      = src.itemIdx;
+      el.dataset.breakStanzaIdx    = src.stanzaIdx ?? '';
+      el.dataset.breakParagraphIdx = src.paragraphIdx ?? '';
+      return '✕ Merge with previous page';
+    case 'ann-item':
+      el.dataset.annIdx = src.annIdx;
+      return '✕ Remove page break';
+    case 'ann-auto':
+      el.dataset.annIdx = src.annIdx;
+      return '✕ Merge with previous page';
+    case 'cal-force':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '✕ Remove "start on new page"';
+    case 'cal-day':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '✕ Remove calendar break';
+    case 'cal-split':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '⊞ Break here';
+    case 'serving-week':
+      el.dataset.servingWeekIdx = src.weekIdx ?? '';
+      return '✕ Remove page break';
+    case 'serving-team':
+      el.dataset.servingWeekIdx      = src.weekIdx ?? '';
+      el.dataset.servingTeamBreakIdx = src.teamBreakIdx ?? '';
+      return '✕ Remove page break';
+    case 'serving-split':
+      el.dataset.servingWeekIdx         = src.weekIdx ?? '';
+      el.dataset.servingBoundary        = src.boundary ?? '';
+      el.dataset.servingInsertBeforeIdx = src.insertBeforeIdx ?? '';
+      return '⊞ Break here';
+    case 'bottom-merged':
+      el.dataset.bottomSection = src.bottomSection ?? '';
+      el.dataset.fits          = src.fits ?? '0';
+      return '↓ Move to own page';
+    case 'bottom-auto':
+      el.dataset.bottomSection = src.bottomSection ?? '';
+      el.dataset.fits          = src.fits ?? '0';
+      return '↑ Push up to previous page';
+    case 'oow-merged':
+      return '↓ Start worship on its own page';
+    case 'oow-auto':
+      return '↑ Continue worship on announcements page';
+    case 'ann-split':
+      el.dataset.annAfterIdx  = src.annAfterIdx  ?? '';
+      el.dataset.annBeforeIdx = src.annBeforeIdx ?? '';
+      return '⊞ Break here';
+    default:
+      return '✕ Remove break';
+  }
+}
+
+/**
+ * makeBreakCtrlEl(src) → .pg-break-ctrl element
+ * Creates a complete break control (label + remove button + lines).
+ * Calls applyBreakCtrlMeta() for dataset stamping and label.
+ * Use wherever a pg-break-ctrl div is hand-assembled.
+ */
+function makeBreakCtrlEl(src) {
+  const ctrl = document.createElement('div');
+  ctrl.className = 'pg-break-ctrl';
+  const label = applyBreakCtrlMeta(ctrl, src);
+  const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
+  const btn = document.createElement('button');
+  btn.className   = 'pg-break-remove-btn';
+  btn.textContent = label;
+  const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
+  ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+  return ctrl;
+}
+
+/**
+ * makeSplitCtrlEl(src) → .pg-split-ctrl element
+ * Creates a complete split control ("Break here" button + lines).
+ * Calls applyBreakCtrlMeta() for dataset stamping and label.
+ * Use wherever a pg-split-ctrl div is hand-assembled.
+ */
+function makeSplitCtrlEl(src) {
+  const ctrl = document.createElement('div');
+  ctrl.className = 'pg-split-ctrl';
+  const label = applyBreakCtrlMeta(ctrl, src);
+  const ll = document.createElement('div'); ll.className = 'pg-split-line';
+  const btn = document.createElement('button');
+  btn.className   = 'pg-split-add-btn';
+  btn.textContent = label;
+  const rl = document.createElement('div'); rl.className = 'pg-split-line';
+  ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+  return ctrl;
+}
+
+// ─── Preview-to-editor navigation helper ─────────────────────────────────────
+/**
+ * applyPreviewLinkMeta(el, chunk)
+ * Stamps data-* navigation attributes on a .preview-linkable element.
+ * el    — the DOM element carrying the preview-linkable class
+ * chunk — the chunk object (or a plain object with section/itemIdx/stanzaIdx/paragraphIdx)
+ *
+ * Currently handles OOW items only.
+ * To support a new section, add a branch here keyed on chunk.section
+ * and set whatever data-* attributes its click handler reads.
+ * See the PREVIEW-TO-EDITOR NAVIGATION CONTRACT comment block above.
+ */
+function applyPreviewLinkMeta(el, chunk) {
+  if (chunk.section === 'oow') {
+    if (chunk.itemIdx      != null) el.dataset.previewIdx   = chunk.itemIdx;
+    if (chunk.stanzaIdx    != null) el.dataset.stanzaIdx    = chunk.stanzaIdx;
+    if (chunk.paragraphIdx != null) el.dataset.paragraphIdx = chunk.paragraphIdx;
+  } else if (chunk.section === 'calendar') {
+    el.dataset.previewSection = 'calendar';
+    if (chunk.calDate != null) el.dataset.calDate = chunk.calDate;
+  } else if (chunk.section === 'serving') {
+    el.dataset.previewSection = 'volunteers';
+  }
+  // Other sections: extend here when migrating (see #119)
+}
+
+// ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
 // A `---` line inside song lyrics creates a forced-break sentinel between sections.
 function buildChunks(item, idx) {
   // ── Page-break item → forced break sentinel ───────────────────────────────
   if (item.type === 'page-break') {
-    return [{ els: [], forceBreak: true, breakItemIdx: idx,
-              separatorItemIdx: null, separatorStanzaIdx: null,
-              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-              noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-              paragraphIdx: null, stickyToNext: false }];
+    return [makeChunk({ section: 'oow', sourceId: idx, els: [],
+              forceBreak: true, breakItemIdx: idx, itemIdx: idx })];
   }
 
   // ── PCO note / media: hidden from print ───────────────────────────────────
@@ -101,11 +405,10 @@ function buildChunks(item, idx) {
 
   // ── Section heading: sticky to next item ──────────────────────────────────
   if (item.type === 'section') {
-    return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-              separatorItemIdx: null, separatorStanzaIdx: null,
-              paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-              noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-              paragraphIdx: null, stickyToNext: true }];
+    return [makeChunk({ section: 'oow', sourceId: idx,
+              els: [buildPreviewItemEl(item, idx)],
+              noBreakBefore: !!item._noBreakBefore, itemIdx: idx,
+              stickyToNext: true })];
   }
 
   const d = (item.detail || '').trim();
@@ -123,11 +426,9 @@ function buildChunks(item, idx) {
 
     if (totalStanzas <= 1) {
       // Single block — no splitting needed
-      return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-                separatorItemIdx: null, separatorStanzaIdx: null,
-                paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-                paragraphIdx: null, stickyToNext: false }];
+      return [makeChunk({ section: 'oow', sourceId: idx,
+                els: [buildPreviewItemEl(item, idx)],
+                noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
     }
 
     const t = (item.title || '').trim();
@@ -138,11 +439,9 @@ function buildChunks(item, idx) {
     sections.forEach((section, sectionIdx) => {
       if (sectionIdx > 0) {
         // Insert forced-break sentinel between sections (from `---` in lyrics)
-        chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
-                      separatorItemIdx: idx, separatorStanzaIdx: globalStanzaIdx,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-                      paragraphIdx: null, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
+                      forceBreak: true, separatorItemIdx: idx,
+                      separatorStanzaIdx: globalStanzaIdx, itemIdx: idx }));
       }
 
       const stanzas = splitLyricSectionIntoStanzas(section);
@@ -155,8 +454,7 @@ function buildChunks(item, idx) {
         wrap.className = 'order-item' +
           (isVeryLast ? '' : ' song-stanza') +
           (isVeryFirst ? ' preview-linkable' : '');
-        wrap.dataset.previewIdx = idx;
-        wrap.dataset.stanzaIdx  = stanzaGlobalIdx;
+        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, stanzaIdx: stanzaGlobalIdx });
 
         if (isVeryFirst && t) {
           const h = document.createElement('div');
@@ -179,11 +477,9 @@ function buildChunks(item, idx) {
         }
 
         const noBreak = isVeryFirst ? !!item._noBreakBefore : noBreakStanzas.has(stanzaGlobalIdx);
-        chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
-                      separatorItemIdx: null, separatorStanzaIdx: null,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: stanzaGlobalIdx,
-                      paragraphIdx: null, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
+                      els: [wrap], noBreakBefore: noBreak,
+                      itemIdx: idx, stanzaIdx: stanzaGlobalIdx }));
         globalStanzaIdx++;
       });
     });
@@ -203,16 +499,13 @@ function buildChunks(item, idx) {
       paragraphs.forEach((para, pi) => {
         if (pi > 0 && forceBreakSet.has(pi)) {
           // Forced-break sentinel — like the `---` sentinel in songs.
-          chunks.push({ els: [], forceBreak: true, breakItemIdx: null,
-                        separatorItemIdx: null, separatorStanzaIdx: null,
-                        paragraphBreakItemIdx: idx, paragraphBreakIdx: pi,
-                        noBreakBefore: false, itemIdx: idx, stanzaIdx: null,
-                        paragraphIdx: null, stickyToNext: false });
+          chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
+                        forceBreak: true, paragraphBreakItemIdx: idx,
+                        paragraphBreakIdx: pi, itemIdx: idx }));
         }
         const wrap = document.createElement('div');
         wrap.className = 'order-item' + (pi === 0 ? ' preview-linkable' : '');
-        wrap.dataset.previewIdx   = idx;
-        wrap.dataset.paragraphIdx = pi;
+        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, paragraphIdx: pi });
         if (pi === 0 && t) {
           const h = document.createElement('div');
           h.className = 'item-heading has-rule';
@@ -226,22 +519,18 @@ function buildChunks(item, idx) {
         renderBodyText(body, para, true);
         wrap.appendChild(body);
         const noBreak = pi === 0 ? !!item._noBreakBefore : noBreakSet.has(pi);
-        chunks.push({ els: [wrap], forceBreak: false, breakItemIdx: null,
-                      separatorItemIdx: null, separatorStanzaIdx: null,
-                      paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-                      noBreakBefore: noBreak, itemIdx: idx, stanzaIdx: null,
-                      paragraphIdx: pi, stickyToNext: false });
+        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
+                      els: [wrap], noBreakBefore: noBreak,
+                      itemIdx: idx, paragraphIdx: pi }));
       });
       return chunks;
     }
   }
 
   // Everything else (including single-paragraph liturgy/label): one chunk, not sticky.
-  return [{ els: [buildPreviewItemEl(item, idx)], forceBreak: false, breakItemIdx: null,
-            separatorItemIdx: null, separatorStanzaIdx: null,
-            paragraphBreakItemIdx: null, paragraphBreakIdx: null,
-            noBreakBefore: !!item._noBreakBefore, itemIdx: idx, stanzaIdx: null,
-            paragraphIdx: null, stickyToNext: false }];
+  return [makeChunk({ section: 'oow', sourceId: idx,
+            els: [buildPreviewItemEl(item, idx)],
+            noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
 }
 
 // ─── Render booklet preview ───────────────────────────────────────────────────
@@ -462,18 +751,9 @@ function renderPreview() {
         if (ci > 0) {
           const prev = pageChunks[ci - 1];
           if (prev.annIdx >= 0 && chunk.annIdx >= 0) {
-            const ctrl = document.createElement('div');
-            ctrl.className = 'pg-split-ctrl';
-            ctrl.dataset.splitType    = 'ann';
-            ctrl.dataset.annAfterIdx  = prev.annIdx;
-            ctrl.dataset.annBeforeIdx = chunk.annIdx;
-            const ll  = document.createElement('div'); ll.className = 'pg-split-line';
-            const btn = document.createElement('button');
-            btn.className   = 'pg-split-add-btn';
-            btn.textContent = '⊞ Break here';
-            const rl  = document.createElement('div'); rl.className = 'pg-split-line';
-            ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-            pg.appendChild(ctrl);
+            pg.appendChild(makeSplitCtrlEl(makeBreakSrc('ann-split', {
+              annAfterIdx: prev.annIdx, annBeforeIdx: chunk.annIdx,
+            })));
           }
         }
         pg.appendChild(chunk.el);
@@ -540,15 +820,7 @@ function renderPreview() {
     // Build the pg-break-ctrl for the ann/OOW boundary (visible only if ann pages exist).
     let oowBoundaryCtrl = null;
     if (annLastPageEl !== null) {
-      oowBoundaryCtrl = document.createElement('div');
-      oowBoundaryCtrl.className = 'pg-break-ctrl';
-      oowBoundaryCtrl.dataset.breakType = doMergeOOW ? 'oow-merged' : 'oow-auto';
-      const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-      const btn = document.createElement('button');
-      btn.className = 'pg-break-remove-btn';
-      btn.textContent = doMergeOOW ? '↓ Start worship on its own page' : '↑ Continue worship on announcements page';
-      const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-      oowBoundaryCtrl.appendChild(ll); oowBoundaryCtrl.appendChild(btn); oowBoundaryCtrl.appendChild(rl);
+      oowBoundaryCtrl = makeBreakCtrlEl(makeBreakSrc(doMergeOOW ? 'oow-merged' : 'oow-auto', {}));
     }
 
     // Pack chunks into pages.
@@ -568,15 +840,15 @@ function renderPreview() {
           pages.push([]);
           let bsrc;
           if (chunk.breakItemIdx !== null) {
-            bsrc = { type: 'item', breakItemIdx: chunk.breakItemIdx };
+            bsrc = makeBreakSrc('item', { breakItemIdx: chunk.breakItemIdx });
           } else if (chunk.paragraphBreakItemIdx !== null) {
-            bsrc = { type: 'liturgy-para',
+            bsrc = makeBreakSrc('liturgy-para', {
                      paragraphBreakItemIdx: chunk.paragraphBreakItemIdx,
-                     paragraphBreakIdx:     chunk.paragraphBreakIdx };
+                     paragraphBreakIdx:     chunk.paragraphBreakIdx });
           } else {
-            bsrc = { type: 'separator',
+            bsrc = makeBreakSrc('separator', {
                      separatorItemIdx:   chunk.separatorItemIdx,
-                     separatorStanzaIdx: chunk.separatorStanzaIdx };
+                     separatorStanzaIdx: chunk.separatorStanzaIdx });
           }
           pageBreakSources.push(bsrc);
           used = 0;
@@ -589,12 +861,11 @@ function renderPreview() {
       // Auto break if the chunk would overflow AND noBreakBefore is not set.
       if (!chunk.noBreakBefore && used + h > AVAIL_H && pages[pages.length - 1].length > 0) {
         pages.push([]);
-        pageBreakSources.push({
-          type: 'auto',
+        pageBreakSources.push(makeBreakSrc('auto', {
           itemIdx: chunk.itemIdx,
           stanzaIdx: chunk.stanzaIdx,
           paragraphIdx: chunk.paragraphIdx,
-        });
+        }));
         used = 0;
       }
 
@@ -605,12 +876,11 @@ function renderPreview() {
           const nextH = next.height;
           if (used + h + nextH > AVAIL_H && pages[pages.length - 1].length > 0) {
             pages.push([]);
-            pageBreakSources.push({
-              type: 'auto',
+            pageBreakSources.push(makeBreakSrc('auto', {
               itemIdx: chunk.itemIdx,
               stanzaIdx: chunk.stanzaIdx,
               paragraphIdx: chunk.paragraphIdx,
-            });
+            }));
             used = 0;
           }
         }
@@ -656,11 +926,7 @@ function renderPreview() {
           const prev = pageChunks[ci - 1];
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-split-ctrl';
-          ctrl.dataset.splitAfterItemIdx      = prev.itemIdx;
-          ctrl.dataset.splitAfterStanzaIdx   = prev.stanzaIdx ?? '';
-          ctrl.dataset.splitBeforeItemIdx    = chunk.itemIdx;
-          ctrl.dataset.splitBeforeStanzaIdx  = chunk.stanzaIdx ?? '';
-          ctrl.dataset.splitBeforeParagraphIdx = chunk.paragraphIdx ?? '';
+          applySplitCtrlMeta(ctrl, prev, chunk);
           const ll = document.createElement('div'); ll.className = 'pg-split-line';
           const btn = document.createElement('button');
           btn.className = 'pg-split-add-btn';
@@ -720,19 +986,11 @@ function renderPreview() {
     const doMerge  = bottomMerge[mergeKey] && fits;
 
     // Build the pg-break-ctrl that always appears to let the user toggle.
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-    ctrl.dataset.breakType     = doMerge ? 'bottom-merged' : 'bottom-auto';
-    ctrl.dataset.bottomSection = mergeKey;
+    const ctrl = makeBreakCtrlEl(makeBreakSrc(doMerge ? 'bottom-merged' : 'bottom-auto', {
+      bottomSection: mergeKey, fits: fits ? '1' : '0',
+    }));
     // Only show the "push up" option when content actually fits on the previous page.
-    ctrl.dataset.fits = fits ? '1' : '0';
-    const ll  = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = doMerge ? '↓ Move to own page' : '↑ Push up to previous page';
-    if (!fits && !doMerge) btn.disabled = true; // grayed-out when it won't fit
-    const rl  = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+    if (!fits && !doMerge) ctrl.querySelector('.pg-break-remove-btn').disabled = true;
 
     if (doMerge) {
       // Merged: add a thin separator rule then the content inside the existing page.
@@ -769,76 +1027,47 @@ function renderPreview() {
 
   // ── Serving schedule ────────────────────────────────────────────────────────
   if (servingSchedule && optVolunteers.checked) {
-    const sWeeks = servingSchedule.weeks || [];
+    const srvChunks = buildServingChunks(servingSchedule, servingTeamFilter, volTeamFilter);
 
-    // Build rendering pages: each entry is an array of {week, segTeams, label}.
+    // Pack chunks into pages[] using pre-resolved forceBreak flags.
     // pageSources[i] explains why serving page (i+1) started.
     const pages = [[]];
     const pageSources = [];
-    sWeeks.forEach((week, wi) => {
-      const allHidden = (week.teams || []).filter(t => t.type !== 'page-break').every(
-        t => servingTeamFilter[t.name] === false || volTeamFilter['w'+wi+':'+(t.serviceTime||'')+':'+t.name] === false
-      );
-      if (allHidden) return; // skip entire week including header
-      const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
-      // A _breakBefore flag on a week (wi > 0) forces it onto a new page
-      if (wi > 0 && week._breakBefore) {
-        pages.push([]);
-        pageSources.push({ type: 'serving-week', weekIdx: wi });
-      }
-      volSegments(week.teams).forEach((segTeams, si) => {
-        // Skip empty continuation segments (e.g. page break placed after last team)
-        if (si > 0 && segTeams.length === 0) return;
-        const label = si === 0 ? baseLabel : baseLabel + ' (cont.)';
-        if (si === 0) {
-          pages[pages.length - 1].push({ week, segTeams, label });
+    srvChunks.forEach(chunk => {
+      if (chunk.forceBreak && pages[pages.length - 1].length > 0) {
+        const prevChunk = pages[pages.length - 1][pages[pages.length - 1].length - 1];
+        if (prevChunk && prevChunk.servingWeekIdx === chunk.servingWeekIdx) {
+          pageSources.push(makeBreakSrc('serving-team', {
+            weekIdx: chunk.servingWeekIdx,
+            teamBreakIdx: chunk.servingTeamBreakIdx,
+          }));
         } else {
-          let teamBreakIdx = -1;
-          let breakCount = 0;
-          for (let ti = 0; ti < (week.teams || []).length; ti++) {
-            if (week.teams[ti]?.type === 'page-break') {
-              breakCount++;
-              if (breakCount === si) {
-                teamBreakIdx = ti;
-                break;
-              }
-            }
-          }
-          pages.push([{ week, segTeams, label }]);
-          pageSources.push({ type: 'serving-team', weekIdx: wi, teamBreakIdx });
+          pageSources.push(makeBreakSrc('serving-week', { weekIdx: chunk.servingWeekIdx }));
         }
-      });
+        pages.push([]);
+      }
+      pages[pages.length - 1].push(chunk);
     });
 
-    pages.forEach((pageItems, pi) => {
+    pages.forEach((pageChunks, pi) => {
       const servingContent = document.createElement('div');
       servingContent.classList.add('preview-linkable');
-      servingContent.dataset.previewSection = 'volunteers';
-      pageItems.forEach(({ week, segTeams, label }, itemIdx) => {
-        const weekIdx = (servingSchedule.weeks || []).indexOf(week);
+      applyPreviewLinkMeta(servingContent, { section: 'serving' });
+      pageChunks.forEach((chunk, itemIdx) => {
         if (itemIdx > 0) {
-          const prevItem = pageItems[itemIdx - 1];
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-split-ctrl';
-          ctrl.dataset.splitType = 'serving';
-          ctrl.dataset.servingWeekIdx = weekIdx;
-          if (prevItem.week === week) {
-            const firstTeam = (segTeams || []).find(t => t && t.type !== 'page-break');
-            const insertBeforeIdx = firstTeam ? (week.teams || []).indexOf(firstTeam) : -1;
-            ctrl.dataset.servingBoundary = 'team';
-            ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
-          } else {
-            ctrl.dataset.servingBoundary = 'week';
-          }
-          const ll = document.createElement('div'); ll.className = 'pg-split-line';
-          const btn = document.createElement('button');
-          btn.className = 'pg-split-add-btn';
-          btn.textContent = '⊞ Break here';
-          const rl = document.createElement('div'); rl.className = 'pg-split-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          const prevChunk = pageChunks[itemIdx - 1];
+          const isSameWeek = prevChunk.servingWeekIdx === chunk.servingWeekIdx;
+          const firstTeam = isSameWeek ? (chunk.servingSegTeams || []).find(t => t && t.type !== 'page-break') : null;
+          const insertBeforeIdx = firstTeam ? (chunk.servingWeek.teams || []).indexOf(firstTeam) : -1;
+          const ctrl = makeSplitCtrlEl(makeBreakSrc('serving-split', {
+            weekIdx: chunk.servingWeekIdx,
+            boundary: isSameWeek ? 'team' : 'week',
+            insertBeforeIdx: isSameWeek ? insertBeforeIdx : '',
+          }));
           servingContent.appendChild(ctrl);
         }
-        renderServingWeek(servingContent, { ...week, teams: segTeams }, label, weekIdx);
+        renderServingWeek(servingContent, { ...chunk.servingWeek, teams: chunk.servingSegTeams }, chunk.servingLabel, chunk.servingWeekIdx);
+        chunk.els = [servingContent];
       });
       if (pi === 0) {
         appendBottomSection(servingContent, 'serving');
@@ -855,18 +1084,8 @@ function renderPreview() {
           pg.appendChild(footer);
         }
         if (lastRenderedPageEl) {
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-break-ctrl';
-          const src = pageSources[pi - 1] || {};
-          ctrl.dataset.breakType = src.type || 'serving-team';
-          ctrl.dataset.servingWeekIdx = src.weekIdx ?? '';
-          ctrl.dataset.servingTeamBreakIdx = src.teamBreakIdx ?? '';
-          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-          const btn = document.createElement('button');
-          btn.className = 'pg-break-remove-btn';
-          btn.textContent = '✕ Remove page break';
-          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          const src = pageSources[pi - 1] || makeBreakSrc('serving-team', {});
+          const ctrl = makeBreakCtrlEl(src);
           lastRenderedPageEl.after(ctrl);
           ctrl.after(pg);
         } else previewPane.appendChild(pg);
@@ -878,16 +1097,17 @@ function renderPreview() {
 
   // ── Calendar ────────────────────────────────────────────────────────────────
   if (optCal.checked) {
-    const segments = buildCalendarSegments(church);
-    segments.forEach((seg, si) => {
+    const calChunks = buildCalendarChunks(church);
+    calChunks.forEach((chunk, si) => {
       const calContent = document.createElement('div');
       calContent.classList.add('preview-linkable');
-      calContent.dataset.previewSection = 'calendar';
-      calContent.dataset.calDate = seg.date || '';
-      calContent.appendChild(seg.el);
+      applyPreviewLinkMeta(calContent, chunk);
+      calContent.appendChild(chunk.els[0]);
 
       const forceNew = (si === 0 && breakBeforeCalendar) ||
-                       (si > 0 && calBreakBeforeDates.includes(seg.date));
+                       (si > 0 && calBreakBeforeDates.includes(chunk.calDate));
+      chunk.forceBreak = forceNew;
+
       if (forceNew) {
         const contentH = measureBottomContent(calContent);
         const pg = document.createElement('div');
@@ -900,16 +1120,7 @@ function renderPreview() {
           pg.appendChild(footer);
         }
         if (lastRenderedPageEl) {
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-break-ctrl';
-          ctrl.dataset.breakType  = si === 0 ? 'cal-force' : 'cal-day';
-          ctrl.dataset.calDayDate = seg.date || '';
-          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-          const btn = document.createElement('button');
-          btn.className   = 'pg-break-remove-btn';
-          btn.textContent = si === 0 ? '✕ Remove "start on new page"' : '✕ Remove calendar break';
-          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          const ctrl = makeBreakCtrlEl(makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: chunk.calDate }));
           lastRenderedPageEl.after(ctrl);
           ctrl.after(pg);
         } else {
@@ -918,23 +1129,14 @@ function renderPreview() {
         lastRenderedPageEl = pg;
         lastPageUsedH      = contentH;
       } else if (si === 0) {
-        // First segment: use appendBottomSection to control serving→calendar merge toggle
+        // First chunk: use appendBottomSection to control serving→calendar merge toggle
         appendBottomSection(calContent, 'calendar');
       } else {
-        // Subsequent segments without a forced break: continuation — fit onto current page
+        // Subsequent chunks without a forced break: continuation — fit onto current page
         // or overflow to a new page. No merge toggle (use the calendar editor's break buttons
         // to place explicit breaks between days).
         const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
-        const splitCtrl = document.createElement('div');
-        splitCtrl.className = 'pg-split-ctrl';
-        splitCtrl.dataset.splitType = 'calendar';
-        splitCtrl.dataset.calDayDate = seg.date || '';
-        const ll = document.createElement('div'); ll.className = 'pg-split-line';
-        const btn = document.createElement('button');
-        btn.className = 'pg-split-add-btn';
-        btn.textContent = '⊞ Break here';
-        const rl = document.createElement('div'); rl.className = 'pg-split-line';
-        splitCtrl.appendChild(ll); splitCtrl.appendChild(btn); splitCtrl.appendChild(rl);
+        const splitCtrl = makeSplitCtrlEl(makeBreakSrc('cal-split', { calDayDate: chunk.calDate }));
         const contentH = measureBottomContent(calContent);
         if (lastRenderedPageEl !== null && lastPageUsedH + contentH <= AVAIL_H) {
           lastRenderedPageEl.appendChild(splitCtrl);
@@ -1146,41 +1348,7 @@ function updatePrintBtn() {
 function addBreakControls(renderedPageEls, pageBreakSources) {
   pageBreakSources.forEach((src, i) => {
     const afterPage = renderedPageEls[i];
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-
-    let label;
-    if (src.type === 'item') {
-      label = '✕ Remove page break';
-      ctrl.dataset.breakType    = 'item';
-      ctrl.dataset.breakItemIdx = src.breakItemIdx;
-    } else if (src.type === 'separator') {
-      label = '✕ Remove break (lyrics)';
-      ctrl.dataset.breakType          = 'separator';
-      ctrl.dataset.separatorItemIdx   = src.separatorItemIdx;
-      ctrl.dataset.separatorStanzaIdx = src.separatorStanzaIdx;
-    } else if (src.type === 'liturgy-para') {
-      label = '✕ Remove break (liturgy)';
-      ctrl.dataset.breakType             = 'liturgy-para';
-      ctrl.dataset.paragraphBreakItemIdx = src.paragraphBreakItemIdx;
-      ctrl.dataset.paragraphBreakIdx     = src.paragraphBreakIdx;
-    } else {
-      // auto break
-      label = '✕ Merge with previous page';
-      ctrl.dataset.breakType      = 'auto';
-      ctrl.dataset.breakItemIdx   = src.itemIdx;
-      ctrl.dataset.breakStanzaIdx = src.stanzaIdx ?? '';
-      ctrl.dataset.breakParagraphIdx = src.paragraphIdx ?? '';
-    }
-
-    const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = label;
-    const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-
-    // Insert the control immediately after the page element in the DOM.
+    const ctrl = makeBreakCtrlEl(src);
     afterPage.after(ctrl);
   });
 }
@@ -1191,27 +1359,7 @@ function addBreakControls(renderedPageEls, pageBreakSources) {
 function addAnnBreakControls(renderedAnnPageEls, annPageBreakSources) {
   annPageBreakSources.forEach((src, i) => {
     const afterPage = renderedAnnPageEls[i];
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-
-    let label;
-    if (src.type === 'ann-item') {
-      label = '✕ Remove page break';
-      ctrl.dataset.breakType = 'ann-item';
-      ctrl.dataset.annIdx    = src.annIdx;
-    } else {
-      label = '✕ Merge with previous page';
-      ctrl.dataset.breakType = 'ann-auto';
-      ctrl.dataset.annIdx    = src.annIdx;
-    }
-
-    const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = label;
-    const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-
+    const ctrl = makeBreakCtrlEl(src);
     afterPage.after(ctrl);
   });
 }
@@ -1366,7 +1514,7 @@ previewPane.addEventListener('click', e => {
     if (!ctrl) return;
 
     // Announcement split: set _breakBefore on the "before" item
-    if (ctrl.dataset.splitType === 'ann') {
+    if (ctrl.dataset.breakType === 'ann-split') {
       const beforeIdx = parseInt(ctrl.dataset.annBeforeIdx, 10);
       if (Number.isInteger(beforeIdx) && annData[beforeIdx]) {
         annData[beforeIdx]._breakBefore = true;
@@ -1375,7 +1523,7 @@ previewPane.addEventListener('click', e => {
       return;
     }
 
-    if (ctrl.dataset.splitType === 'calendar') {
+    if (ctrl.dataset.breakType === 'cal-split') {
       const d = ctrl.dataset.calDayDate;
       if (d && !calBreakBeforeDates.includes(d)) {
         calBreakBeforeDates.push(d);
@@ -1385,7 +1533,7 @@ previewPane.addEventListener('click', e => {
       return;
     }
 
-    if (ctrl.dataset.splitType === 'serving') {
+    if (ctrl.dataset.breakType === 'serving-split') {
       const weekIdx = parseInt(ctrl.dataset.servingWeekIdx, 10);
       if (!Number.isInteger(weekIdx) || !servingSchedule?.weeks?.[weekIdx]) return;
       if (ctrl.dataset.servingBoundary === 'week') {

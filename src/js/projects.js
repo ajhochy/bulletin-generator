@@ -47,6 +47,26 @@ function cloneItems(list) {
   });
 }
 
+// ── Persisted layout fields (all sections) ────────────────────────────────────
+// When adding a new per-section layout flag, update THREE locations in this file:
+//   1. collectCurrentProjectState()   — write flag into the saved object
+//   2. applyProjectState()            — read it back on project load / project switch
+//   3. applyProjectStateForExport()   — read it back before PDF generation
+//
+// Current persisted layout state:
+//   items[i]._noBreakBefore               OOW: suppress auto break before item
+//   items[i]._noBreakBeforeStanzas[]      OOW: suppress auto break before specific stanzas
+//   items[i]._forceBreakBeforeParagraph[] OOW: explicit break before a paragraph
+//   items[i]._noBreakBeforeParagraph[]    OOW: suppress auto break before a paragraph
+//   announcements[i]._breakBefore         Ann: explicit "Break before this card"
+//   announcements[i]._noBreakBefore       Ann: suppress auto break before this card
+//   servingSchedule.weeks[i]._breakBefore Serving: "Start this week on a new page"
+//   servingSchedule.weeks[i].teams[j] with type:'page-break'  Serving: intra-week team break
+//   breakBeforeCalendar                   Calendar: "Start calendar on a new page"
+//   calBreakBeforeDates[]                 Calendar: forced breaks before specific day groups
+//   breakBeforeStaff                      Staff: "Start staff page on a new page"
+//   bottomMerge.{oow,serving,calendar,staff}  All: merge section onto previous page
+// ─────────────────────────────────────────────────────────────────────────────
 function collectCurrentProjectState() {
   syncAllItems();
   return {
@@ -75,6 +95,7 @@ function collectCurrentProjectState() {
     breakBeforeCalendar: breakBeforeCalendar,
     breakBeforeStaff:    breakBeforeStaff,
     calBreakBeforeDates: calBreakBeforeDates.slice(),
+    bottomMerge: Object.assign({}, bottomMerge),
   };
 }
 
@@ -130,6 +151,11 @@ function applyProjectState(state) {
   breakBeforeCalendar = !!safe.breakBeforeCalendar;
   breakBeforeStaff    = !!safe.breakBeforeStaff;
   calBreakBeforeDates = Array.isArray(safe.calBreakBeforeDates) ? safe.calBreakBeforeDates.slice() : [];
+  const bm = (safe.bottomMerge && typeof safe.bottomMerge === 'object') ? safe.bottomMerge : {};
+  bottomMerge.oow      = !!bm.oow;
+  bottomMerge.serving  = !!bm.serving;
+  bottomMerge.calendar = !!bm.calendar;
+  bottomMerge.staff    = !!bm.staff;
   if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   updateDocTitle();
   applyingProjectState = false;
@@ -756,6 +782,11 @@ function applyProjectStateForExport(state) {
   breakBeforeCalendar = !!safe.breakBeforeCalendar;
   breakBeforeStaff = !!safe.breakBeforeStaff;
   calBreakBeforeDates = Array.isArray(safe.calBreakBeforeDates) ? safe.calBreakBeforeDates.slice() : [];
+  const bmExport = (safe.bottomMerge && typeof safe.bottomMerge === 'object') ? safe.bottomMerge : {};
+  bottomMerge.oow      = !!bmExport.oow;
+  bottomMerge.serving  = !!bmExport.serving;
+  bottomMerge.calendar = !!bmExport.calendar;
+  bottomMerge.staff    = !!bmExport.staff;
 }
 
 // ── Server-side PDF helpers ────────────────────────────────────────────────────

@@ -112,21 +112,47 @@ function appendStyledText(el, text) {
   if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
 }
 
-// Append prose text to el, wrapping inline verse numbers as <sup class="verse-num">
-function appendProseText(el, text) {
+// Scan plain text for inline verse numbers, appending text nodes and <sup> elements.
+// Receives text with no bold/italic markers — called by appendProseText only.
+function _appendVerseNums(el, text) {
   INLINE_VERSE_RE.lastIndex = 0;
-  let last = 0;
-  let m;
+  let last = 0, m;
   while ((m = INLINE_VERSE_RE.exec(text)) !== null) {
     const beforeNum = m.index + m[1].length; // position of the digit(s)
-    if (beforeNum > last) appendStyledText(el, text.slice(last, beforeNum));
+    if (beforeNum > last) el.appendChild(document.createTextNode(text.slice(last, beforeNum)));
     const sup = document.createElement('sup');
     sup.className = 'verse-num';
     sup.textContent = m[2];
     el.appendChild(sup);
     last = beforeNum + m[2].length;
   }
-  if (last < text.length) appendStyledText(el, text.slice(last));
+  if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
+}
+
+// Append prose text to el, handling both bold/italic markup and inline verse numbers.
+// Processes bold/italic spans first so verse numbers inside *italic* or **bold** spans
+// are still found and wrapped in <sup> (previously the * preceding a digit blocked matching).
+function appendProseText(el, text) {
+  const styleRe = /\*\*\*([^*\n]+)\*\*\*|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*/g;
+  let last = 0, m;
+  styleRe.lastIndex = 0;
+  while ((m = styleRe.exec(text)) !== null) {
+    if (m.index > last) _appendVerseNums(el, text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      const b = document.createElement('strong');
+      const i = document.createElement('em');
+      _appendVerseNums(i, m[1]);
+      b.appendChild(i); el.appendChild(b);
+    } else if (m[2] !== undefined) {
+      const b = document.createElement('strong');
+      _appendVerseNums(b, m[2]); el.appendChild(b);
+    } else {
+      const i = document.createElement('em');
+      _appendVerseNums(i, m[3]); el.appendChild(i);
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) _appendVerseNums(el, text.slice(last));
 }
 
 // prose=true: numbers treated as scripture verse numbers (superscript inline)
@@ -286,11 +312,12 @@ function renderBodyText(el, text, prose = false) {
       return inAll;
     })()) {
       const b = document.createElement('strong');
-      b.textContent = ev.text;
+      // Use appendProseText so inline verse numbers inside ALL: lines still get <sup>
+      if (prose) appendProseText(b, ev.text); else b.textContent = ev.text;
       el.appendChild(b);
     } else if (blockItalic) {
       const em = document.createElement('em');
-      em.textContent = ev.text;
+      if (prose) appendProseText(em, ev.text); else em.textContent = ev.text;
       el.appendChild(em);
     } else if (prose) {
       appendProseText(el, ev.text);

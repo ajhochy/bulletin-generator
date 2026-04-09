@@ -13,6 +13,74 @@ function volSegments(teams) {
   return segs;
 }
 
+/**
+ * buildServingChunks(schedule, teamFilter, volFilter) → chunk[]
+ * Adapter that converts servingSchedule into the shared chunk contract.
+ * Each serving week-segment becomes one chunk with section:'serving'.
+ *
+ *   chunk.forceBreak      — resolved from _breakBefore flag and volSegments() si > 0
+ *   chunk.servingWeekIdx  — index into schedule.weeks[]
+ *   chunk.servingLabel    — display label ('Serving Today', 'Serving Next Week', etc.)
+ *   chunk.servingWeek     — the full week object from schedule.weeks[]
+ *   chunk.servingSegTeams — filtered teams for this segment (no page-break entries)
+ *   chunk.els             — empty; filled by renderServingWeek() at placement time
+ *
+ * Note: makeChunk() is defined in preview.js which loads after calendar.js, but
+ * buildServingChunks() is only ever called at render time (from renderPreview()),
+ * at which point preview.js is already loaded and makeChunk() is available.
+ *
+ * Called by: src/js/preview.js serving rendering block (Task 3 / #136).
+ */
+function buildServingChunks(schedule, teamFilter, volFilter) {
+  const sWeeks = schedule.weeks || [];
+  const chunks = [];
+
+  sWeeks.forEach((week, wi) => {
+    const allHidden = (week.teams || [])
+      .filter(t => t.type !== 'page-break')
+      .every(t => teamFilter[t.name] === false ||
+                  volFilter['w' + wi + ':' + (t.serviceTime || '') + ':' + t.name] === false);
+    if (allHidden) return;
+
+    const baseLabel = wi === 0 ? 'Serving Today'
+      : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
+
+    volSegments(week.teams).forEach((segTeams, si) => {
+      if (si > 0 && segTeams.length === 0) return;
+      const label = si === 0 ? baseLabel : baseLabel + ' (cont.)';
+      // forceBreak: week _breakBefore (first seg of a non-first week) OR intra-week continuation
+      const forceBreak = (si === 0 && wi > 0 && !!week._breakBefore) || si > 0;
+
+      // For intra-week breaks (si > 0), find the index of the si-th page-break in teams[].
+      // This is needed by the "Remove page break" handler to splice it out.
+      let teamBreakIdx = null;
+      if (si > 0) {
+        let breakCount = 0;
+        for (let ti = 0; ti < (week.teams || []).length; ti++) {
+          if (week.teams[ti]?.type === 'page-break') {
+            breakCount++;
+            if (breakCount === si) { teamBreakIdx = ti; break; }
+          }
+        }
+      }
+
+      chunks.push(makeChunk({
+        section:              'serving',
+        sourceId:             wi,
+        forceBreak,
+        servingWeekIdx:       wi,
+        servingLabel:         label,
+        servingWeek:          week,
+        servingSegTeams:      segTeams,
+        servingTeamBreakIdx:  teamBreakIdx,
+        els:                  [],
+      }));
+    });
+  });
+
+  return chunks;
+}
+
 function formatNameList(names) {
   if (!names || names.length === 0) return '—';
   if (names.length === 1) return names[0];
@@ -510,7 +578,10 @@ async function calFetchAll(force) {
   });
 
   try {
-    const resp = await fetch(`/cal?${params}`);
+    // When force=true (user clicked Refresh), bypass the browser HTTP cache so
+    // a previously-cached failure doesn't block recovery after a token refresh.
+    const fetchOpts = force ? { cache: 'no-store' } : {};
+    const resp = await fetch(`/cal?${params}`, fetchOpts);
     if (!resp.ok) {
       throw new Error(`Server returned HTTP ${resp.status}`);
     }
@@ -769,6 +840,33 @@ function buildCalendarSegments(church) {
   return segments;
 }
 
+/**
+ * buildCalendarChunks(church) → chunk[]
+ * Adapter that wraps buildCalendarSegments() output into the shared chunk contract.
+ * Each calendar day group becomes one chunk with section:'calendar'.
+ *
+ *   chunk.sourceId = seg.date || null  (null for first/title segment)
+ *   chunk.calDate  = seg.date || ''    (ISO date string or '' — used by break controls)
+ *   chunk.els      = [seg.el]
+ *
+ * forceBreak is NOT resolved here — the preview rendering loop determines it from
+ * breakBeforeCalendar and calBreakBeforeDates at render time and stamps it then.
+ *
+ * Note: makeChunk() is defined in preview.js which loads after calendar.js, but
+ * buildCalendarChunks() is only ever called at render time (from renderPreview()),
+ * at which point preview.js is already loaded and makeChunk() is available.
+ *
+ * Called by: src/js/preview.js calendar rendering block (Task 3 / #132).
+ */
+function buildCalendarChunks(church) {
+  return buildCalendarSegments(church).map(seg => makeChunk({
+    section:  'calendar',
+    sourceId: seg.date || null,
+    calDate:  seg.date || '',
+    els:      [seg.el],
+  }));
+}
+
 function renderServingTeam(container, team, weekIdx, teamIdx) {
   // Team name subheading removed — only position rows are shown
   team.positions.forEach(pos => {
@@ -807,19 +905,9 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     visibleTeams.forEach((team, vi) => {
       if (vi > 0) {
         const teamIdx = (weekData.teams || []).indexOf(team);
-        const ctrl = document.createElement('div');
-        ctrl.className = 'pg-split-ctrl';
-        ctrl.dataset.splitType = 'serving';
-        ctrl.dataset.servingWeekIdx = weekIdx;
-        ctrl.dataset.servingBoundary = 'team';
-        ctrl.dataset.servingInsertBeforeIdx = teamIdx;
-        const ll = document.createElement('div'); ll.className = 'pg-split-line';
-        const btn = document.createElement('button');
-        btn.className = 'pg-split-add-btn';
-        btn.textContent = '⊞ Break here';
-        const rl = document.createElement('div'); rl.className = 'pg-split-line';
-        ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-        container.appendChild(ctrl);
+        container.appendChild(makeSplitCtrlEl(makeBreakSrc('serving-split', {
+          weekIdx, boundary: 'team', insertBeforeIdx: teamIdx,
+        })));
       }
       const teamIdx = (weekData.teams || []).indexOf(team);
       renderServingTeam(container, team, weekIdx, teamIdx);
@@ -840,19 +928,9 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     if (groupIdx > 0) {
       const firstTeam = timeGroups[svcTime][0];
       const insertBeforeIdx = (weekData.teams || []).indexOf(firstTeam);
-      const ctrl = document.createElement('div');
-      ctrl.className = 'pg-split-ctrl';
-      ctrl.dataset.splitType = 'serving';
-      ctrl.dataset.servingWeekIdx = weekIdx;
-      ctrl.dataset.servingBoundary = 'team';
-      ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
-      const ll = document.createElement('div'); ll.className = 'pg-split-line';
-      const btn = document.createElement('button');
-      btn.className = 'pg-split-add-btn';
-      btn.textContent = '⊞ Break here';
-      const rl = document.createElement('div'); rl.className = 'pg-split-line';
-      ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-      container.appendChild(ctrl);
+      container.appendChild(makeSplitCtrlEl(makeBreakSrc('serving-split', {
+        weekIdx, boundary: 'team', insertBeforeIdx,
+      })));
     }
     if (svcTime) {
       const stLabel = document.createElement('div');

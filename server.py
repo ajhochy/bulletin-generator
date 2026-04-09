@@ -1629,17 +1629,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             else:
                 result = fetch_and_parse_calendars(urls, exclude)
 
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Cache-Control', 'max-age=900')
-            self._cors_headers()
-            self.end_headers()
-
             if result is None:
                 payload = {'ok': False, 'events': [], 'error': 'All calendar fetches failed.'}
             else:
                 payload = {'ok': True, 'events': result}
 
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            # Only cache successful responses — failures must not be cached so that a
+            # token refresh on the next request has a chance to succeed immediately.
+            cache_ctrl = 'max-age=900' if payload['ok'] else 'no-store'
+            self.send_header('Cache-Control', cache_ctrl)
+            self._cors_headers()
+            self.end_headers()
             self.wfile.write(json.dumps(payload).encode())
 
         except Exception as e:
