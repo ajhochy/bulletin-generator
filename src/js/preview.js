@@ -1031,27 +1031,25 @@ function renderPreview() {
     pages.forEach((pageItems, pi) => {
       const servingContent = document.createElement('div');
       servingContent.classList.add('preview-linkable');
-      servingContent.dataset.previewSection = 'volunteers';
+      applyPreviewLinkMeta(servingContent, { section: 'serving' });
       pageItems.forEach(({ week, segTeams, label }, itemIdx) => {
         const weekIdx = (servingSchedule.weeks || []).indexOf(week);
         if (itemIdx > 0) {
           const prevItem = pageItems[itemIdx - 1];
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-split-ctrl';
-          ctrl.dataset.splitType = 'serving';
-          ctrl.dataset.servingWeekIdx = weekIdx;
-          if (prevItem.week === week) {
-            const firstTeam = (segTeams || []).find(t => t && t.type !== 'page-break');
-            const insertBeforeIdx = firstTeam ? (week.teams || []).indexOf(firstTeam) : -1;
-            ctrl.dataset.servingBoundary = 'team';
-            ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
-          } else {
-            ctrl.dataset.servingBoundary = 'week';
-          }
+          const isSameWeek = prevItem.week === week;
+          const firstTeam = isSameWeek ? (segTeams || []).find(t => t && t.type !== 'page-break') : null;
+          const insertBeforeIdx = firstTeam ? (week.teams || []).indexOf(firstTeam) : -1;
+          const srvSplitLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc('serving-split', {
+            weekIdx,
+            boundary: isSameWeek ? 'team' : 'week',
+            insertBeforeIdx: isSameWeek ? insertBeforeIdx : '',
+          }));
           const ll = document.createElement('div'); ll.className = 'pg-split-line';
           const btn = document.createElement('button');
           btn.className = 'pg-split-add-btn';
-          btn.textContent = '⊞ Break here';
+          btn.textContent = srvSplitLabel;
           const rl = document.createElement('div'); rl.className = 'pg-split-line';
           ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
           servingContent.appendChild(ctrl);
@@ -1075,14 +1073,12 @@ function renderPreview() {
         if (lastRenderedPageEl) {
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-break-ctrl';
-          const src = pageSources[pi - 1] || {};
-          ctrl.dataset.breakType = src.type || 'serving-team';
-          ctrl.dataset.servingWeekIdx = src.weekIdx ?? '';
-          ctrl.dataset.servingTeamBreakIdx = src.teamBreakIdx ?? '';
+          const src = pageSources[pi - 1] || makeBreakSrc('serving-team', {});
+          const srvBrkLabel = applyBreakCtrlMeta(ctrl, src);
           const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
           const btn = document.createElement('button');
           btn.className = 'pg-break-remove-btn';
-          btn.textContent = '✕ Remove page break';
+          btn.textContent = srvBrkLabel;
           const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
           ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
           lastRenderedPageEl.after(ctrl);
@@ -1564,7 +1560,7 @@ previewPane.addEventListener('click', e => {
       return;
     }
 
-    if (ctrl.dataset.splitType === 'serving') {
+    if (ctrl.dataset.breakType === 'serving-split') {
       const weekIdx = parseInt(ctrl.dataset.servingWeekIdx, 10);
       if (!Number.isInteger(weekIdx) || !servingSchedule?.weeks?.[weekIdx]) return;
       if (ctrl.dataset.servingBoundary === 'week') {
