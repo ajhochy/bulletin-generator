@@ -751,18 +751,9 @@ function renderPreview() {
         if (ci > 0) {
           const prev = pageChunks[ci - 1];
           if (prev.annIdx >= 0 && chunk.annIdx >= 0) {
-            const ctrl = document.createElement('div');
-            ctrl.className = 'pg-split-ctrl';
-            ctrl.dataset.splitType    = 'ann';
-            ctrl.dataset.annAfterIdx  = prev.annIdx;
-            ctrl.dataset.annBeforeIdx = chunk.annIdx;
-            const ll  = document.createElement('div'); ll.className = 'pg-split-line';
-            const btn = document.createElement('button');
-            btn.className   = 'pg-split-add-btn';
-            btn.textContent = '⊞ Break here';
-            const rl  = document.createElement('div'); rl.className = 'pg-split-line';
-            ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-            pg.appendChild(ctrl);
+            pg.appendChild(makeSplitCtrlEl(makeBreakSrc('ann-split', {
+              annAfterIdx: prev.annIdx, annBeforeIdx: chunk.annIdx,
+            })));
           }
         }
         pg.appendChild(chunk.el);
@@ -829,15 +820,7 @@ function renderPreview() {
     // Build the pg-break-ctrl for the ann/OOW boundary (visible only if ann pages exist).
     let oowBoundaryCtrl = null;
     if (annLastPageEl !== null) {
-      oowBoundaryCtrl = document.createElement('div');
-      oowBoundaryCtrl.className = 'pg-break-ctrl';
-      oowBoundaryCtrl.dataset.breakType = doMergeOOW ? 'oow-merged' : 'oow-auto';
-      const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-      const btn = document.createElement('button');
-      btn.className = 'pg-break-remove-btn';
-      btn.textContent = doMergeOOW ? '↓ Start worship on its own page' : '↑ Continue worship on announcements page';
-      const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-      oowBoundaryCtrl.appendChild(ll); oowBoundaryCtrl.appendChild(btn); oowBoundaryCtrl.appendChild(rl);
+      oowBoundaryCtrl = makeBreakCtrlEl(makeBreakSrc(doMergeOOW ? 'oow-merged' : 'oow-auto', {}));
     }
 
     // Pack chunks into pages.
@@ -1003,19 +986,11 @@ function renderPreview() {
     const doMerge  = bottomMerge[mergeKey] && fits;
 
     // Build the pg-break-ctrl that always appears to let the user toggle.
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-    ctrl.dataset.breakType     = doMerge ? 'bottom-merged' : 'bottom-auto';
-    ctrl.dataset.bottomSection = mergeKey;
+    const ctrl = makeBreakCtrlEl(makeBreakSrc(doMerge ? 'bottom-merged' : 'bottom-auto', {
+      bottomSection: mergeKey, fits: fits ? '1' : '0',
+    }));
     // Only show the "push up" option when content actually fits on the previous page.
-    ctrl.dataset.fits = fits ? '1' : '0';
-    const ll  = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = doMerge ? '↓ Move to own page' : '↑ Push up to previous page';
-    if (!fits && !doMerge) btn.disabled = true; // grayed-out when it won't fit
-    const rl  = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+    if (!fits && !doMerge) ctrl.querySelector('.pg-break-remove-btn').disabled = true;
 
     if (doMerge) {
       // Merged: add a thin separator rule then the content inside the existing page.
@@ -1081,22 +1056,14 @@ function renderPreview() {
       pageChunks.forEach((chunk, itemIdx) => {
         if (itemIdx > 0) {
           const prevChunk = pageChunks[itemIdx - 1];
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-split-ctrl';
           const isSameWeek = prevChunk.servingWeekIdx === chunk.servingWeekIdx;
           const firstTeam = isSameWeek ? (chunk.servingSegTeams || []).find(t => t && t.type !== 'page-break') : null;
           const insertBeforeIdx = firstTeam ? (chunk.servingWeek.teams || []).indexOf(firstTeam) : -1;
-          const srvSplitLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc('serving-split', {
+          const ctrl = makeSplitCtrlEl(makeBreakSrc('serving-split', {
             weekIdx: chunk.servingWeekIdx,
             boundary: isSameWeek ? 'team' : 'week',
             insertBeforeIdx: isSameWeek ? insertBeforeIdx : '',
           }));
-          const ll = document.createElement('div'); ll.className = 'pg-split-line';
-          const btn = document.createElement('button');
-          btn.className = 'pg-split-add-btn';
-          btn.textContent = srvSplitLabel;
-          const rl = document.createElement('div'); rl.className = 'pg-split-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
           servingContent.appendChild(ctrl);
         }
         renderServingWeek(servingContent, { ...chunk.servingWeek, teams: chunk.servingSegTeams }, chunk.servingLabel, chunk.servingWeekIdx);
@@ -1117,16 +1084,8 @@ function renderPreview() {
           pg.appendChild(footer);
         }
         if (lastRenderedPageEl) {
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-break-ctrl';
           const src = pageSources[pi - 1] || makeBreakSrc('serving-team', {});
-          const srvBrkLabel = applyBreakCtrlMeta(ctrl, src);
-          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-          const btn = document.createElement('button');
-          btn.className = 'pg-break-remove-btn';
-          btn.textContent = srvBrkLabel;
-          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          const ctrl = makeBreakCtrlEl(src);
           lastRenderedPageEl.after(ctrl);
           ctrl.after(pg);
         } else previewPane.appendChild(pg);
@@ -1161,15 +1120,7 @@ function renderPreview() {
           pg.appendChild(footer);
         }
         if (lastRenderedPageEl) {
-          const ctrl = document.createElement('div');
-          ctrl.className = 'pg-break-ctrl';
-          const calBrkLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: chunk.calDate }));
-          const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
-          const btn = document.createElement('button');
-          btn.className   = 'pg-break-remove-btn';
-          btn.textContent = calBrkLabel;
-          const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
-          ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+          const ctrl = makeBreakCtrlEl(makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: chunk.calDate }));
           lastRenderedPageEl.after(ctrl);
           ctrl.after(pg);
         } else {
@@ -1185,15 +1136,7 @@ function renderPreview() {
         // or overflow to a new page. No merge toggle (use the calendar editor's break buttons
         // to place explicit breaks between days).
         const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
-        const splitCtrl = document.createElement('div');
-        splitCtrl.className = 'pg-split-ctrl';
-        const calSplitLabel = applyBreakCtrlMeta(splitCtrl, makeBreakSrc('cal-split', { calDayDate: chunk.calDate }));
-        const ll = document.createElement('div'); ll.className = 'pg-split-line';
-        const btn = document.createElement('button');
-        btn.className = 'pg-split-add-btn';
-        btn.textContent = calSplitLabel;
-        const rl = document.createElement('div'); rl.className = 'pg-split-line';
-        splitCtrl.appendChild(ll); splitCtrl.appendChild(btn); splitCtrl.appendChild(rl);
+        const splitCtrl = makeSplitCtrlEl(makeBreakSrc('cal-split', { calDayDate: chunk.calDate }));
         const contentH = measureBottomContent(calContent);
         if (lastRenderedPageEl !== null && lastPageUsedH + contentH <= AVAIL_H) {
           lastRenderedPageEl.appendChild(splitCtrl);
@@ -1405,15 +1348,7 @@ function updatePrintBtn() {
 function addBreakControls(renderedPageEls, pageBreakSources) {
   pageBreakSources.forEach((src, i) => {
     const afterPage = renderedPageEls[i];
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-    const label = applyBreakCtrlMeta(ctrl, src);
-    const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = label;
-    const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+    const ctrl = makeBreakCtrlEl(src);
     afterPage.after(ctrl);
   });
 }
@@ -1424,15 +1359,7 @@ function addBreakControls(renderedPageEls, pageBreakSources) {
 function addAnnBreakControls(renderedAnnPageEls, annPageBreakSources) {
   annPageBreakSources.forEach((src, i) => {
     const afterPage = renderedAnnPageEls[i];
-    const ctrl = document.createElement('div');
-    ctrl.className = 'pg-break-ctrl';
-    const label = applyBreakCtrlMeta(ctrl, src);
-    const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
-    const btn = document.createElement('button');
-    btn.className   = 'pg-break-remove-btn';
-    btn.textContent = label;
-    const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
-    ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+    const ctrl = makeBreakCtrlEl(src);
     afterPage.after(ctrl);
   });
 }
@@ -1587,7 +1514,7 @@ previewPane.addEventListener('click', e => {
     if (!ctrl) return;
 
     // Announcement split: set _breakBefore on the "before" item
-    if (ctrl.dataset.splitType === 'ann') {
+    if (ctrl.dataset.breakType === 'ann-split') {
       const beforeIdx = parseInt(ctrl.dataset.annBeforeIdx, 10);
       if (Number.isInteger(beforeIdx) && annData[beforeIdx]) {
         annData[beforeIdx]._breakBefore = true;
