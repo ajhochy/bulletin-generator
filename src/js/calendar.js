@@ -51,15 +51,29 @@ function buildServingChunks(schedule, teamFilter, volFilter) {
       // forceBreak: week _breakBefore (first seg of a non-first week) OR intra-week continuation
       const forceBreak = (si === 0 && wi > 0 && !!week._breakBefore) || si > 0;
 
+      // For intra-week breaks (si > 0), find the index of the si-th page-break in teams[].
+      // This is needed by the "Remove page break" handler to splice it out.
+      let teamBreakIdx = null;
+      if (si > 0) {
+        let breakCount = 0;
+        for (let ti = 0; ti < (week.teams || []).length; ti++) {
+          if (week.teams[ti]?.type === 'page-break') {
+            breakCount++;
+            if (breakCount === si) { teamBreakIdx = ti; break; }
+          }
+        }
+      }
+
       chunks.push(makeChunk({
-        section:         'serving',
-        sourceId:        wi,
+        section:              'serving',
+        sourceId:             wi,
         forceBreak,
-        servingWeekIdx:  wi,
-        servingLabel:    label,
-        servingWeek:     week,
-        servingSegTeams: segTeams,
-        els:             [],
+        servingWeekIdx:       wi,
+        servingLabel:         label,
+        servingWeek:          week,
+        servingSegTeams:      segTeams,
+        servingTeamBreakIdx:  teamBreakIdx,
+        els:                  [],
       }));
     });
   });

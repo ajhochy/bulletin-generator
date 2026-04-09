@@ -221,6 +221,7 @@ function makeChunk(fields) {
     servingLabel:          fields.servingLabel          ?? null,
     servingWeek:           fields.servingWeek           ?? null,
     servingSegTeams:       fields.servingSegTeams       ?? null,
+    servingTeamBreakIdx:   fields.servingTeamBreakIdx   ?? null,
   };
 }
 
@@ -997,62 +998,42 @@ function renderPreview() {
 
   // ── Serving schedule ────────────────────────────────────────────────────────
   if (servingSchedule && optVolunteers.checked) {
-    const sWeeks = servingSchedule.weeks || [];
+    const srvChunks = buildServingChunks(servingSchedule, servingTeamFilter, volTeamFilter);
 
-    // Build rendering pages: each entry is an array of {week, segTeams, label}.
+    // Pack chunks into pages[] using pre-resolved forceBreak flags.
     // pageSources[i] explains why serving page (i+1) started.
     const pages = [[]];
     const pageSources = [];
-    sWeeks.forEach((week, wi) => {
-      const allHidden = (week.teams || []).filter(t => t.type !== 'page-break').every(
-        t => servingTeamFilter[t.name] === false || volTeamFilter['w'+wi+':'+(t.serviceTime||'')+':'+t.name] === false
-      );
-      if (allHidden) return; // skip entire week including header
-      const baseLabel = wi === 0 ? 'Serving Today' : (sWeeks.length === 2 ? 'Serving Next Week' : week.date || `Week ${wi + 1}`);
-      // A _breakBefore flag on a week (wi > 0) forces it onto a new page
-      if (wi > 0 && week._breakBefore) {
-        pages.push([]);
-        pageSources.push(makeBreakSrc('serving-week', { weekIdx: wi }));
-      }
-      volSegments(week.teams).forEach((segTeams, si) => {
-        // Skip empty continuation segments (e.g. page break placed after last team)
-        if (si > 0 && segTeams.length === 0) return;
-        const label = si === 0 ? baseLabel : baseLabel + ' (cont.)';
-        if (si === 0) {
-          pages[pages.length - 1].push({ week, segTeams, label });
+    srvChunks.forEach(chunk => {
+      if (chunk.forceBreak && pages[pages.length - 1].length > 0) {
+        const prevChunk = pages[pages.length - 1][pages[pages.length - 1].length - 1];
+        if (prevChunk && prevChunk.servingWeekIdx === chunk.servingWeekIdx) {
+          pageSources.push(makeBreakSrc('serving-team', {
+            weekIdx: chunk.servingWeekIdx,
+            teamBreakIdx: chunk.servingTeamBreakIdx,
+          }));
         } else {
-          let teamBreakIdx = -1;
-          let breakCount = 0;
-          for (let ti = 0; ti < (week.teams || []).length; ti++) {
-            if (week.teams[ti]?.type === 'page-break') {
-              breakCount++;
-              if (breakCount === si) {
-                teamBreakIdx = ti;
-                break;
-              }
-            }
-          }
-          pages.push([{ week, segTeams, label }]);
-          pageSources.push(makeBreakSrc('serving-team', { weekIdx: wi, teamBreakIdx }));
+          pageSources.push(makeBreakSrc('serving-week', { weekIdx: chunk.servingWeekIdx }));
         }
-      });
+        pages.push([]);
+      }
+      pages[pages.length - 1].push(chunk);
     });
 
-    pages.forEach((pageItems, pi) => {
+    pages.forEach((pageChunks, pi) => {
       const servingContent = document.createElement('div');
       servingContent.classList.add('preview-linkable');
       applyPreviewLinkMeta(servingContent, { section: 'serving' });
-      pageItems.forEach(({ week, segTeams, label }, itemIdx) => {
-        const weekIdx = (servingSchedule.weeks || []).indexOf(week);
+      pageChunks.forEach((chunk, itemIdx) => {
         if (itemIdx > 0) {
-          const prevItem = pageItems[itemIdx - 1];
+          const prevChunk = pageChunks[itemIdx - 1];
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-split-ctrl';
-          const isSameWeek = prevItem.week === week;
-          const firstTeam = isSameWeek ? (segTeams || []).find(t => t && t.type !== 'page-break') : null;
-          const insertBeforeIdx = firstTeam ? (week.teams || []).indexOf(firstTeam) : -1;
+          const isSameWeek = prevChunk.servingWeekIdx === chunk.servingWeekIdx;
+          const firstTeam = isSameWeek ? (chunk.servingSegTeams || []).find(t => t && t.type !== 'page-break') : null;
+          const insertBeforeIdx = firstTeam ? (chunk.servingWeek.teams || []).indexOf(firstTeam) : -1;
           const srvSplitLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc('serving-split', {
-            weekIdx,
+            weekIdx: chunk.servingWeekIdx,
             boundary: isSameWeek ? 'team' : 'week',
             insertBeforeIdx: isSameWeek ? insertBeforeIdx : '',
           }));
@@ -1064,7 +1045,8 @@ function renderPreview() {
           ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
           servingContent.appendChild(ctrl);
         }
-        renderServingWeek(servingContent, { ...week, teams: segTeams }, label, weekIdx);
+        renderServingWeek(servingContent, { ...chunk.servingWeek, teams: chunk.servingSegTeams }, chunk.servingLabel, chunk.servingWeekIdx);
+        chunk.els = [servingContent];
       });
       if (pi === 0) {
         appendBottomSection(servingContent, 'serving');
