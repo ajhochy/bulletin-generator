@@ -205,6 +205,57 @@ function makeBreakSrc(type, fields) {
   return Object.assign({ type }, fields);
 }
 
+// ─── Preview control metadata helpers ────────────────────────────────────────
+/**
+ * applySplitCtrlMeta(el, afterChunk, beforeChunk)
+ * Stamps data-* attributes on a .pg-split-ctrl element.
+ * afterChunk  — the chunk just above the control (already rendered)
+ * beforeChunk — the chunk just below the control (not yet rendered)
+ */
+function applySplitCtrlMeta(el, afterChunk, beforeChunk) {
+  el.dataset.splitAfterItemIdx       = afterChunk.itemIdx  ?? '';
+  el.dataset.splitAfterStanzaIdx     = afterChunk.stanzaIdx  ?? '';
+  el.dataset.splitBeforeItemIdx      = beforeChunk.itemIdx ?? '';
+  el.dataset.splitBeforeStanzaIdx    = beforeChunk.stanzaIdx ?? '';
+  el.dataset.splitBeforeParagraphIdx = beforeChunk.paragraphIdx ?? '';
+}
+
+/**
+ * applyBreakCtrlMeta(el, src) → label string
+ * Stamps data-* attributes on a .pg-break-ctrl element from a break-source entry.
+ * Returns the button label so the caller can set btn.textContent.
+ * Extend this function when adding break types for new sections.
+ */
+function applyBreakCtrlMeta(el, src) {
+  el.dataset.breakType = src.type;
+  switch (src.type) {
+    case 'item':
+      el.dataset.breakItemIdx = src.breakItemIdx;
+      return '✕ Remove page break';
+    case 'separator':
+      el.dataset.separatorItemIdx   = src.separatorItemIdx;
+      el.dataset.separatorStanzaIdx = src.separatorStanzaIdx;
+      return '✕ Remove break (lyrics)';
+    case 'liturgy-para':
+      el.dataset.paragraphBreakItemIdx = src.paragraphBreakItemIdx;
+      el.dataset.paragraphBreakIdx     = src.paragraphBreakIdx;
+      return '✕ Remove break (liturgy)';
+    case 'auto':
+      el.dataset.breakItemIdx      = src.itemIdx;
+      el.dataset.breakStanzaIdx    = src.stanzaIdx ?? '';
+      el.dataset.breakParagraphIdx = src.paragraphIdx ?? '';
+      return '✕ Merge with previous page';
+    case 'ann-item':
+      el.dataset.annIdx = src.annIdx;
+      return '✕ Remove page break';
+    case 'ann-auto':
+      el.dataset.annIdx = src.annIdx;
+      return '✕ Merge with previous page';
+    default:
+      return '✕ Remove break';
+  }
+}
+
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
@@ -763,11 +814,7 @@ function renderPreview() {
           const prev = pageChunks[ci - 1];
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-split-ctrl';
-          ctrl.dataset.splitAfterItemIdx      = prev.itemIdx;
-          ctrl.dataset.splitAfterStanzaIdx   = prev.stanzaIdx ?? '';
-          ctrl.dataset.splitBeforeItemIdx    = chunk.itemIdx;
-          ctrl.dataset.splitBeforeStanzaIdx  = chunk.stanzaIdx ?? '';
-          ctrl.dataset.splitBeforeParagraphIdx = chunk.paragraphIdx ?? '';
+          applySplitCtrlMeta(ctrl, prev, chunk);
           const ll = document.createElement('div'); ll.className = 'pg-split-line';
           const btn = document.createElement('button');
           btn.className = 'pg-split-add-btn';
@@ -1255,39 +1302,13 @@ function addBreakControls(renderedPageEls, pageBreakSources) {
     const afterPage = renderedPageEls[i];
     const ctrl = document.createElement('div');
     ctrl.className = 'pg-break-ctrl';
-
-    let label;
-    if (src.type === 'item') {
-      label = '✕ Remove page break';
-      ctrl.dataset.breakType    = 'item';
-      ctrl.dataset.breakItemIdx = src.breakItemIdx;
-    } else if (src.type === 'separator') {
-      label = '✕ Remove break (lyrics)';
-      ctrl.dataset.breakType          = 'separator';
-      ctrl.dataset.separatorItemIdx   = src.separatorItemIdx;
-      ctrl.dataset.separatorStanzaIdx = src.separatorStanzaIdx;
-    } else if (src.type === 'liturgy-para') {
-      label = '✕ Remove break (liturgy)';
-      ctrl.dataset.breakType             = 'liturgy-para';
-      ctrl.dataset.paragraphBreakItemIdx = src.paragraphBreakItemIdx;
-      ctrl.dataset.paragraphBreakIdx     = src.paragraphBreakIdx;
-    } else {
-      // auto break
-      label = '✕ Merge with previous page';
-      ctrl.dataset.breakType      = 'auto';
-      ctrl.dataset.breakItemIdx   = src.itemIdx;
-      ctrl.dataset.breakStanzaIdx = src.stanzaIdx ?? '';
-      ctrl.dataset.breakParagraphIdx = src.paragraphIdx ?? '';
-    }
-
+    const label = applyBreakCtrlMeta(ctrl, src);
     const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
     const btn = document.createElement('button');
     btn.className   = 'pg-break-remove-btn';
     btn.textContent = label;
     const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
     ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-
-    // Insert the control immediately after the page element in the DOM.
     afterPage.after(ctrl);
   });
 }
@@ -1300,25 +1321,13 @@ function addAnnBreakControls(renderedAnnPageEls, annPageBreakSources) {
     const afterPage = renderedAnnPageEls[i];
     const ctrl = document.createElement('div');
     ctrl.className = 'pg-break-ctrl';
-
-    let label;
-    if (src.type === 'ann-item') {
-      label = '✕ Remove page break';
-      ctrl.dataset.breakType = 'ann-item';
-      ctrl.dataset.annIdx    = src.annIdx;
-    } else {
-      label = '✕ Merge with previous page';
-      ctrl.dataset.breakType = 'ann-auto';
-      ctrl.dataset.annIdx    = src.annIdx;
-    }
-
+    const label = applyBreakCtrlMeta(ctrl, src);
     const ll  = document.createElement('div'); ll.className  = 'pg-break-ctrl-line';
     const btn = document.createElement('button');
     btn.className   = 'pg-break-remove-btn';
     btn.textContent = label;
     const rl  = document.createElement('div'); rl.className  = 'pg-break-ctrl-line';
     ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-
     afterPage.after(ctrl);
   });
 }
