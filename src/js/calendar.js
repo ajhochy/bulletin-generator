@@ -769,6 +769,33 @@ function buildCalendarSegments(church) {
   return segments;
 }
 
+/**
+ * buildCalendarChunks(church) → chunk[]
+ * Adapter that wraps buildCalendarSegments() output into the shared chunk contract.
+ * Each calendar day group becomes one chunk with section:'calendar'.
+ *
+ *   chunk.sourceId = seg.date || null  (null for first/title segment)
+ *   chunk.calDate  = seg.date || ''    (ISO date string or '' — used by break controls)
+ *   chunk.els      = [seg.el]
+ *
+ * forceBreak is NOT resolved here — the preview rendering loop determines it from
+ * breakBeforeCalendar and calBreakBeforeDates at render time and stamps it then.
+ *
+ * Note: makeChunk() is defined in preview.js which loads after calendar.js, but
+ * buildCalendarChunks() is only ever called at render time (from renderPreview()),
+ * at which point preview.js is already loaded and makeChunk() is available.
+ *
+ * Called by: src/js/preview.js calendar rendering block (Task 3 / #132).
+ */
+function buildCalendarChunks(church) {
+  return buildCalendarSegments(church).map(seg => makeChunk({
+    section:  'calendar',
+    sourceId: seg.date || null,
+    calDate:  seg.date || '',
+    els:      [seg.el],
+  }));
+}
+
 function renderServingTeam(container, team, weekIdx, teamIdx) {
   // Team name subheading removed — only position rows are shown
   team.positions.forEach(pos => {

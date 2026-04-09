@@ -105,6 +105,8 @@ function buildPreviewItemEl(item, idx) {
 //   itemIdx:               number|null      — items[] index (OOW only; equals sourceId for OOW)
 //   stanzaIdx:             number|null      — global stanza index (song chunks only)
 //   paragraphIdx:          number|null      — paragraph index (liturgy/label chunks only)
+//   // Calendar-specific (null for non-calendar sections):
+//   calDate:               string|null      — 'YYYY-MM-DD' or null (calendar segments only; '' for title segment)
 // }
 //
 // ── BREAK-SOURCE CONTRACT ──────────────────────────────────────────────────────
@@ -202,6 +204,8 @@ function makeChunk(fields) {
     itemIdx:               fields.itemIdx               ?? null,
     stanzaIdx:             fields.stanzaIdx             ?? null,
     paragraphIdx:          fields.paragraphIdx          ?? null,
+    // Calendar-specific (null for non-calendar sections)
+    calDate:               fields.calDate               ?? null,
   };
 }
 
