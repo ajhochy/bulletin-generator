@@ -129,6 +129,11 @@ function buildPreviewItemEl(item, idx) {
 // Serving break types:
 //   { type: 'serving-week', weekIdx }   — forced break before a serving week
 //
+// Calendar break types:
+//   { type: 'cal-force', calDayDate: '' }           — whole calendar section forced to new page
+//   { type: 'cal-day',   calDayDate: 'YYYY-MM-DD' } — forced break before a specific day group
+//   { type: 'cal-split', calDayDate: 'YYYY-MM-DD' } — "Break here" split control between day groups
+//
 // ── PREVIEW CONTROL METADATA ───────────────────────────────────────────────────
 // Split controls (.pg-split-ctrl) carry data-* attributes describing the two
 // adjacent chunks at the boundary.  Set via applySplitCtrlMeta() [Task 3 / #127]:
@@ -153,6 +158,7 @@ function buildPreviewItemEl(item, idx) {
 //   data-breakAutoParagraphIdx    — (type:'auto') paragraph index
 //   data-bottomSection            — (type:'bottom-*') section key ('serving'|'calendar'|'staff')
 //   data-fits                     — (type:'bottom-*') '1' if content fits on prior page, else '0'
+//   data-calDayDate               — (type:'cal-force'|'cal-day'|'cal-split') ISO date or ''
 //
 // ── PREVIEW-TO-EDITOR NAVIGATION CONTRACT ─────────────────────────────────────
 // Elements with class .preview-linkable are clickable in the preview pane to
@@ -163,6 +169,10 @@ function buildPreviewItemEl(item, idx) {
 //     data-previewIdx      — items[] index
 //     data-stanzaIdx       — global stanza index (song chunks; omitted if null)
 //     data-paragraphIdx    — paragraph index (liturgy/label chunks; omitted if null)
+//
+//   Calendar items:
+//     data-previewSection  — 'calendar' (routes to scrollEditorToSection)
+//     data-calDate         — 'YYYY-MM-DD' or '' for first/title segment
 //
 //   Future sections: extend applyPreviewLinkMeta() with a section-specific branch.
 //
@@ -251,6 +261,15 @@ function applyBreakCtrlMeta(el, src) {
     case 'ann-auto':
       el.dataset.annIdx = src.annIdx;
       return '✕ Merge with previous page';
+    case 'cal-force':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '✕ Remove "start on new page"';
+    case 'cal-day':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '✕ Remove calendar break';
+    case 'cal-split':
+      el.dataset.calDayDate = src.calDayDate ?? '';
+      return '⊞ Break here';
     default:
       return '✕ Remove break';
   }
@@ -273,8 +292,11 @@ function applyPreviewLinkMeta(el, chunk) {
     if (chunk.itemIdx      != null) el.dataset.previewIdx   = chunk.itemIdx;
     if (chunk.stanzaIdx    != null) el.dataset.stanzaIdx    = chunk.stanzaIdx;
     if (chunk.paragraphIdx != null) el.dataset.paragraphIdx = chunk.paragraphIdx;
+  } else if (chunk.section === 'calendar') {
+    el.dataset.previewSection = 'calendar';
+    if (chunk.calDate != null) el.dataset.calDate = chunk.calDate;
   }
-  // Other sections: extend here when migrating (see #119, #120, #123)
+  // Other sections: extend here when migrating (see #119, #123)
 }
 
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
