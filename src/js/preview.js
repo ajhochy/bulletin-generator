@@ -1077,15 +1077,17 @@ function renderPreview() {
 
   // ── Calendar ────────────────────────────────────────────────────────────────
   if (optCal.checked) {
-    const segments = buildCalendarSegments(church);
-    segments.forEach((seg, si) => {
+    const calChunks = buildCalendarChunks(church);
+    calChunks.forEach((chunk, si) => {
       const calContent = document.createElement('div');
       calContent.classList.add('preview-linkable');
-      applyPreviewLinkMeta(calContent, { section: 'calendar', calDate: seg.date || '' });
-      calContent.appendChild(seg.el);
+      applyPreviewLinkMeta(calContent, chunk);
+      calContent.appendChild(chunk.els[0]);
 
       const forceNew = (si === 0 && breakBeforeCalendar) ||
-                       (si > 0 && calBreakBeforeDates.includes(seg.date));
+                       (si > 0 && calBreakBeforeDates.includes(chunk.calDate));
+      chunk.forceBreak = forceNew;
+
       if (forceNew) {
         const contentH = measureBottomContent(calContent);
         const pg = document.createElement('div');
@@ -1100,7 +1102,7 @@ function renderPreview() {
         if (lastRenderedPageEl) {
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-break-ctrl';
-          const calBrkLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: seg.date || '' }));
+          const calBrkLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: chunk.calDate }));
           const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
           const btn = document.createElement('button');
           btn.className   = 'pg-break-remove-btn';
@@ -1115,16 +1117,16 @@ function renderPreview() {
         lastRenderedPageEl = pg;
         lastPageUsedH      = contentH;
       } else if (si === 0) {
-        // First segment: use appendBottomSection to control serving→calendar merge toggle
+        // First chunk: use appendBottomSection to control serving→calendar merge toggle
         appendBottomSection(calContent, 'calendar');
       } else {
-        // Subsequent segments without a forced break: continuation — fit onto current page
+        // Subsequent chunks without a forced break: continuation — fit onto current page
         // or overflow to a new page. No merge toggle (use the calendar editor's break buttons
         // to place explicit breaks between days).
         const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
         const splitCtrl = document.createElement('div');
         splitCtrl.className = 'pg-split-ctrl';
-        const calSplitLabel = applyBreakCtrlMeta(splitCtrl, makeBreakSrc('cal-split', { calDayDate: seg.date || '' }));
+        const calSplitLabel = applyBreakCtrlMeta(splitCtrl, makeBreakSrc('cal-split', { calDayDate: chunk.calDate }));
         const ll = document.createElement('div'); ll.className = 'pg-split-line';
         const btn = document.createElement('button');
         btn.className = 'pg-split-add-btn';
