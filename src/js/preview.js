@@ -68,19 +68,107 @@ function buildPreviewItemEl(item, idx) {
   }
 }
 
-// ─── Build page chunks for the interior page-split algorithm ─────────────────
-// Each chunk = {
-//   els: HTMLElement[],          — DOM elements for this chunk
-//   forceBreak: boolean,         — if true, always start a new page here
-//   breakItemIdx: number|null,   — items[] index of a page-break item (if forceBreak)
-//   separatorItemIdx: number|null, — items[] index of song item containing a --- (if forceBreak)
-//   separatorStanzaIdx: number|null, — global stanza index that starts AFTER this forced break
-//   noBreakBefore: boolean,      — suppress auto page-break before this chunk
-//   itemIdx: number,             — items[] index this chunk belongs to
-//   stanzaIdx: number|null,      — global stanza index (for song chunks), null otherwise
-//   stickyToNext: boolean,       — must share a page with the next chunk (section headings)
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED LAYOUT CONTRACT
+// All sections that participate in the preview/layout pipeline MUST emit objects
+// that conform to the shapes documented here.  Implementing a new section means:
+//   1. Producing chunks (see CHUNK CONTRACT) via makeChunk() [Task 1 / #125]
+//   2. Producing break-source entries (see BREAK-SOURCE CONTRACT) via makeBreakSrc() [Task 2 / #126]
+//   3. Stamping control metadata via applySplitCtrlMeta() / applyBreakCtrlMeta() [Task 3 / #127]
+//   4. Stamping navigation metadata via applyPreviewLinkMeta() [Task 4 / #128]
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// ── CHUNK CONTRACT ─────────────────────────────────────────────────────────────
+// A chunk is a layout unit passed to the page-packing algorithm.
+// All producers (buildChunks, bottom-section adapters) MUST emit this shape.
+//
+// {
+//   section:               string           — which section owns this chunk
+//                                             'oow' | 'serving' | 'calendar' | 'staff' | 'announcements'
+//   sourceId:              *                — stable identifier within the section
+//                                             OOW: items[] index (number)
+//                                             Future sections: define their own stable key
+//   els:                   HTMLElement[]    — DOM nodes to render on the page
+//   forceBreak:            boolean          — start a new page before this chunk
+//   noBreakBefore:         boolean          — suppress auto page-break before this chunk
+//   stickyToNext:          boolean          — must share a page with the following chunk
+//                                             (used for section headings so they never orphan)
+//   breakableBefore:       boolean          — auto page-break may occur before this chunk
+//                                             (false on noBreakBefore chunks and forceBreak sentinels)
+//
+//   // OOW-specific fields — null for non-OOW sections until migrated:
+//   breakItemIdx:          number|null      — items[] index of explicit page-break item
+//   separatorItemIdx:      number|null      — items[] index of song item with a '---' separator
+//   separatorStanzaIdx:    number|null      — global stanza index that starts after a separator break
+//   paragraphBreakItemIdx: number|null      — items[] index of liturgy/label item with a para break
+//   paragraphBreakIdx:     number|null      — paragraph index within that item
+//   itemIdx:               number|null      — items[] index (OOW only; equals sourceId for OOW)
+//   stanzaIdx:             number|null      — global stanza index (song chunks only)
+//   paragraphIdx:          number|null      — paragraph index (liturgy/label chunks only)
 // }
 //
+// ── BREAK-SOURCE CONTRACT ──────────────────────────────────────────────────────
+// pageBreakSources[] is a parallel array to pages[] with one entry per page boundary
+// (pageBreakSources.length === pages.length - 1).
+// Each entry explains why a page break occurred so controls can remove or convert it.
+//
+// OOW break types:
+//   { type: 'item',         breakItemIdx }
+//   { type: 'separator',    separatorItemIdx, separatorStanzaIdx }
+//   { type: 'liturgy-para', paragraphBreakItemIdx, paragraphBreakIdx }
+//   { type: 'auto',         itemIdx, stanzaIdx, paragraphIdx }
+//
+// Bottom-section break types (appendBottomSection):
+//   { type: 'bottom-merged', bottomSection }   — section merged onto prior page
+//   { type: 'bottom-auto',   bottomSection }   — section placed on its own new page
+//
+// OOW/Announcements boundary:
+//   { type: 'oow-merged' }   — OOW merged onto last announcements page
+//   { type: 'oow-auto'   }   — OOW started on its own page after announcements
+//
+// Serving break types:
+//   { type: 'serving-week', weekIdx }   — forced break before a serving week
+//
+// ── PREVIEW CONTROL METADATA ───────────────────────────────────────────────────
+// Split controls (.pg-split-ctrl) carry data-* attributes describing the two
+// adjacent chunks at the boundary.  Set via applySplitCtrlMeta() [Task 3 / #127]:
+//
+//   data-splitAfterItemIdx        — itemIdx of the chunk just above the control
+//   data-splitAfterStanzaIdx      — stanzaIdx of the chunk just above ('' if null)
+//   data-splitBeforeItemIdx       — itemIdx of the chunk just below the control
+//   data-splitBeforeStanzaIdx     — stanzaIdx of the chunk just below ('' if null)
+//   data-splitBeforeParagraphIdx  — paragraphIdx of the chunk just below ('' if null)
+//
+// Break controls (.pg-break-ctrl) carry data-* attributes from the break-source entry.
+// Set via applyBreakCtrlMeta() [Task 3 / #127]:
+//
+//   data-breakType                — break-source type string (see BREAK-SOURCE CONTRACT)
+//   data-breakItemIdx             — (type:'item') items[] index
+//   data-separatorItemIdx         — (type:'separator') items[] index
+//   data-separatorStanzaIdx       — (type:'separator') global stanza index
+//   data-paragraphBreakItemIdx    — (type:'liturgy-para') items[] index
+//   data-paragraphBreakIdx        — (type:'liturgy-para') paragraph index
+//   data-breakAutoItemIdx         — (type:'auto') items[] index
+//   data-breakAutoStanzaIdx       — (type:'auto') stanza index
+//   data-breakAutoParagraphIdx    — (type:'auto') paragraph index
+//   data-bottomSection            — (type:'bottom-*') section key ('serving'|'calendar'|'staff')
+//   data-fits                     — (type:'bottom-*') '1' if content fits on prior page, else '0'
+//
+// ── PREVIEW-TO-EDITOR NAVIGATION CONTRACT ─────────────────────────────────────
+// Elements with class .preview-linkable are clickable in the preview pane to
+// scroll the editor to the corresponding source item.
+// Set via applyPreviewLinkMeta() [Task 4 / #128]:
+//
+//   OOW items:
+//     data-previewIdx      — items[] index
+//     data-stanzaIdx       — global stanza index (song chunks; omitted if null)
+//     data-paragraphIdx    — paragraph index (liturgy/label chunks; omitted if null)
+//
+//   Future sections: extend applyPreviewLinkMeta() with a section-specific branch.
+//
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
 // A `---` line inside song lyrics creates a forced-break sentinel between sections.
