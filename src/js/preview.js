@@ -302,9 +302,63 @@ function applyBreakCtrlMeta(el, src) {
       el.dataset.servingBoundary        = src.boundary ?? '';
       el.dataset.servingInsertBeforeIdx = src.insertBeforeIdx ?? '';
       return '⊞ Break here';
+    case 'bottom-merged':
+      el.dataset.bottomSection = src.bottomSection ?? '';
+      el.dataset.fits          = src.fits ?? '0';
+      return '↓ Move to own page';
+    case 'bottom-auto':
+      el.dataset.bottomSection = src.bottomSection ?? '';
+      el.dataset.fits          = src.fits ?? '0';
+      return '↑ Push up to previous page';
+    case 'oow-merged':
+      return '↓ Start worship on its own page';
+    case 'oow-auto':
+      return '↑ Continue worship on announcements page';
+    case 'ann-split':
+      el.dataset.annAfterIdx  = src.annAfterIdx  ?? '';
+      el.dataset.annBeforeIdx = src.annBeforeIdx ?? '';
+      return '⊞ Break here';
     default:
       return '✕ Remove break';
   }
+}
+
+/**
+ * makeBreakCtrlEl(src) → .pg-break-ctrl element
+ * Creates a complete break control (label + remove button + lines).
+ * Calls applyBreakCtrlMeta() for dataset stamping and label.
+ * Use wherever a pg-break-ctrl div is hand-assembled.
+ */
+function makeBreakCtrlEl(src) {
+  const ctrl = document.createElement('div');
+  ctrl.className = 'pg-break-ctrl';
+  const label = applyBreakCtrlMeta(ctrl, src);
+  const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
+  const btn = document.createElement('button');
+  btn.className   = 'pg-break-remove-btn';
+  btn.textContent = label;
+  const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
+  ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+  return ctrl;
+}
+
+/**
+ * makeSplitCtrlEl(src) → .pg-split-ctrl element
+ * Creates a complete split control ("Break here" button + lines).
+ * Calls applyBreakCtrlMeta() for dataset stamping and label.
+ * Use wherever a pg-split-ctrl div is hand-assembled.
+ */
+function makeSplitCtrlEl(src) {
+  const ctrl = document.createElement('div');
+  ctrl.className = 'pg-split-ctrl';
+  const label = applyBreakCtrlMeta(ctrl, src);
+  const ll = document.createElement('div'); ll.className = 'pg-split-line';
+  const btn = document.createElement('button');
+  btn.className   = 'pg-split-add-btn';
+  btn.textContent = label;
+  const rl = document.createElement('div'); rl.className = 'pg-split-line';
+  ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
+  return ctrl;
 }
 
 // ─── Preview-to-editor navigation helper ─────────────────────────────────────
