@@ -195,6 +195,16 @@ function makeChunk(fields) {
   };
 }
 
+// ─── Break-source factory ─────────────────────────────────────────────────────
+/**
+ * makeBreakSrc(type, fields) → breakSource entry
+ * Factory for the shared break-source contract (see BREAK-SOURCE CONTRACT above).
+ * Used to populate pageBreakSources[] (one entry per page boundary).
+ */
+function makeBreakSrc(type, fields) {
+  return Object.assign({ type }, fields);
+}
+
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
@@ -667,15 +677,15 @@ function renderPreview() {
           pages.push([]);
           let bsrc;
           if (chunk.breakItemIdx !== null) {
-            bsrc = { type: 'item', breakItemIdx: chunk.breakItemIdx };
+            bsrc = makeBreakSrc('item', { breakItemIdx: chunk.breakItemIdx });
           } else if (chunk.paragraphBreakItemIdx !== null) {
-            bsrc = { type: 'liturgy-para',
+            bsrc = makeBreakSrc('liturgy-para', {
                      paragraphBreakItemIdx: chunk.paragraphBreakItemIdx,
-                     paragraphBreakIdx:     chunk.paragraphBreakIdx };
+                     paragraphBreakIdx:     chunk.paragraphBreakIdx });
           } else {
-            bsrc = { type: 'separator',
+            bsrc = makeBreakSrc('separator', {
                      separatorItemIdx:   chunk.separatorItemIdx,
-                     separatorStanzaIdx: chunk.separatorStanzaIdx };
+                     separatorStanzaIdx: chunk.separatorStanzaIdx });
           }
           pageBreakSources.push(bsrc);
           used = 0;
@@ -688,12 +698,11 @@ function renderPreview() {
       // Auto break if the chunk would overflow AND noBreakBefore is not set.
       if (!chunk.noBreakBefore && used + h > AVAIL_H && pages[pages.length - 1].length > 0) {
         pages.push([]);
-        pageBreakSources.push({
-          type: 'auto',
+        pageBreakSources.push(makeBreakSrc('auto', {
           itemIdx: chunk.itemIdx,
           stanzaIdx: chunk.stanzaIdx,
           paragraphIdx: chunk.paragraphIdx,
-        });
+        }));
         used = 0;
       }
 
@@ -704,12 +713,11 @@ function renderPreview() {
           const nextH = next.height;
           if (used + h + nextH > AVAIL_H && pages[pages.length - 1].length > 0) {
             pages.push([]);
-            pageBreakSources.push({
-              type: 'auto',
+            pageBreakSources.push(makeBreakSrc('auto', {
               itemIdx: chunk.itemIdx,
               stanzaIdx: chunk.stanzaIdx,
               paragraphIdx: chunk.paragraphIdx,
-            });
+            }));
             used = 0;
           }
         }
@@ -883,7 +891,7 @@ function renderPreview() {
       // A _breakBefore flag on a week (wi > 0) forces it onto a new page
       if (wi > 0 && week._breakBefore) {
         pages.push([]);
-        pageSources.push({ type: 'serving-week', weekIdx: wi });
+        pageSources.push(makeBreakSrc('serving-week', { weekIdx: wi }));
       }
       volSegments(week.teams).forEach((segTeams, si) => {
         // Skip empty continuation segments (e.g. page break placed after last team)
@@ -904,7 +912,7 @@ function renderPreview() {
             }
           }
           pages.push([{ week, segTeams, label }]);
-          pageSources.push({ type: 'serving-team', weekIdx: wi, teamBreakIdx });
+          pageSources.push(makeBreakSrc('serving-team', { weekIdx: wi, teamBreakIdx }));
         }
       });
     });
