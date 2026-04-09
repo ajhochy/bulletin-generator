@@ -6,7 +6,7 @@ function buildPreviewItemEl(item, idx) {
   if (item.type === 'section') {
     const wrapper = document.createElement('div');
     wrapper.className = 'liturgy-section preview-linkable';
-    wrapper.dataset.previewIdx = idx;
+    applyPreviewLinkMeta(wrapper, { section: 'oow', itemIdx: idx });
 
     const heading = document.createElement('div');
     heading.className = 'section-heading';
@@ -28,7 +28,7 @@ function buildPreviewItemEl(item, idx) {
   } else {
     const wrapper = document.createElement('div');
     wrapper.className = 'order-item preview-linkable';
-    wrapper.dataset.previewIdx = idx;
+    applyPreviewLinkMeta(wrapper, { section: 'oow', itemIdx: idx });
 
     if (t) {
       const heading = document.createElement('div');
@@ -256,6 +256,27 @@ function applyBreakCtrlMeta(el, src) {
   }
 }
 
+// ─── Preview-to-editor navigation helper ─────────────────────────────────────
+/**
+ * applyPreviewLinkMeta(el, chunk)
+ * Stamps data-* navigation attributes on a .preview-linkable element.
+ * el    — the DOM element carrying the preview-linkable class
+ * chunk — the chunk object (or a plain object with section/itemIdx/stanzaIdx/paragraphIdx)
+ *
+ * Currently handles OOW items only.
+ * To support a new section, add a branch here keyed on chunk.section
+ * and set whatever data-* attributes its click handler reads.
+ * See the PREVIEW-TO-EDITOR NAVIGATION CONTRACT comment block above.
+ */
+function applyPreviewLinkMeta(el, chunk) {
+  if (chunk.section === 'oow') {
+    if (chunk.itemIdx      != null) el.dataset.previewIdx   = chunk.itemIdx;
+    if (chunk.stanzaIdx    != null) el.dataset.stanzaIdx    = chunk.stanzaIdx;
+    if (chunk.paragraphIdx != null) el.dataset.paragraphIdx = chunk.paragraphIdx;
+  }
+  // Other sections: extend here when migrating (see #119, #120, #123)
+}
+
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
 // Songs are split into per-stanza chunks so individual stanzas can start on a
 // new page, but no single stanza is ever split across pages.
@@ -323,8 +344,7 @@ function buildChunks(item, idx) {
         wrap.className = 'order-item' +
           (isVeryLast ? '' : ' song-stanza') +
           (isVeryFirst ? ' preview-linkable' : '');
-        wrap.dataset.previewIdx = idx;
-        wrap.dataset.stanzaIdx  = stanzaGlobalIdx;
+        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, stanzaIdx: stanzaGlobalIdx });
 
         if (isVeryFirst && t) {
           const h = document.createElement('div');
@@ -375,8 +395,7 @@ function buildChunks(item, idx) {
         }
         const wrap = document.createElement('div');
         wrap.className = 'order-item' + (pi === 0 ? ' preview-linkable' : '');
-        wrap.dataset.previewIdx   = idx;
-        wrap.dataset.paragraphIdx = pi;
+        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, paragraphIdx: pi });
         if (pi === 0 && t) {
           const h = document.createElement('div');
           h.className = 'item-heading has-rule';
