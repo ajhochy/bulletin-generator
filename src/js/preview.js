@@ -129,7 +129,9 @@ function buildPreviewItemEl(item, idx) {
 //   { type: 'oow-auto'   }   — OOW started on its own page after announcements
 //
 // Serving break types:
-//   { type: 'serving-week', weekIdx }   — forced break before a serving week
+//   { type: 'serving-week',  weekIdx }                              — forced break before a serving week
+//   { type: 'serving-team',  weekIdx, teamBreakIdx }                — intra-week team page-break
+//   { type: 'serving-split', weekIdx, boundary, insertBeforeIdx }   — "Break here" split control
 //
 // Calendar break types:
 //   { type: 'cal-force', calDayDate: '' }           — whole calendar section forced to new page
@@ -175,6 +177,9 @@ function buildPreviewItemEl(item, idx) {
 //   Calendar items:
 //     data-previewSection  — 'calendar' (routes to scrollEditorToSection)
 //     data-calDate         — 'YYYY-MM-DD' or '' for first/title segment
+//
+//   Serving items:
+//     data-previewSection  — 'volunteers' (routes to scrollEditorToSection)
 //
 //   Future sections: extend applyPreviewLinkMeta() with a section-specific branch.
 //
@@ -274,6 +279,18 @@ function applyBreakCtrlMeta(el, src) {
     case 'cal-split':
       el.dataset.calDayDate = src.calDayDate ?? '';
       return '⊞ Break here';
+    case 'serving-week':
+      el.dataset.servingWeekIdx = src.weekIdx ?? '';
+      return '✕ Remove page break';
+    case 'serving-team':
+      el.dataset.servingWeekIdx      = src.weekIdx ?? '';
+      el.dataset.servingTeamBreakIdx = src.teamBreakIdx ?? '';
+      return '✕ Remove page break';
+    case 'serving-split':
+      el.dataset.servingWeekIdx         = src.weekIdx ?? '';
+      el.dataset.servingBoundary        = src.boundary ?? '';
+      el.dataset.servingInsertBeforeIdx = src.insertBeforeIdx ?? '';
+      return '⊞ Break here';
     default:
       return '✕ Remove break';
   }
@@ -299,8 +316,10 @@ function applyPreviewLinkMeta(el, chunk) {
   } else if (chunk.section === 'calendar') {
     el.dataset.previewSection = 'calendar';
     if (chunk.calDate != null) el.dataset.calDate = chunk.calDate;
+  } else if (chunk.section === 'serving') {
+    el.dataset.previewSection = 'volunteers';
   }
-  // Other sections: extend here when migrating (see #119, #123)
+  // Other sections: extend here when migrating (see #119)
 }
 
 // ─── Build page chunks for the interior page-split algorithm ─────────────────
