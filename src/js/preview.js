@@ -1077,8 +1077,7 @@ function renderPreview() {
     segments.forEach((seg, si) => {
       const calContent = document.createElement('div');
       calContent.classList.add('preview-linkable');
-      calContent.dataset.previewSection = 'calendar';
-      calContent.dataset.calDate = seg.date || '';
+      applyPreviewLinkMeta(calContent, { section: 'calendar', calDate: seg.date || '' });
       calContent.appendChild(seg.el);
 
       const forceNew = (si === 0 && breakBeforeCalendar) ||
@@ -1097,12 +1096,11 @@ function renderPreview() {
         if (lastRenderedPageEl) {
           const ctrl = document.createElement('div');
           ctrl.className = 'pg-break-ctrl';
-          ctrl.dataset.breakType  = si === 0 ? 'cal-force' : 'cal-day';
-          ctrl.dataset.calDayDate = seg.date || '';
+          const calBrkLabel = applyBreakCtrlMeta(ctrl, makeBreakSrc(si === 0 ? 'cal-force' : 'cal-day', { calDayDate: seg.date || '' }));
           const ll = document.createElement('div'); ll.className = 'pg-break-ctrl-line';
           const btn = document.createElement('button');
           btn.className   = 'pg-break-remove-btn';
-          btn.textContent = si === 0 ? '✕ Remove "start on new page"' : '✕ Remove calendar break';
+          btn.textContent = calBrkLabel;
           const rl = document.createElement('div'); rl.className = 'pg-break-ctrl-line';
           ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
           lastRenderedPageEl.after(ctrl);
@@ -1122,12 +1120,11 @@ function renderPreview() {
         const AVAIL_H  = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
         const splitCtrl = document.createElement('div');
         splitCtrl.className = 'pg-split-ctrl';
-        splitCtrl.dataset.splitType = 'calendar';
-        splitCtrl.dataset.calDayDate = seg.date || '';
+        const calSplitLabel = applyBreakCtrlMeta(splitCtrl, makeBreakSrc('cal-split', { calDayDate: seg.date || '' }));
         const ll = document.createElement('div'); ll.className = 'pg-split-line';
         const btn = document.createElement('button');
         btn.className = 'pg-split-add-btn';
-        btn.textContent = '⊞ Break here';
+        btn.textContent = calSplitLabel;
         const rl = document.createElement('div'); rl.className = 'pg-split-line';
         splitCtrl.appendChild(ll); splitCtrl.appendChild(btn); splitCtrl.appendChild(rl);
         const contentH = measureBottomContent(calContent);
@@ -1532,7 +1529,7 @@ previewPane.addEventListener('click', e => {
       return;
     }
 
-    if (ctrl.dataset.splitType === 'calendar') {
+    if (ctrl.dataset.breakType === 'cal-split') {
       const d = ctrl.dataset.calDayDate;
       if (d && !calBreakBeforeDates.includes(d)) {
         calBreakBeforeDates.push(d);
