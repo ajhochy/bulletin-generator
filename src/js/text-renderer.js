@@ -286,11 +286,12 @@ function renderBodyText(el, text, prose = false) {
       return inAll;
     })()) {
       const b = document.createElement('strong');
-      b.textContent = ev.text;
+      // Use appendProseText so inline verse numbers inside ALL: lines still get <sup>
+      if (prose) appendProseText(b, ev.text); else b.textContent = ev.text;
       el.appendChild(b);
     } else if (blockItalic) {
       const em = document.createElement('em');
-      em.textContent = ev.text;
+      if (prose) appendProseText(em, ev.text); else em.textContent = ev.text;
       el.appendChild(em);
     } else if (prose) {
       appendProseText(el, ev.text);

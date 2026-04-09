@@ -905,19 +905,9 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     visibleTeams.forEach((team, vi) => {
       if (vi > 0) {
         const teamIdx = (weekData.teams || []).indexOf(team);
-        const ctrl = document.createElement('div');
-        ctrl.className = 'pg-split-ctrl';
-        ctrl.dataset.splitType = 'serving';
-        ctrl.dataset.servingWeekIdx = weekIdx;
-        ctrl.dataset.servingBoundary = 'team';
-        ctrl.dataset.servingInsertBeforeIdx = teamIdx;
-        const ll = document.createElement('div'); ll.className = 'pg-split-line';
-        const btn = document.createElement('button');
-        btn.className = 'pg-split-add-btn';
-        btn.textContent = '⊞ Break here';
-        const rl = document.createElement('div'); rl.className = 'pg-split-line';
-        ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-        container.appendChild(ctrl);
+        container.appendChild(makeSplitCtrlEl(makeBreakSrc('serving-split', {
+          weekIdx, boundary: 'team', insertBeforeIdx: teamIdx,
+        })));
       }
       const teamIdx = (weekData.teams || []).indexOf(team);
       renderServingTeam(container, team, weekIdx, teamIdx);
@@ -938,19 +928,9 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     if (groupIdx > 0) {
       const firstTeam = timeGroups[svcTime][0];
       const insertBeforeIdx = (weekData.teams || []).indexOf(firstTeam);
-      const ctrl = document.createElement('div');
-      ctrl.className = 'pg-split-ctrl';
-      ctrl.dataset.splitType = 'serving';
-      ctrl.dataset.servingWeekIdx = weekIdx;
-      ctrl.dataset.servingBoundary = 'team';
-      ctrl.dataset.servingInsertBeforeIdx = insertBeforeIdx;
-      const ll = document.createElement('div'); ll.className = 'pg-split-line';
-      const btn = document.createElement('button');
-      btn.className = 'pg-split-add-btn';
-      btn.textContent = '⊞ Break here';
-      const rl = document.createElement('div'); rl.className = 'pg-split-line';
-      ctrl.appendChild(ll); ctrl.appendChild(btn); ctrl.appendChild(rl);
-      container.appendChild(ctrl);
+      container.appendChild(makeSplitCtrlEl(makeBreakSrc('serving-split', {
+        weekIdx, boundary: 'team', insertBeforeIdx,
+      })));
     }
     if (svcTime) {
       const stLabel = document.createElement('div');
