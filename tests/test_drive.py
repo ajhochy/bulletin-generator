@@ -50,7 +50,10 @@ class TestGoogleOAuthScope:
             def end_headers(self): pass
             def _send_json(self, body, status=200): captured['json'] = body
 
-        with patch.dict(os.environ, {'GOOGLE_CLIENT_ID': 'test-client-id'}):
+        with patch.dict(os.environ, {
+            'GOOGLE_CLIENT_ID': 'test-client-id',
+            'GOOGLE_CLIENT_SECRET': 'test-client-secret',
+        }):
             server.Handler._handle_google_oauth_start(FakeHandler())
 
         location = captured.get('Location', '')
