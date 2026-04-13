@@ -8,6 +8,8 @@ desktop_config.py
 dist/
 build/
 *.spec.bak
+node_modules/
+coverage/
 
 # Python
 __pycache__/

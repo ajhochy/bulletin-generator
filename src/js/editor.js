@@ -63,46 +63,11 @@ function restoreEditorIdentity() {
   applyIdentitySectionVisibility();
 }
 
-// ─── Cover image ──────────────────────────────────────────────────────────────
-coverImgZone.addEventListener('click', () => coverImgInput.click());
-coverImgZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') coverImgInput.click(); });
-coverImgInput.addEventListener('change', () => {
-  const file = coverImgInput.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => applyCoverImage(e.target.result, file.name);
-  reader.readAsDataURL(file);
-});
-coverImgClear.addEventListener('click', () => applyCoverImage(null, ''));
-
-// ─── Church logo (staff page) ─────────────────────────────────────────────────
-logoImgZone.addEventListener('click', () => logoImgInput.click());
-logoImgZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') logoImgInput.click(); });
-logoImgInput.addEventListener('change', () => {
-  const file = logoImgInput.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => applyStaffLogo(e.target.result, file.name);
-  reader.readAsDataURL(file);
-});
-logoImgClear.addEventListener('click', () => applyStaffLogo(null, ''));
-
 // ─── Church Name (Settings → Church Branding) ─────────────────────────────────
 function restoreChurchName() {
   const saved = _serverSettings.churchName || '';
   if (saved) svcChurch.value = saved;
 }
-svcChurch.addEventListener('input', () => {
-  apiFetch('/api/settings', 'POST', { churchName: svcChurch.value }).catch(() => {}); // fires every keystroke — silent fail acceptable
-  schedulePreviewUpdate();
-});
-
-// ─── Give Online URL (Feature 7) ──────────────────────────────────────────────
-giveOnlineUrlInput.addEventListener('input', () => {
-  giveOnlineUrl = giveOnlineUrlInput.value;
-  apiFetch('/api/settings', 'POST', { giveOnlineUrl }).catch(() => {}); // fires every keystroke — silent fail acceptable
-  schedulePreviewUpdate();
-});
 
 // ─── Editor identity (server mode) ───────────────────────────────────────────
 const editorDisplayNameInput = document.getElementById('editor-display-name-input');
@@ -110,14 +75,6 @@ const editorDisplayNameInput = document.getElementById('editor-display-name-inpu
 function applyIdentitySectionVisibility() {
   document.getElementById('stg-identity-group').style.display = isServerMode() ? '' : 'none';
 }
-editorDisplayNameInput.addEventListener('input', () => {
-  _editorDisplayName = editorDisplayNameInput.value.trim();
-  if (isServerMode()) {
-    try { localStorage.setItem('editorDisplayName', _editorDisplayName); } catch (_) {}
-  } else {
-    apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {}); // fires every keystroke — silent fail acceptable
-  }
-});
 
 // ─── PDF text extraction ──────────────────────────────────────────────────────
 // ─── PDF parser removed — import now via PCO API only ─────────────────────────
@@ -259,8 +216,7 @@ function renderItemList() {
   }
 }
 
-// Event delegation
-itemList.addEventListener('click', e => {
+function handleItemListClick(e) {
   const btn = e.target.closest('[data-action]');
   if (!btn) return;
   // ── Insert page break between items (btn is outside any .item-card) ─────
@@ -328,9 +284,9 @@ itemList.addEventListener('click', e => {
   if (['up', 'down', 'delete'].includes(btn.dataset.action)) {
     autosaveProjectState();
   }
-});
+}
 
-itemList.addEventListener('input', e => {
+function handleItemListInput(e) {
   // Text input (title, detail): sync state + schedule preview — NO full re-render.
   // Re-rendering on every keystroke would wipe the DOM, lose textarea focus, and
   // cause visible jank on large bulletins. State stays in items[]; preview reads from it.
@@ -345,9 +301,9 @@ itemList.addEventListener('input', e => {
     renderItemList();
   }
   schedulePreviewUpdate();
-});
+}
 
-itemList.addEventListener('click', e => {
+function handleItemListPreviewSync(e) {
   if (suppressLinkedFocusSync) return;
   const targetEl = e.target instanceof Element ? e.target : null;
   if (!targetEl) return;
@@ -356,7 +312,7 @@ itemList.addEventListener('click', e => {
   const idx = parseInt(card.dataset.idx, 10);
   if (!Number.isInteger(idx)) return;
   scrollPreviewToItem(idx, 'smooth');
-});
+}
 
 // Auto-grow a textarea to fit its content.
 // field-sizing:content (CSS) handles this in modern browsers;
@@ -513,7 +469,7 @@ function scrollEditorToSection(sectionId, behavior = 'smooth') {
   scrollElementIntoContainer(aside, section, behavior);
 }
 
-addItemBtn.addEventListener('click', () => {
+function handleAddItem() {
   syncAllItems();
   items.push({ type: 'song', title: '', detail: '' });
   renderItemList();
@@ -524,9 +480,9 @@ addItemBtn.addEventListener('click', () => {
     last?.querySelector('.item-title-input')?.focus();
     last?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 50);
-});
+}
 
-addBreakBtn.addEventListener('click', () => {
+function handleAddBreak() {
   syncAllItems();
   items.push({ type: 'page-break', title: '', detail: '' });
   renderItemList();
@@ -537,7 +493,7 @@ addBreakBtn.addEventListener('click', () => {
     const last = cards[cards.length - 1];
     last?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 50);
-});
+}
 
 // ─── Live preview ─────────────────────────────────────────────────────────────
 function schedulePreviewUpdate() {
@@ -551,45 +507,97 @@ function updateDocTitle() {
   document.title = d ? `${d} Bulletin` : 'Bulletin Generator';
 }
 
-svcTitle.addEventListener('input',        schedulePreviewUpdate);
-svcDate.addEventListener('input',         () => { updateDocTitle(); schedulePreviewUpdate(); updateSectionPreviews(); });
-bulletinTitleInput.addEventListener('input', () => { updateSectionPreviews(); });
-svcChurch.addEventListener('input',       schedulePreviewUpdate);
-annAddBtn.addEventListener('click', () => annAdd());
-welcomeAddBtn.addEventListener('click', () => welcomeAdd());
-welcomeHeadingInput.addEventListener('input', () => {
-  welcomeHeading = welcomeHeadingInput.value;
-  schedulePreviewUpdate();
-  scheduleProjectPersist();
-});
+let _editorInitialized = false;
 
-// ─── Collapsible sidebar panels ───────────────────────────────────────────────
-document.querySelectorAll('aside .panel-section').forEach(section => {
-  const label = section.querySelector('.section-label');
-  if (!label) return;
+function initEditor() {
+  if (_editorInitialized) return;
+  _editorInitialized = true;
 
-  // Right-side wrapper holds preview text + toggle glyph
-  const rightEl = document.createElement('span');
-  rightEl.className = 'section-label-right';
-
-  const preview = document.createElement('span');
-  preview.className = 'section-preview';
-  rightEl.appendChild(preview);
-
-  const toggle = document.createElement('span');
-  toggle.className = 'collapse-toggle';
-  toggle.textContent = '+'; // starts collapsed
-  rightEl.appendChild(toggle);
-
-  label.appendChild(rightEl);
-
-  // Start every section collapsed
-  section.classList.add('collapsed');
-  label.addEventListener('click', () => {
-    section.classList.toggle('collapsed');
-    toggle.textContent = section.classList.contains('collapsed') ? '+' : '−';
+  coverImgZone.addEventListener('click', () => coverImgInput.click());
+  coverImgZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') coverImgInput.click(); });
+  coverImgInput.addEventListener('change', () => {
+    const file = coverImgInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => applyCoverImage(e.target.result, file.name);
+    reader.readAsDataURL(file);
   });
-});
+  coverImgClear.addEventListener('click', () => applyCoverImage(null, ''));
+
+  logoImgZone.addEventListener('click', () => logoImgInput.click());
+  logoImgZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') logoImgInput.click(); });
+  logoImgInput.addEventListener('change', () => {
+    const file = logoImgInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => applyStaffLogo(e.target.result, file.name);
+    reader.readAsDataURL(file);
+  });
+  logoImgClear.addEventListener('click', () => applyStaffLogo(null, ''));
+
+  svcChurch.addEventListener('input', () => {
+    apiFetch('/api/settings', 'POST', { churchName: svcChurch.value }).catch(() => {});
+    schedulePreviewUpdate();
+  });
+
+  giveOnlineUrlInput.addEventListener('input', () => {
+    giveOnlineUrl = giveOnlineUrlInput.value;
+    apiFetch('/api/settings', 'POST', { giveOnlineUrl }).catch(() => {});
+    schedulePreviewUpdate();
+  });
+
+  editorDisplayNameInput.addEventListener('input', () => {
+    setEditorDisplayName(editorDisplayNameInput.value.trim());
+    if (isServerMode()) {
+      try { localStorage.setItem('editorDisplayName', _editorDisplayName); } catch (_) {}
+    } else {
+      apiFetch('/api/settings', 'POST', { editorDisplayName: _editorDisplayName }).catch(() => {});
+    }
+  });
+
+  itemList.addEventListener('click', handleItemListClick);
+  itemList.addEventListener('input', handleItemListInput);
+  itemList.addEventListener('click', handleItemListPreviewSync);
+  addItemBtn.addEventListener('click', handleAddItem);
+  addBreakBtn.addEventListener('click', handleAddBreak);
+
+  svcTitle.addEventListener('input', schedulePreviewUpdate);
+  svcDate.addEventListener('input', () => { updateDocTitle(); schedulePreviewUpdate(); updateSectionPreviews(); });
+  bulletinTitleInput.addEventListener('input', () => { updateSectionPreviews(); });
+  annAddBtn.addEventListener('click', () => annAdd());
+  welcomeAddBtn.addEventListener('click', () => welcomeAdd());
+  welcomeHeadingInput.addEventListener('input', () => {
+    welcomeHeading = welcomeHeadingInput.value;
+    schedulePreviewUpdate();
+    scheduleProjectPersist();
+  });
+
+  document.querySelectorAll('aside .panel-section').forEach(section => {
+    const label = section.querySelector('.section-label');
+    if (!label || label.querySelector('.section-label-right')) return;
+
+    const rightEl = document.createElement('span');
+    rightEl.className = 'section-label-right';
+
+    const preview = document.createElement('span');
+    preview.className = 'section-preview';
+    rightEl.appendChild(preview);
+
+    const toggle = document.createElement('span');
+    toggle.className = 'collapse-toggle';
+    toggle.textContent = '+';
+    rightEl.appendChild(toggle);
+
+    label.appendChild(rightEl);
+    section.classList.add('collapsed');
+    label.addEventListener('click', () => {
+      section.classList.toggle('collapsed');
+      toggle.textContent = section.classList.contains('collapsed') ? '+' : '−';
+    });
+  });
+
+  updateSectionPreviews();
+}
 
 // ─── Section preview strings ──────────────────────────────────────────────────
 function updateSectionPreviews() {
@@ -633,5 +641,3 @@ function updateSectionPreviews() {
     previewEl.textContent = text;
   });
 }
-updateSectionPreviews();
-

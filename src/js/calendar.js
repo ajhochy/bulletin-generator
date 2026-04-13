@@ -561,7 +561,7 @@ function calSetStatus(msg, isError) {
 
 async function calFetchAll(force) {
   const now = Date.now();
-  if (!force && calEvents !== null && calEvents !== false && (now - calLastFetch) < CAL_CACHE_MS) {
+  if (!shouldRefreshCalendarCore({ force, calEvents, calLastFetch, now, cacheMs: CAL_CACHE_MS })) {
     return; // still fresh
   }
 
@@ -586,33 +586,19 @@ async function calFetchAll(force) {
       throw new Error(`Server returned HTTP ${resp.status}`);
     }
     const data = await resp.json();
-    if (data.ok) {
-      // Merge fresh events with any user edits (title/location changes made in the editor).
-      // Each event gets a _srcTitle tag (the original server title) so future merges
-      // can still match even if the user renamed the event.
-      const oldEvents = Array.isArray(calEvents) ? calEvents : [];
-      calEvents = data.events.map(freshEv => {
-        const match = oldEvents.find(old =>
-          old.start.iso === freshEv.start.iso &&
-          (old._srcTitle || old.title).toLowerCase() === freshEv.title.toLowerCase()
-        );
-        if (match) {
-          // Preserve user-edited title and location; update everything else from server
-          return { ...freshEv, title: match.title, location: match.location, _srcTitle: freshEv.title };
-        }
-        return { ...freshEv, _srcTitle: freshEv.title };
-      });
-      calLastFetch = Date.now();
-      const count = calEvents.length;
-      calSetStatus(`${count} event${count === 1 ? '' : 's'} loaded`, false);
-    } else {
-      calEvents = false;
-      calSetStatus('Calendar unavailable', true);
-    }
+    const nextState = deriveCalendarFetchStateCore({
+      data,
+      previousEvents: calEvents,
+      fetchedAt: Date.now(),
+    });
+    calEvents = nextState.calEvents;
+    calLastFetch = nextState.calLastFetch;
+    calSetStatus(nextState.statusText, nextState.statusIsError);
   } catch (e) {
-    calEvents = false;
-    const msg = e && e.message ? e.message : String(e);
-    calSetStatus(`Fetch failed: ${msg}`, true);
+    const errorState = deriveCalendarFetchErrorStateCore(e);
+    calEvents = errorState.calEvents;
+    calLastFetch = errorState.calLastFetch;
+    calSetStatus(errorState.statusText, errorState.statusIsError);
     console.error('[cal] fetch error:', e);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ Refresh Calendar'; }

@@ -6,10 +6,18 @@
 //
 
 // ── Init ───────────────────────────────────────────────────────────────────────
+let _updateControlsInitialized = false;
 
 function initUpdateSection() {
   const versionEl = document.getElementById('update-current-version');
   if (versionEl) versionEl.textContent = _publicConfig.appVersion || '—';
+}
+
+function initUpdateControls() {
+  if (_updateControlsInitialized) return;
+  _updateControlsInitialized = true;
+  document.getElementById('update-check-btn').addEventListener('click', checkForUpdate);
+  document.getElementById('update-apply-btn').addEventListener('click', applyUpdate);
 }
 
 // ── Check for update ───────────────────────────────────────────────────────────
@@ -189,4 +197,3 @@ function _pollForRestart(oldVersion) {
     }
   }, interval);
 }
-

@@ -129,6 +129,27 @@ def _parse_list_env(name):
     return [part.strip() for part in parts if part.strip()]
 
 
+def _is_placeholder_oauth_value(value):
+    v = (value or '').strip()
+    if not v:
+        return True
+    placeholder_markers = (
+        'your_app_',
+        'your-google-',
+        'your-pco-',
+        'replace-me',
+        'example',
+        'placeholder',
+    )
+    lower_v = v.lower()
+    return any(marker in lower_v for marker in placeholder_markers)
+
+
+def _oauth_config_error_redirect(provider, detail):
+    msg = urllib.parse.quote(detail[:200])
+    return f'/?{provider}_error=config&detail={msg}&tab=page-settings'
+
+
 def _pco_auth_header():
     """Return the OAuth Bearer header from stored access token, or None."""
     settings = _read_json(SETTINGS_FILE, {})
@@ -1023,8 +1044,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_google_oauth_start(self):
         client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
-        if not client_id:
-            self._send_json({'error': 'Google OAuth credentials not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.'}, 503)
+        client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
+        if _is_placeholder_oauth_value(client_id) or _is_placeholder_oauth_value(client_secret):
+            detail = (
+                'Google OAuth is not configured for this build. '
+                'Set a real GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET '
+                'in desktop_config.py for desktop builds or .env for server mode.'
+            )
+            self.send_response(302)
+            self.send_header('Location', _oauth_config_error_redirect('google', detail))
+            self.end_headers()
             return
         port = self.server.server_address[1]
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
@@ -1087,14 +1116,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 _write_json(SETTINGS_FILE, s)
 
             self.send_response(302)
-            self.send_header('Location', '/?google_connected=1')
+            self.send_header('Location', '/?google_connected=1&tab=page-settings')
             self.end_headers()
 
         except Exception as e:
             print(f'  [google] Token exchange failed: {e}')
             detail = urllib.parse.quote(str(e)[:200])
             self.send_response(302)
-            self.send_header('Location', f'/?google_error=token&detail={detail}')
+            self.send_header('Location', f'/?google_error=token&detail={detail}&tab=page-settings')
             self.end_headers()
 
     def _handle_google_calendars(self):

@@ -28,23 +28,7 @@ function buildSyncDiffMessage(incomingProject) {
 
 // ─── Project persistence ─────────────────────────────────────────────────────
 function cloneItems(list) {
-  return list.map(item => {
-    const cloned = {
-      type:   migrateItemType(item.type || 'label'),
-      title:  item.title  || '',
-      detail: item.detail || '',
-    };
-    if (item._noBreakBefore) cloned._noBreakBefore = true;
-    if (Array.isArray(item._noBreakBeforeStanzas) && item._noBreakBeforeStanzas.length > 0)
-      cloned._noBreakBeforeStanzas = [...item._noBreakBeforeStanzas];
-    if (item._collapsed) cloned._collapsed = true;
-    if (item._fmt && typeof item._fmt === 'object') cloned._fmt = Object.assign({}, item._fmt);
-    if (Array.isArray(item._forceBreakBeforeParagraph) && item._forceBreakBeforeParagraph.length > 0)
-      cloned._forceBreakBeforeParagraph = [...item._forceBreakBeforeParagraph];
-    if (Array.isArray(item._noBreakBeforeParagraph) && item._noBreakBeforeParagraph.length > 0)
-      cloned._noBreakBeforeParagraph = [...item._noBreakBeforeParagraph];
-    return cloned;
-  });
+  return cloneItemsDataCore(list);
 }
 
 // ── Persisted layout fields (all sections) ────────────────────────────────────
@@ -171,28 +155,32 @@ async function saveProjectToServer(project) {
   }
   _saveInFlight = true;
   try {
-    if (isServerMode() && _editorDisplayName) {
-      project.updatedBy = _editorDisplayName;
-    }
-    if (isServerMode()) {
-      // Always send, even when null — server uses this to detect silent overwrites
-      // of versioned projects by clients that didn't know the current revision.
-      project._clientRevision = _loadedRevision;
-    }
-    const result = await apiFetch('/api/projects', 'POST', project);
-    // Server returns canonical revision — update local tracking
-    if (isServerMode() && result && typeof result.revision === 'number') {
-      _loadedRevision = result.revision;
-      const stored = projectById(project.id);
-      if (stored) stored.revision = result.revision;
-    }
-    document.getElementById('stale-banner').style.display = 'none';
-    document.getElementById('conflict-banner').style.display = 'none';
+    const requestProject = buildProjectSaveRequestCore(project, {
+      isServerMode: isServerMode(),
+      editorDisplayName: _editorDisplayName,
+      loadedRevision: _loadedRevision,
+    });
+    const result = await apiFetch('/api/projects', 'POST', requestProject);
+    const stored = projectById(project.id);
+    const saveState = deriveProjectSaveSuccessCore({
+      result,
+      isServerMode: isServerMode(),
+      currentLoadedRevision: _loadedRevision,
+      storedProject: stored,
+    });
+    _loadedRevision = saveState.loadedRevision;
+    if (stored && saveState.storedRevision !== null) stored.revision = saveState.storedRevision;
+    if (saveState.hideStaleBanner) document.getElementById('stale-banner').style.display = 'none';
+    if (saveState.hideConflictBanner) document.getElementById('conflict-banner').style.display = 'none';
   } catch (err) {
-    if (err.status === 409) {
+    const failure = deriveProjectSaveFailureCore({
+      errorStatus: err.status,
+      isDesktopMode: isDesktopMode(),
+    });
+    if (failure.type === 'conflict') {
       const banner = document.getElementById('conflict-banner');
       banner.innerHTML = '';
-      const bannerText = document.createTextNode('This bulletin was updated by someone else.');
+      const bannerText = document.createTextNode(failure.message);
       banner.appendChild(bannerText);
       banner.style.display = '';
       const reloadLink = document.createElement('a');
@@ -213,7 +201,7 @@ async function saveProjectToServer(project) {
       });
       banner.appendChild(reloadLink);
     } else {
-      setStatus(isDesktopMode() ? 'Could not save project.' : 'Could not save project to server.', 'error');
+      setStatus(failure.message, 'error');
     }
   } finally {
     _saveInFlight = false;
@@ -624,22 +612,7 @@ async function restoreOnStartup() {
   renderProjectSelect();
 }
 
-projectSaveBtn.addEventListener('click', () => saveCurrentProject(false));
-projectSaveAsBtn.addEventListener('click', saveNewVersion);
-projectNewBtn.addEventListener('click', clearEditorForNewProject);
-projectDeleteBtn.addEventListener('click', deleteActiveProject);
-projectSelect.addEventListener('change', () => {
-  if (projectSelect.value === DRAFT_OPTION_VALUE) {
-    if (!loadDraftState()) {
-      clearEditorForNewProject();
-      setStatus('No unsaved draft found. Started a new draft.', 'success');
-    } else {
-      setStatus('Loaded unsaved draft.', 'success');
-    }
-    return;
-  }
-  loadProjectById(projectSelect.value);
-});
+let _projectsInitialized = false;
 
 
 // ─── Files page ───────────────────────────────────────────────────────────────
@@ -962,7 +935,7 @@ async function downloadProjectAsPdf(id) {
   }
 }
 
-document.getElementById('files-list').addEventListener('click', e => {
+function handleFilesListClick(e) {
   const btn = e.target.closest('[data-fm]');
   if (!btn) return;
   const action = btn.dataset.fm;
@@ -1000,10 +973,10 @@ document.getElementById('files-list').addEventListener('click', e => {
     renderProjectSelect();
     setStatus(`Deleted "${projName}".`, 'success');
   }
-});
+}
 
 // ─── Bulk action bar handlers ─────────────────────────────────────────────────
-document.getElementById('bulk-select-all').addEventListener('click', () => {
+function handleBulkSelectAll() {
   if (selectedProjectIds.size === projects.length && projects.length > 0) {
     selectedProjectIds.clear();
   } else {
@@ -1011,11 +984,11 @@ document.getElementById('bulk-select-all').addEventListener('click', () => {
   }
   renderFilesList();
   updateBulkBar();
-});
+}
 
-document.getElementById('bulk-export-pp').addEventListener('click', async function() {
+async function handleBulkExportProPresenter() {
   const ids = [...selectedProjectIds];
-  const btn = this;
+  const btn = document.getElementById('bulk-export-pp');
   btn.disabled = true;
   btn.textContent = `PP 0 / ${ids.length}`;
   try {
@@ -1027,17 +1000,17 @@ document.getElementById('bulk-export-pp').addEventListener('click', async functi
     btn.disabled = false;
     btn.textContent = 'Export ProPresenter';
   }
-});
+}
 
-document.getElementById('bulk-download-json').addEventListener('click', () => {
+function handleBulkDownloadJson() {
   const ids = [...selectedProjectIds];
   ids.forEach((id, i) => setTimeout(() => downloadProjectJson(id), i * 150));
   setStatus(`Downloading ${ids.length} project${ids.length !== 1 ? 's' : ''}…`, 'info');
-});
+}
 
-document.getElementById('bulk-download-pdf').addEventListener('click', async function() {
+async function handleBulkDownloadPdf() {
   const ids = [...selectedProjectIds];
-  const btn = this;
+  const btn = document.getElementById('bulk-download-pdf');
   btn.disabled = true;
   btn.textContent = `↓ 0 / ${ids.length}`;
   for (let i = 0; i < ids.length; i++) {
@@ -1047,9 +1020,9 @@ document.getElementById('bulk-download-pdf').addEventListener('click', async fun
   btn.disabled = false;
   btn.textContent = '↓ Download PDFs';
   setStatus(`Downloaded ${ids.length} PDF${ids.length !== 1 ? 's' : ''}.`, 'success');
-});
+}
 
-document.getElementById('bulk-delete').addEventListener('click', () => {
+function handleBulkDelete() {
   const ids = [...selectedProjectIds];
   const names = ids.map(id => projectById(id)?.name).filter(Boolean);
   if (!confirm(`Delete ${ids.length} project${ids.length !== 1 ? 's' : ''}?\n\n${names.join('\n')}\n\nThis cannot be undone.`)) return;
@@ -1067,20 +1040,20 @@ document.getElementById('bulk-delete').addEventListener('click', () => {
   }
   renderProjectSelect();
   setStatus(`Deleted ${ids.length} project${ids.length !== 1 ? 's' : ''}.`, 'success');
-});
+}
 
-document.getElementById('bulk-clear').addEventListener('click', () => {
+function handleBulkClear() {
   selectedProjectIds.clear();
   renderFilesList();
   updateBulkBar();
-});
+}
 
-document.getElementById('files-new-btn').addEventListener('click', () => {
+function handleFilesNew() {
   clearEditorForNewProject();
   document.querySelector('.tab-btn[data-tab="page-editor"]').click();
-});
+}
 
-document.getElementById('files-import-input').addEventListener('change', e => {
+function handleFilesImport(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -1108,11 +1081,11 @@ document.getElementById('files-import-input').addEventListener('change', e => {
   };
   reader.readAsText(file);
   e.target.value = '';
-});
+}
 
-document.getElementById('project-browse-btn').addEventListener('click', () => {
+function handleProjectBrowse() {
   document.querySelector('.tab-btn[data-tab="page-files"]').click();
-});
+}
 
 
 // ── Save to Google Drive ───────────────────────────────────────────────────────
@@ -1158,9 +1131,9 @@ async function saveProjectToDrive(projectId, type) {
   setStatus(`Saved ${filename} to Drive.${linkHtml}`, 'success');
 }
 
-document.getElementById('bulk-drive-json').addEventListener('click', async function() {
+async function handleBulkDriveJson() {
   const ids = [...selectedProjectIds];
-  const btn = this;
+  const btn = document.getElementById('bulk-drive-json');
   btn.disabled = true;
   btn.textContent = `Drive JSON 0 / ${ids.length}`;
   try {
@@ -1174,11 +1147,11 @@ document.getElementById('bulk-drive-json').addEventListener('click', async funct
     btn.disabled = false;
     btn.textContent = 'Save JSON to Drive';
   }
-});
+}
 
-document.getElementById('bulk-drive-pdf').addEventListener('click', async function() {
+async function handleBulkDrivePdf() {
   const ids = [...selectedProjectIds];
-  const btn = this;
+  const btn = document.getElementById('bulk-drive-pdf');
   btn.disabled = true;
   btn.textContent = `Drive PDF 0 / ${ids.length}`;
   try {
@@ -1192,4 +1165,39 @@ document.getElementById('bulk-drive-pdf').addEventListener('click', async functi
     btn.disabled = false;
     btn.textContent = 'Save PDF to Drive';
   }
-});
+}
+
+function initProjects() {
+  if (_projectsInitialized) return;
+  _projectsInitialized = true;
+
+  projectSaveBtn.addEventListener('click', () => saveCurrentProject(false));
+  projectSaveAsBtn.addEventListener('click', saveNewVersion);
+  projectNewBtn.addEventListener('click', clearEditorForNewProject);
+  projectDeleteBtn.addEventListener('click', deleteActiveProject);
+  projectSelect.addEventListener('change', () => {
+    if (projectSelect.value === DRAFT_OPTION_VALUE) {
+      if (!loadDraftState()) {
+        clearEditorForNewProject();
+        setStatus('No unsaved draft found. Started a new draft.', 'success');
+      } else {
+        setStatus('Loaded unsaved draft.', 'success');
+      }
+      return;
+    }
+    loadProjectById(projectSelect.value);
+  });
+
+  document.getElementById('files-list').addEventListener('click', handleFilesListClick);
+  document.getElementById('bulk-select-all').addEventListener('click', handleBulkSelectAll);
+  document.getElementById('bulk-export-pp').addEventListener('click', handleBulkExportProPresenter);
+  document.getElementById('bulk-download-json').addEventListener('click', handleBulkDownloadJson);
+  document.getElementById('bulk-download-pdf').addEventListener('click', handleBulkDownloadPdf);
+  document.getElementById('bulk-delete').addEventListener('click', handleBulkDelete);
+  document.getElementById('bulk-clear').addEventListener('click', handleBulkClear);
+  document.getElementById('files-new-btn').addEventListener('click', handleFilesNew);
+  document.getElementById('files-import-input').addEventListener('change', handleFilesImport);
+  document.getElementById('project-browse-btn').addEventListener('click', handleProjectBrowse);
+  document.getElementById('bulk-drive-json').addEventListener('click', handleBulkDriveJson);
+  document.getElementById('bulk-drive-pdf').addEventListener('click', handleBulkDrivePdf);
+}

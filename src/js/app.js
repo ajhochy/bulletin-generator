@@ -1,102 +1,76 @@
-// ─── Page size selector ───────────────────────────────────────────────────────
-document.getElementById('doc-page-size-sel').addEventListener('change', e => {
-  activeDocTemplate = Object.assign({}, activeDocTemplate, { pageSize: e.target.value });
+let _appInitialized = false;
+
+function handlePageSizeChange(e) {
+  setActiveDocTemplate(Object.assign({}, activeDocTemplate, { pageSize: e.target.value }));
   applyDocTemplate();
   apiFetch('/api/settings', 'POST', { docTemplate: activeDocTemplate }).catch(err => setStatus('Page size save failed: ' + (err.message || err), 'error'));
   schedulePreviewUpdate();
-});
+}
 
-// ─── Format filter input ──────────────────────────────────────────────────────
-document.getElementById('fmt-filter').addEventListener('input', e => {
+function handleFmtFilterInput(e) {
   applyFmtFilter(e.target.value);
-});
+}
 
-// ─── Settings anchor nav ──────────────────────────────────────────────────────
-document.querySelector('.stg-anchor-nav').addEventListener('click', e => {
+function handleSettingsAnchorClick(e) {
   const link = e.target.closest('.stg-anchor-link');
   if (!link) return;
   e.preventDefault();
   const target = document.getElementById(link.dataset.target);
   if (target) target.scrollIntoView({ behavior: 'smooth' });
-});
+}
 
-// ─── Tab switching ─────────────────────────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.app-page').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById(btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'page-format') {
-      renderFormatPage();
-    } else {
-      // Clear format filter when leaving the Format tab
-      const flt = document.getElementById('fmt-filter');
-      if (flt) flt.value = '';
-    }
-  });
-});
+function handleTabClick(btn) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.app-page').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(btn.dataset.tab).classList.add('active');
+  if (btn.dataset.tab === 'page-format') {
+    renderFormatPage();
+  } else {
+    const flt = document.getElementById('fmt-filter');
+    if (flt) flt.value = '';
+  }
+}
 
+function openTabById(tabId) {
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  if (btn) handleTabClick(btn);
+}
 
-
-// Seed welcome items now that staff.js (WELCOME_ITEMS) has loaded
-welcomeItems = [...WELCOME_ITEMS];
-
-restoreOnStartup().then(() => {
-  initPco();
-  initGoogle();
-  renderServingTeamSettings();
-  initUpdateSection();
-});
-
-// ─── Update section button wiring ─────────────────────────────────────────────
-document.getElementById('update-check-btn').addEventListener('click', checkForUpdate);
-document.getElementById('update-apply-btn').addEventListener('click', applyUpdate);
-
-// ─── Calendar button listeners ────────────────────────────────────────────────
-document.getElementById('cal-refresh-btn').addEventListener('click', () => calFetchAll(true));
-
-document.getElementById('cal-settings-save-btn').addEventListener('click', () => {
+function handleCalSettingsSave() {
   const urlsRaw = document.getElementById('cal-urls-input').value.trim();
   const urls = urlsRaw.split('\n').map(s => s.trim()).filter(Boolean);
-  _calUrls = urls;
-  apiFetch('/api/settings', 'POST', { calUrls: _calUrls }).catch(err => setStatus('Calendar URL save failed: ' + (err.message || err), 'error'));
+  setCalendarSettings(urls, _calExclude);
   calEvents = null;
   calLastFetch = 0;
+  apiFetch('/api/settings', 'POST', { calUrls: _calUrls }).catch(err => setStatus('Calendar URL save failed: ' + (err.message || err), 'error'));
   calFetchAll(true);
   setStatus('Calendar settings saved. Re-fetching…', 'success');
-});
+}
 
-document.getElementById('cal-excl-save-btn').addEventListener('click', () => {
+function handleCalExcludeSave() {
   const exclRaw = document.getElementById('cal-excl-input').value.trim();
   const excl = exclRaw.split('\n').map(s => s.trim()).filter(Boolean);
-  _calExclude = excl;
-  apiFetch('/api/settings', 'POST', { calExclude: _calExclude }).catch(err => setStatus('Exclude list save failed: ' + (err.message || err), 'error'));
+  setCalendarSettings(_calUrls, excl);
   calEvents = null;
   calLastFetch = 0;
+  apiFetch('/api/settings', 'POST', { calExclude: _calExclude }).catch(err => setStatus('Exclude list save failed: ' + (err.message || err), 'error'));
   calFetchAll(true);
   setStatus('Exclude list saved. Re-fetching…', 'success');
-});
+}
 
-document.getElementById('cal-settings-reset-btn').addEventListener('click', () => {
-  _calUrls = null;
-  _calExclude = null;
+function handleCalSettingsReset() {
+  setCalendarSettings(null, null);
+  calEvents = null;
+  calLastFetch = 0;
   apiFetch('/api/settings', 'POST', { calUrls: null, calExclude: null }).catch(err => setStatus('Calendar reset failed: ' + (err.message || err), 'error'));
   calInitSettings();
   document.getElementById('cal-excl-input').value = calGetExclude().join('\n');
-  calEvents = null;
-  calLastFetch = 0;
   calFetchAll(true);
   setStatus('Calendar settings reset to defaults.', 'success');
-});
+}
 
-calInitSettings();
-// Kick off initial calendar fetch in background
-calFetchAll(false);
-
-// ─── Add Event button ─────────────────────────────────────────────────────────
-document.getElementById('cal-add-event-btn').addEventListener('click', () => {
-  // Toggle: if form already open, close it
+function openCalendarAddForm() {
   const existing = document.getElementById('cal-add-form');
   if (existing) { existing.remove(); return; }
 
@@ -104,7 +78,6 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   form.id = 'cal-add-form';
   form.className = 'cal-add-form';
 
-  // Date + all-day row
   const dateRow = document.createElement('div');
   dateRow.className = 'cal-add-form-row';
 
@@ -124,7 +97,6 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   dateRow.appendChild(allDayLabel);
   form.appendChild(dateRow);
 
-  // Time row (visible by default since all-day is unchecked)
   const timeRow = document.createElement('div');
   timeRow.className = 'cal-add-form-row';
   timeRow.style.display = 'flex';
@@ -143,19 +115,16 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
     timeRow.style.display = allDayCheck.checked ? 'none' : 'flex';
   });
 
-  // Title
   const titleIn = document.createElement('input');
   titleIn.type = 'text';
   titleIn.placeholder = 'Event title *';
   form.appendChild(titleIn);
 
-  // Location
   const locIn = document.createElement('input');
   locIn.type = 'text';
   locIn.placeholder = 'Location (optional)';
   form.appendChild(locIn);
 
-  // Buttons
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display:flex; gap:0.4rem; margin-bottom:0;';
 
@@ -170,14 +139,14 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
     if (!dateVal) { dateIn.style.borderColor = 'var(--danger)'; dateIn.focus(); return; }
 
     const isAllDay = allDayCheck.checked;
-    const isoStr  = isAllDay ? dateVal : `${dateVal}T${timeIn.value || '00:00'}:00`;
+    const isoStr = isAllDay ? dateVal : `${dateVal}T${timeIn.value || '00:00'}:00`;
 
     if (!Array.isArray(calEvents)) calEvents = [];
     calEvents.push({
       title,
-      start:       { iso: isoStr, allDay: isAllDay },
-      end:         null,
-      location:    locIn.value.trim(),
+      start: { iso: isoStr, allDay: isAllDay },
+      end: null,
+      location: locIn.value.trim(),
       description: '',
     });
     form.remove();
@@ -194,21 +163,18 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
   btnRow.appendChild(cancelBtn);
   form.appendChild(btnRow);
 
-  // Insert the form after the Add Event button
   const addBtnEl = document.getElementById('cal-add-event-btn');
   addBtnEl.parentNode.insertBefore(form, addBtnEl.nextSibling);
   titleIn.focus();
-});
+}
 
-// ─── Editor / Preview resizable split ────────────────────────────────────────
-(function () {
+function initResizableEditorSplit() {
   const STORAGE_KEY = 'editorPanelWidth';
   const MIN_W = 320;
   const MAX_W = 900;
   const handle = document.getElementById('editor-resize-handle');
   if (!handle) return;
 
-  // Restore saved width
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) document.documentElement.style.setProperty('--editor-w', saved + 'px');
 
@@ -244,4 +210,51 @@ document.getElementById('cal-add-event-btn').addEventListener('click', () => {
       .getPropertyValue('--editor-w')) || 690;
     localStorage.setItem(STORAGE_KEY, w);
   });
-})();
+}
+
+function initAppShell() {
+  if (_appInitialized) return;
+  _appInitialized = true;
+
+  document.getElementById('doc-page-size-sel').addEventListener('change', handlePageSizeChange);
+  document.getElementById('fmt-filter').addEventListener('input', handleFmtFilterInput);
+  document.querySelector('.stg-anchor-nav').addEventListener('click', handleSettingsAnchorClick);
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleTabClick(btn));
+  });
+
+  document.getElementById('cal-refresh-btn').addEventListener('click', () => calFetchAll(true));
+  document.getElementById('cal-settings-save-btn').addEventListener('click', handleCalSettingsSave);
+  document.getElementById('cal-excl-save-btn').addEventListener('click', handleCalExcludeSave);
+  document.getElementById('cal-settings-reset-btn').addEventListener('click', handleCalSettingsReset);
+  document.getElementById('cal-add-event-btn').addEventListener('click', openCalendarAddForm);
+
+  initResizableEditorSplit();
+}
+
+async function startApp() {
+  initAppShell();
+  initFormattingControls();
+  initStaffEditor();
+  initEditor();
+  initProjects();
+  initUpdateControls();
+
+  welcomeItems = [...WELCOME_ITEMS];
+
+  const startupParams = new URLSearchParams(window.location.search);
+  const requestedTab = startupParams.get('tab');
+  if (requestedTab) openTabById(requestedTab);
+
+  await restoreOnStartup();
+  initPco();
+  initGoogle();
+  renderServingTeamSettings();
+  initUpdateSection();
+  calInitSettings();
+  calFetchAll(false);
+}
+
+startApp().catch(err => {
+  setStatus('Startup failed: ' + (err.message || err), 'error');
+});

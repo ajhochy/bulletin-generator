@@ -7,68 +7,28 @@
 // e.g. "1 Come...", "Refrain:", "Chorus:", "Bridge:", etc.
 // Falls back to \n\n splitting for unlabelled songs.
 function splitLyricSectionIntoStanzas(text) {
-  const lines = text.split('\n');
-  const stanzas = [];
-  let current = [];
-  const flush = () => {
-    const s = current.join('\n').trim();
-    if (s) stanzas.push(s);
-    current = [];
-  };
-  for (const line of lines) {
-    const t = line.trim();
-    const isLabel = t && (VERSE_NUM_RE.test(t) || LYRIC_SECTION_RE.test(t));
-    // Start a new stanza at each label line (if we already have accumulated content)
-    if (isLabel && current.some(l => l.trim())) flush();
-    current.push(line);
-  }
-  flush();
-  // Fallback: if no label-based split found, try blank-line splitting
-  if (stanzas.length <= 1) {
-    const fallback = text.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
-    if (fallback.length > 1) return fallback;
-  }
-  return stanzas;
+  return splitLyricSectionIntoStanzasCore(text);
 }
 
 // Parse lyricBody into stanzas + a Set of stanza indices that have a --- before them.
 // E.g. "1 A\nRefrain:\nB\n---\n2 C" → stanzas=['1 A','Refrain:\nB','2 C'], separatorsBefore={2}
 function parseSongStanzas(lyricBody) {
-  const sections = lyricBody.split(/\n---\n/);
-  const stanzas = [];
-  const separatorsBefore = new Set();
-  sections.forEach((section, si) => {
-    if (si > 0) separatorsBefore.add(stanzas.length);
-    splitLyricSectionIntoStanzas(section).forEach(s => stanzas.push(s));
-  });
-  return { stanzas, separatorsBefore };
+  return parseSongStanzasCore(lyricBody);
 }
 
 // Reassemble stanzas + separators + copyright back into a detail string.
 function buildSongDetail(stanzas, separatorsBefore, copyright) {
-  let result = '';
-  for (let i = 0; i < stanzas.length; i++) {
-    if (i > 0) result += separatorsBefore.has(i) ? '\n---\n' : '\n\n';
-    result += stanzas[i];
-  }
-  if (copyright) result += '\n\n' + copyright;
-  return result;
+  return buildSongDetailCore(stanzas, separatorsBefore, copyright);
 }
 
 // Insert a --- separator after global stanza index afterIdx.
 function insertSongSeparatorAfter(detail, afterIdx) {
-  const { body: lyricBody, copyright } = splitLyricsCopyright(detail);
-  const { stanzas, separatorsBefore } = parseSongStanzas(lyricBody);
-  separatorsBefore.add(afterIdx + 1);
-  return buildSongDetail(stanzas, separatorsBefore, copyright);
+  return insertSongSeparatorAfterCore(detail, afterIdx);
 }
 
 // Remove the --- separator that appears before global stanza index beforeIdx.
 function removeSongSeparatorBefore(detail, beforeIdx) {
-  const { body: lyricBody, copyright } = splitLyricsCopyright(detail);
-  const { stanzas, separatorsBefore } = parseSongStanzas(lyricBody);
-  separatorsBefore.delete(beforeIdx);
-  return buildSongDetail(stanzas, separatorsBefore, copyright);
+  return removeSongSeparatorBeforeCore(detail, beforeIdx);
 }
 
 // ─── Body text renderer ───────────────────────────────────────────────────────
@@ -327,4 +287,3 @@ function renderBodyText(el, text, prose = false) {
     hasContent = true;
   }
 }
-

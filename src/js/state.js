@@ -14,6 +14,23 @@
 // They document the write boundary and can be extended with side-effects later.
 function setItems(arr)   { items   = Array.isArray(arr) ? arr : []; }
 function setAnnData(arr) { annData = Array.isArray(arr) ? arr : []; }
+function setProjects(arr) { projects = Array.isArray(arr) ? arr : []; }
+function setTypeFormatsMap(map) {
+  typeFormats = (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+}
+function setServingTeamFilterMap(map) {
+  servingTeamFilter = (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
+}
+function setCalendarSettings(urls, exclude) {
+  _calUrls = Array.isArray(urls) ? urls : null;
+  _calExclude = Array.isArray(exclude) ? exclude : null;
+}
+function setActiveDocTemplate(template) {
+  activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, template || {});
+}
+function setEditorDisplayName(name) {
+  _editorDisplayName = typeof name === 'string' ? name : '';
+}
 
 let items = [];
 let pcoIgnore = [];              // string[] — PCO item names to skip on import/resync  OWNER: pco.js
@@ -108,18 +125,7 @@ function saveTypeFormats() {
 // "reset to default", so we use a truthy check — this ensures stale ''
 // overrides in saved projects don't silently block type-level formatting.
 function getEffectiveFmt(item) {
-  const base = typeFormats[item.type] || {};
-  const over = item._fmt || {};
-  return {
-    titleBold:   over.titleBold   !== undefined ? over.titleBold   : (base.titleBold   || false),
-    titleItalic: over.titleItalic !== undefined ? over.titleItalic : (base.titleItalic || false),
-    titleAlign:  over.titleAlign  || base.titleAlign  || '',
-    titleSize:   over.titleSize   || base.titleSize   || '',
-    titleColor:  over.titleColor  || base.titleColor  || '',
-    bodyAlign:   over.bodyAlign   || base.bodyAlign   || '',
-    bodySize:    over.bodySize    || base.bodySize    || '',
-    bodyColor:   over.bodyColor   || base.bodyColor   || '',
-  };
+  return getEffectiveFmtCore(typeFormats, item);
 }
 const CAL_CACHE_MS   = 15 * 60 * 1000;
 const CAL_URLS_KEY   = 'worshipCalUrls';
@@ -194,42 +200,7 @@ const TYPE_OPTIONS = [
 // Migrate a legacy item type string to the new 6-type system.
 // Safe to call on already-migrated types — they pass through unchanged.
 function migrateItemType(type) {
-  switch (type) {
-    // Already valid new types — pass through
-    case 'section':
-    case 'song':
-    case 'liturgy':
-    case 'label':
-    case 'note':
-    case 'media':
-    case 'page-break':
-      return type;
-    // Old song variants → song
-    case 'hymn':
-    case 'psalm':
-      return 'song';
-    // Old liturgical types with body text → liturgy
-    case 'creed':
-    case 'prayer':
-    case 'confession':
-    case 'assurance':
-    case 'law':
-    case 'scripture':
-    case 'responsive-reading':
-    case 'call-to-worship':
-    case 'doxology':
-    case 'benediction':
-      return 'liturgy';
-    // Old title-only / structural types → label
-    case 'sermon':
-    case 'offering':
-    case 'prelude':
-    case 'postlude':
-    case 'announcements':
-    case 'other':
-    default:
-      return 'label';
-  }
+  return migrateItemTypeCore(type);
 }
 
 function typeLabel(type) {

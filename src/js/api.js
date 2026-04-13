@@ -30,14 +30,13 @@ async function loadAllFromServer() {
       apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),
       apiFetch('/api/announcements').catch(() => [])
     ]);
-    projects = Array.isArray(projectsData.projects) ? projectsData.projects : [];
+    setProjects(projectsData.projects);
     _serverSettings = bootstrap.settings || {};
     _publicConfig = Object.assign({}, _publicConfig, bootstrap.config || {});
     if (!_publicConfig.calendarDefaults) {
       _publicConfig.calendarDefaults = { urls: [], exclude: [] };
     }
-    typeFormats = (_serverSettings.typeFormats && typeof _serverSettings.typeFormats === 'object' && !Array.isArray(_serverSettings.typeFormats))
-      ? _serverSettings.typeFormats : {};
+    setTypeFormatsMap(_serverSettings.typeFormats);
     // Migrate any old typeFormats keys to the new 6-type system.
     // If multiple old types map to the same new type, keep the first
     // non-empty one found.
@@ -50,25 +49,23 @@ async function loadAllFromServer() {
           _migrated[newKey] = typeFormats[k];
         }
       });
-      typeFormats = _migrated;
+      setTypeFormatsMap(_migrated);
     }
     if (Array.isArray(_serverSettings.staffData) && _serverSettings.staffData.length)
-      staffData = _serverSettings.staffData;
+      setStaffData(_serverSettings.staffData);
     if (Array.isArray(bootstrap.songDb))
       songDb = bootstrap.songDb;
     setAnnData(Array.isArray(annsData)
       ? annsData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '' }))
       : []);
-    servingTeamFilter = (_serverSettings.servingTeamFilter && typeof _serverSettings.servingTeamFilter === 'object')
-      ? _serverSettings.servingTeamFilter : {};
-    _calUrls = Array.isArray(_serverSettings.calUrls) ? _serverSettings.calUrls : null;
-    _calExclude = Array.isArray(_serverSettings.calExclude) ? _serverSettings.calExclude : null;
+    setServingTeamFilterMap(_serverSettings.servingTeamFilter);
+    setCalendarSettings(_serverSettings.calUrls, _serverSettings.calExclude);
     if (_serverSettings.docTemplate && typeof _serverSettings.docTemplate === 'object') {
-      activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, _serverSettings.docTemplate);
+      setActiveDocTemplate(_serverSettings.docTemplate);
     }
     applyDocTemplate();
     if (!isServerMode() && typeof _serverSettings.editorDisplayName === 'string') {
-      _editorDisplayName = _serverSettings.editorDisplayName;
+      setEditorDisplayName(_serverSettings.editorDisplayName);
     }
     // Show Drive export buttons if Drive scope is granted
     const driveJson = document.getElementById('bulk-drive-json');

@@ -10,12 +10,18 @@
 #
 # The .app bundle will be in dist/Bulletin Generator.app
 
+import os
 from pathlib import Path
 
 block_cipher = None
 
 ROOT_DIR = Path(SPECPATH).resolve()
 BUNDLE_ICON_PATH = str(ROOT_DIR / 'Bulletin Generator.icns')
+APP_VERSION = os.environ.get('APP_VERSION', '1.08').lstrip('v')
+
+optional_datas = []
+if (ROOT_DIR / 'dist').exists():
+    optional_datas.append(('dist', 'dist'))
 
 a = Analysis(
     ['launcher.py'],
@@ -30,7 +36,7 @@ a = Analysis(
         ('desktop_config.py',                 '.'),
         ('menubar-icon.png',                  '.'),
         ('menubar-icon@2x.png',               '.'),
-    ],
+    ] + optional_datas,
     hiddenimports=['encodings.idna', 'rumps', 'certifi'],
     hookspath=[],
     hooksconfig={},
@@ -80,8 +86,8 @@ app = BUNDLE(
     info_plist={
         'CFBundleName':             'Bulletin Generator',
         'CFBundleDisplayName':      'Bulletin Generator',
-        'CFBundleVersion':          '1.08',
-        'CFBundleShortVersionString': '1.08',
+        'CFBundleVersion':          APP_VERSION,
+        'CFBundleShortVersionString': APP_VERSION,
         'NSHighResolutionCapable':  True,
         'LSUIElement':              True,   # menu bar only — no dock icon
         'NSHumanReadableCopyright': 'Bulletin Generator',

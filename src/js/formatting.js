@@ -183,13 +183,37 @@ function buildItemFmtToolbar(item, idx) {
   return wrapper;
 }
 
-optCover.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
-optFooter.addEventListener('change',       () => { renderPreview(); scheduleProjectPersist(); });
-optCal.addEventListener('change',          () => { renderPreview(); scheduleProjectPersist(); });
-optBookletSize.addEventListener('change',  () => { renderPreview(); scheduleProjectPersist(); });
-optAnnouncements.addEventListener('change', () => { renderPreview(); scheduleProjectPersist(); });
-optVolunteers.addEventListener('change',    () => { renderPreview(); scheduleProjectPersist(); });
-optStaff.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
+let _formattingControlsInitialized = false;
+
+function initFormattingControls() {
+  if (_formattingControlsInitialized) return;
+  _formattingControlsInitialized = true;
+
+  optCover.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
+  optFooter.addEventListener('change',        () => { renderPreview(); scheduleProjectPersist(); });
+  optCal.addEventListener('change',           () => { renderPreview(); scheduleProjectPersist(); });
+  optBookletSize.addEventListener('change',   () => { renderPreview(); scheduleProjectPersist(); });
+  optAnnouncements.addEventListener('change', () => { renderPreview(); scheduleProjectPersist(); });
+  optVolunteers.addEventListener('change',    () => { renderPreview(); scheduleProjectPersist(); });
+  optStaff.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
+
+  document.getElementById('fmt-save-btn').addEventListener('click', () => {
+    saveTypeFormats();
+    schedulePreviewUpdate();
+    const btn = document.getElementById('fmt-save-btn');
+    const orig = btn.textContent;
+    btn.textContent = 'Saved ✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  });
+
+  document.getElementById('fmt-reset-btn').addEventListener('click', () => {
+    if (!confirm('Reset all type formatting to defaults? This cannot be undone.')) return;
+    setTypeFormatsMap({});
+    saveTypeFormats();
+    renderFormatPage();
+    schedulePreviewUpdate();
+  });
+}
 
 
 // ─── Apply an _fmt object as inline styles to a DOM element ──────────────────
@@ -442,21 +466,3 @@ function renderFormatPage() {
   const filterInput = document.getElementById('fmt-filter');
   if (filterInput && filterInput.value) applyFmtFilter(filterInput.value);
 }
-
-document.getElementById('fmt-save-btn').addEventListener('click', () => {
-  saveTypeFormats();
-  schedulePreviewUpdate();
-  // Brief visual feedback
-  const btn = document.getElementById('fmt-save-btn');
-  const orig = btn.textContent;
-  btn.textContent = 'Saved ✓';
-  setTimeout(() => { btn.textContent = orig; }, 1500);
-});
-
-document.getElementById('fmt-reset-btn').addEventListener('click', () => {
-  if (!confirm('Reset all type formatting to defaults? This cannot be undone.')) return;
-  typeFormats = {};
-  saveTypeFormats();
-  renderFormatPage();
-  schedulePreviewUpdate();
-});

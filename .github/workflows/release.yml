@@ -23,6 +23,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install and verify frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -64,6 +76,18 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install and verify frontend
+        run: |
+          npm ci
+          npm test
+          npm run build
+
       - name: Install PyInstaller and dependencies
         run: pip install "pyinstaller==6.19.0" rumps certifi
 
@@ -88,6 +112,8 @@ jobs:
           PYEOF
 
       - name: Build with PyInstaller
+        env:
+          APP_VERSION: ${{ github.ref_name }}
         run: pyinstaller bulletin-generator.spec
 
       # ── Code signing ────────────────────────────────────────────────────────

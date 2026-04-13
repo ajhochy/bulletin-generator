@@ -23,12 +23,16 @@ const STAFF_DEFAULT = [
   { name: 'Cameron Example',       role: 'Custodian',                           email: ''                              },
 ];
 const STAFF_KEY = 'worshipStaffData';
+let _staffEditorInitialized = false;
 
 function saveStaffData() {
   apiFetch('/api/settings', 'POST', { staffData }).catch(err => setStatus('Staff save failed: ' + (err.message || err), 'error'));
 }
 
 let staffData = STAFF_DEFAULT.map(s => ({ ...s }));  // populated from server at startup
+function setStaffData(arr) {
+  staffData = Array.isArray(arr) ? arr.map(s => ({ ...s })) : STAFF_DEFAULT.map(s => ({ ...s }));
+}
 
 function renderStaffEditor() {
   const container = document.getElementById('staff-editor');
@@ -111,7 +115,9 @@ function renderStaffEditor() {
   container.appendChild(staffForceBreakBtn);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+function initStaffEditor() {
+  if (_staffEditorInitialized) return;
+  _staffEditorInitialized = true;
   const addBtn = document.getElementById('staff-add-btn');
   if (addBtn) addBtn.addEventListener('click', () => {
     staffData.push({ name: '', role: '', email: '' });
@@ -122,16 +128,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (rows.length) rows[rows.length - 1].querySelector('.staff-ed-input').focus();
   });
   renderStaffEditor();
-});
+}
 
 /// ─── Split lyrics from copyright (last paragraph if it looks like copyright) ──
 function splitLyricsCopyright(detail) {
-  const paras = detail.split(/\n\n/);
-  const last = paras[paras.length - 1];
-  const attributionRe = /ccli|©|\bpublic domain\b|license\s*#|trinity hymnal|psalter hymnal|lift up your hearts|luyh|hymn\s*#|th\s*#|luyh\s*#/i;
-  if (paras.length > 1 && attributionRe.test(last)) {
-    return { body: paras.slice(0, -1).join('\n\n'), copyright: last };
-  }
-  return { body: detail, copyright: '' };
+  return splitLyricsCopyrightCore(detail);
 }
-

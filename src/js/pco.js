@@ -1031,7 +1031,14 @@ function initGoogle() {
     window.history.replaceState({}, '', '/');
   } else if (params.has('google_error')) {
     const err = params.get('google_error');
-    msgEl.textContent = err === 'denied' ? 'Authorization cancelled.' : 'Connection failed. Please try again.';
+    const detail = params.get('detail');
+    if (err === 'denied') {
+      msgEl.textContent = 'Authorization cancelled.';
+    } else if (err === 'config') {
+      msgEl.textContent = detail || 'Google OAuth is not configured for this build.';
+    } else {
+      msgEl.textContent = detail ? `Connection failed: ${detail}` : 'Connection failed. Please try again.';
+    }
     msgEl.className = 'pco-msg error';
     window.history.replaceState({}, '', '/');
   }

@@ -392,145 +392,96 @@ function applyPreviewLinkMeta(el, chunk) {
 // new page, but no single stanza is ever split across pages.
 // A `---` line inside song lyrics creates a forced-break sentinel between sections.
 function buildChunks(item, idx) {
-  // ── Page-break item → forced break sentinel ───────────────────────────────
-  if (item.type === 'page-break') {
-    return [makeChunk({ section: 'oow', sourceId: idx, els: [],
-              forceBreak: true, breakItemIdx: idx, itemIdx: idx })];
-  }
+  const plan = deriveChunkPlanCore(item, idx);
+  const fmt = getEffectiveFmt(item);
 
-  // ── PCO note / media: hidden from print ───────────────────────────────────
-  if (item.type === 'note' || item.type === 'media') {
-    return [];  // no elements, no forced break — completely omitted from the bulletin
-  }
-
-  // ── Section heading: sticky to next item ──────────────────────────────────
-  if (item.type === 'section') {
-    return [makeChunk({ section: 'oow', sourceId: idx,
-              els: [buildPreviewItemEl(item, idx)],
-              noBreakBefore: !!item._noBreakBefore, itemIdx: idx,
-              stickyToNext: true })];
-  }
-
-  const d = (item.detail || '').trim();
-  const noBreakStanzas = new Set(Array.isArray(item._noBreakBeforeStanzas) ? item._noBreakBeforeStanzas : []);
-
-  if (item.type === 'song' && d) {
-    const { body: lyricBody, copyright } = splitLyricsCopyright(d);
-
-    // Split lyricBody on --- separators to get sections; each --- becomes a forced-break sentinel.
-    const sections = lyricBody ? lyricBody.split(/\n---\n/) : [''];
-
-    // Count total stanzas across all sections (to know where to put the copyright)
-    let totalStanzas = 0;
-    sections.forEach(sec => { totalStanzas += splitLyricSectionIntoStanzas(sec).length; });
-
-    if (totalStanzas <= 1) {
-      // Single block — no splitting needed
-      return [makeChunk({ section: 'oow', sourceId: idx,
-                els: [buildPreviewItemEl(item, idx)],
-                noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
+  return plan.map(part => {
+    if (part.renderKind === 'sentinel') {
+      return makeChunk({
+        section: part.section,
+        sourceId: part.sourceId,
+        els: [],
+        forceBreak: !!part.forceBreak,
+        noBreakBefore: !!part.noBreakBefore,
+        stickyToNext: !!part.stickyToNext,
+        breakItemIdx: part.breakItemIdx ?? null,
+        separatorItemIdx: part.separatorItemIdx ?? null,
+        separatorStanzaIdx: part.separatorStanzaIdx ?? null,
+        paragraphBreakItemIdx: part.paragraphBreakItemIdx ?? null,
+        paragraphBreakIdx: part.paragraphBreakIdx ?? null,
+        itemIdx: part.itemIdx ?? null,
+      });
     }
 
-    const t = (item.title || '').trim();
-    const fmt = getEffectiveFmt(item);
-    const chunks = [];
-    let globalStanzaIdx = 0;
+    if (part.renderKind === 'full-item') {
+      return makeChunk({
+        section: part.section,
+        sourceId: part.sourceId,
+        els: [buildPreviewItemEl(item, idx)],
+        noBreakBefore: !!part.noBreakBefore,
+        stickyToNext: !!part.stickyToNext,
+        itemIdx: part.itemIdx ?? null,
+      });
+    }
 
-    sections.forEach((section, sectionIdx) => {
-      if (sectionIdx > 0) {
-        // Insert forced-break sentinel between sections (from `---` in lyrics)
-        chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
-                      forceBreak: true, separatorItemIdx: idx,
-                      separatorStanzaIdx: globalStanzaIdx, itemIdx: idx }));
+    if (part.renderKind === 'song-stanza') {
+      const wrap = document.createElement('div');
+      wrap.className = 'order-item' +
+        (part.isLastStanza ? '' : ' song-stanza') +
+        (part.isFirstStanza ? ' preview-linkable' : '');
+      applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, stanzaIdx: part.stanzaIdx });
+      if (part.isFirstStanza && part.title) {
+        const h = document.createElement('div');
+        h.className = 'item-heading has-rule';
+        h.textContent = part.title;
+        applyTitleFmt(h, fmt);
+        wrap.appendChild(h);
       }
-
-      const stanzas = splitLyricSectionIntoStanzas(section);
-      stanzas.forEach((stanza, si) => {
-        const isVeryFirst = sectionIdx === 0 && si === 0;
-        const isVeryLast  = globalStanzaIdx === totalStanzas - 1;
-        const stanzaGlobalIdx = globalStanzaIdx;
-
-        const wrap = document.createElement('div');
-        wrap.className = 'order-item' +
-          (isVeryLast ? '' : ' song-stanza') +
-          (isVeryFirst ? ' preview-linkable' : '');
-        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, stanzaIdx: stanzaGlobalIdx });
-
-        if (isVeryFirst && t) {
-          const h = document.createElement('div');
-          h.className = 'item-heading has-rule';
-          h.textContent = t;
-          applyTitleFmt(h, fmt);
-          wrap.appendChild(h);
-        }
-        const body = document.createElement('div');
-        body.className = 'item-body';
-        applyBodyFmt(body, fmt);
-        renderBodyText(body, stanza);
-        wrap.appendChild(body);
-
-        if (isVeryLast && copyright) {
-          const cp = document.createElement('div');
-          cp.className = 'song-copyright';
-          cp.textContent = copyright;
-          wrap.appendChild(cp);
-        }
-
-        const noBreak = isVeryFirst ? !!item._noBreakBefore : noBreakStanzas.has(stanzaGlobalIdx);
-        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
-                      els: [wrap], noBreakBefore: noBreak,
-                      itemIdx: idx, stanzaIdx: stanzaGlobalIdx }));
-        globalStanzaIdx++;
+      const body = document.createElement('div');
+      body.className = 'item-body';
+      applyBodyFmt(body, fmt);
+      renderBodyText(body, part.stanza);
+      wrap.appendChild(body);
+      if (part.isLastStanza && part.copyright) {
+        const cp = document.createElement('div');
+        cp.className = 'song-copyright';
+        cp.textContent = part.copyright;
+        wrap.appendChild(cp);
+      }
+      return makeChunk({
+        section: part.section,
+        sourceId: part.sourceId,
+        els: [wrap],
+        noBreakBefore: !!part.noBreakBefore,
+        itemIdx: part.itemIdx ?? null,
+        stanzaIdx: part.stanzaIdx ?? null,
       });
-    });
-    return chunks;
-  }
-
-  // Liturgy and label: split multi-paragraph body into per-paragraph chunks.
-  // Mirrors the song-stanza pattern exactly.
-  if ((item.type === 'liturgy' || item.type === 'label') && d) {
-    const paragraphs = d.split(/\n\n+/);
-    if (paragraphs.length > 1) {
-      const t = (item.title || '').trim();
-      const fmt = getEffectiveFmt(item);
-      const forceBreakSet = new Set(Array.isArray(item._forceBreakBeforeParagraph) ? item._forceBreakBeforeParagraph : []);
-      const noBreakSet    = new Set(Array.isArray(item._noBreakBeforeParagraph)    ? item._noBreakBeforeParagraph    : []);
-      const chunks = [];
-      paragraphs.forEach((para, pi) => {
-        if (pi > 0 && forceBreakSet.has(pi)) {
-          // Forced-break sentinel — like the `---` sentinel in songs.
-          chunks.push(makeChunk({ section: 'oow', sourceId: idx, els: [],
-                        forceBreak: true, paragraphBreakItemIdx: idx,
-                        paragraphBreakIdx: pi, itemIdx: idx }));
-        }
-        const wrap = document.createElement('div');
-        wrap.className = 'order-item' + (pi === 0 ? ' preview-linkable' : '');
-        applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, paragraphIdx: pi });
-        if (pi === 0 && t) {
-          const h = document.createElement('div');
-          h.className = 'item-heading has-rule';
-          h.textContent = t;
-          applyTitleFmt(h, fmt);
-          wrap.appendChild(h);
-        }
-        const body = document.createElement('div');
-        body.className = 'item-body';
-        applyBodyFmt(body, fmt);
-        renderBodyText(body, para, true);
-        wrap.appendChild(body);
-        const noBreak = pi === 0 ? !!item._noBreakBefore : noBreakSet.has(pi);
-        chunks.push(makeChunk({ section: 'oow', sourceId: idx,
-                      els: [wrap], noBreakBefore: noBreak,
-                      itemIdx: idx, paragraphIdx: pi }));
-      });
-      return chunks;
     }
-  }
 
-  // Everything else (including single-paragraph liturgy/label): one chunk, not sticky.
-  return [makeChunk({ section: 'oow', sourceId: idx,
-            els: [buildPreviewItemEl(item, idx)],
-            noBreakBefore: !!item._noBreakBefore, itemIdx: idx })];
+    const wrap = document.createElement('div');
+    wrap.className = 'order-item' + (part.isFirstParagraph ? ' preview-linkable' : '');
+    applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, paragraphIdx: part.paragraphIdx });
+    if (part.isFirstParagraph && part.title) {
+      const h = document.createElement('div');
+      h.className = 'item-heading has-rule';
+      h.textContent = part.title;
+      applyTitleFmt(h, fmt);
+      wrap.appendChild(h);
+    }
+    const body = document.createElement('div');
+    body.className = 'item-body';
+    applyBodyFmt(body, fmt);
+    renderBodyText(body, part.paragraph, true);
+    wrap.appendChild(body);
+    return makeChunk({
+      section: part.section,
+      sourceId: part.sourceId,
+      els: [wrap],
+      noBreakBefore: !!part.noBreakBefore,
+      itemIdx: part.itemIdx ?? null,
+      paragraphIdx: part.paragraphIdx ?? null,
+    });
+  });
 }
 
 // ─── Render booklet preview ───────────────────────────────────────────────────

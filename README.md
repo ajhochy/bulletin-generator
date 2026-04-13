@@ -76,6 +76,14 @@ cp .env.example .env
 python3 server.py
 ```
 
+Optional frontend verification:
+
+```bash
+npm install
+npm test
+npm run build
+```
+
 4. Open the app:
 
 ```text
@@ -125,6 +133,7 @@ http://localhost:8080/
 ```
 
 The Compose setup mounts `./data` into the container so working data survives container rebuilds.
+The Docker build now also runs the frontend `vite` build, so JS bundle regressions fail during image creation instead of only at runtime.
 
 ## Data and storage
 
