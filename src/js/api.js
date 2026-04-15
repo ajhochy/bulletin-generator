@@ -7,7 +7,16 @@ async function apiFetch(path, method = 'GET', body = null) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(path, opts);
-  if (!res.ok) { const e = new Error(`API ${method} ${path} → ${res.status}`); e.status = res.status; throw e; }
+  if (!res.ok) {
+    let errData = null;
+    try { errData = await res.json(); } catch (_) {}
+    const msg = errData?.error || `API ${method} ${path} → ${res.status}`;
+    const e = new Error(msg);
+    e.status = res.status;
+    e.code = errData?.code || null;
+    e.detail = errData?.detail || null;
+    throw e;
+  }
   return res.json();
 }
 
