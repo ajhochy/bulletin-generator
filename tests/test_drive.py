@@ -225,7 +225,7 @@ class TestDriveUpload:
 
         assert b'folder99' in captured_req['body']
 
-    def test_upload_http_error_returns_502(self, tmp_path):
+    def test_upload_drive_403_returns_403_with_message(self, tmp_path):
         settings_file = tmp_path / 'settings.json'
         server._write_json(settings_file, {
             'googleAccessToken': 'tok',
@@ -233,6 +233,39 @@ class TestDriveUpload:
         })
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
         err = urllib.error.HTTPError(url='', code=403, msg='Forbidden', hdrs=None, fp=BytesIO(b'forbidden'))
+        with patch('urllib.request.urlopen', side_effect=err), \
+             patch('server.SETTINGS_FILE', settings_file):
+            h._handle_drive_upload()
+        body, status = h._responses[0]
+        assert status == 403
+        assert body.get('code') == 'drive_permission_denied'
+        assert 'permission' in body.get('error', '').lower()
+
+    def test_upload_drive_404_returns_404_with_message(self, tmp_path):
+        settings_file = tmp_path / 'settings.json'
+        server._write_json(settings_file, {
+            'googleAccessToken': 'tok',
+            'googleDriveScopeGranted': True,
+            'googleDriveFolderId': 'bad-folder-id',
+        })
+        h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
+        err = urllib.error.HTTPError(url='', code=404, msg='Not Found', hdrs=None, fp=BytesIO(b'not found'))
+        with patch('urllib.request.urlopen', side_effect=err), \
+             patch('server.SETTINGS_FILE', settings_file):
+            h._handle_drive_upload()
+        body, status = h._responses[0]
+        assert status == 404
+        assert body.get('code') == 'drive_folder_not_found'
+        assert 'folder' in body.get('error', '').lower()
+
+    def test_upload_unknown_http_error_returns_502(self, tmp_path):
+        settings_file = tmp_path / 'settings.json'
+        server._write_json(settings_file, {
+            'googleAccessToken': 'tok',
+            'googleDriveScopeGranted': True,
+        })
+        h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
+        err = urllib.error.HTTPError(url='', code=500, msg='Internal Server Error', hdrs=None, fp=BytesIO(b'server error'))
         with patch('urllib.request.urlopen', side_effect=err), \
              patch('server.SETTINGS_FILE', settings_file):
             h._handle_drive_upload()

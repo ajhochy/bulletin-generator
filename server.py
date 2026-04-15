@@ -1474,7 +1474,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     err_body = e.read().decode('utf-8', errors='replace')[:300]
                 except Exception:
                     pass
-                self._send_json({"error": f"Drive API returned HTTP {e.code}: {err_body}"}, 502)
+                if e.code == 403:
+                    self._send_json({
+                        "error": "Google Drive permission denied. Check that the folder ID is correct and the account has write access.",
+                        "code": "drive_permission_denied",
+                        "detail": err_body,
+                    }, 403)
+                elif e.code == 404:
+                    self._send_json({
+                        "error": "Google Drive folder not found. Check the folder ID in Settings.",
+                        "code": "drive_folder_not_found",
+                        "detail": err_body,
+                    }, 404)
+                elif e.code == 400:
+                    self._send_json({
+                        "error": f"Google Drive rejected the upload request: {err_body}",
+                        "code": "drive_bad_request",
+                        "detail": err_body,
+                    }, 400)
+                else:
+                    self._send_json({"error": f"Drive API returned HTTP {e.code}: {err_body}"}, 502)
                 return
         except Exception as e:
             self._send_json({"error": f"Drive upload failed: {e}"}, 500)
