@@ -358,57 +358,54 @@
 </div><!-- #page-songdb -->
 
 <!-- ═══ PAGE: Settings ═══════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-settings" style="height:calc(100vh - 88px);">
-  <div class="stg-inner">
+<div class="app-page" id="page-settings" style="height:calc(100vh - 88px); overflow-y:auto;">
+  <div class="stg-inner max-w-2xl mx-auto px-4 py-6">
 
-    <div class="stg-page-title">Settings</div>
+    <div class="stg-page-title text-2xl font-bold mb-3">Settings</div>
 
-    <div class="stg-anchor-nav">
-      <a href="#" class="stg-anchor-link" data-target="stg-identity">Identity</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-branding">Branding</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-calendar">Calendar</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-serving">Serving Teams</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-songdb">Song Database</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-updates">App Updates</a>
+    <div class="stg-anchor-nav flex flex-wrap gap-1 mb-6 text-sm">
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-identity">Identity</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-branding">Branding</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-calendar">Calendar</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-serving">Serving Teams</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-songdb">Song Database</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-updates">App Updates</a>
     </div>
 
     <!-- ── Editor Identity (server mode) ────────────────────────────────── -->
-    <div class="stg-group" id="stg-identity-group">
-      <div class="stg-group-heading" id="stg-identity">Editor Identity</div>
-      <div class="stg-card">
-        <div class="stg-card-label">Display Name</div>
-        <p class="section-hint">Your name is attached to project saves so others can see who last edited each bulletin.</p>
-        <input type="text" id="editor-display-name-input" placeholder="e.g. Alex"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+    <div class="stg-group mb-8" id="stg-identity-group">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-identity">Editor Identity</div>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Display Name</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Your name is attached to project saves so others can see who last edited each bulletin.</p>
+        <input type="text" class="input input-bordered input-sm w-full" id="editor-display-name-input" placeholder="e.g. Alex" />
       </div>
     </div>
 
     <!-- ── Church Branding ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-branding">Church Branding</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-branding">Church Branding</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Church Name</div>
-        <p class="section-hint">Appears on the bulletin cover. Set once here and it carries across all bulletins automatically.</p>
-        <input type="text" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Church Name</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Appears on the bulletin cover. Set once here and it carries across all bulletins automatically.</p>
+        <input type="text" class="input input-bordered input-sm w-full" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church" />
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Give Online URL</div>
-        <p class="section-hint">URL for your church's online giving page. If set, a QR code and "Give Online" label appear above the logo on the staff/contact page.</p>
-        <input type="url" id="give-online-url-input" placeholder="https://your-giving-link.com"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Give Online URL</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">URL for your church's online giving page. If set, a QR code and "Give Online" label appear above the logo on the staff/contact page.</p>
+        <input type="url" class="input input-bordered input-sm w-full" id="give-online-url-input" placeholder="https://your-giving-link.com" />
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Church Logo</div>
-        <p class="section-hint">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Church Logo</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
         <div class="img-zone" id="logo-img-zone" role="button" tabindex="0">
           <input type="file" id="logo-img-input" accept="image/*" />
           <div id="logo-img-label">Click to upload church logo</div>
@@ -416,142 +413,138 @@
         <div class="img-preview-wrap" id="logo-img-preview-wrap" style="display:none;">
           <img class="img-preview-thumb" id="logo-img-thumb" src="" alt="" />
           <span class="img-preview-name" id="logo-img-name"></span>
-          <button class="img-clear-btn" id="logo-img-clear">Remove</button>
+          <button class="img-clear-btn btn btn-ghost btn-xs" id="logo-img-clear">Remove</button>
         </div>
       </div>
 
     </div>
 
     <!-- ── Google Calendar ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-calendar">Google Calendar</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-calendar">Google Calendar</div>
 
       <!-- OAuth connect card -->
-      <div class="stg-card" id="google-connect-card">
-        <div class="stg-card-label">Connect Account</div>
-        <p class="section-hint" id="google-creds-hint"></p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
-          <button class="btn-sm" id="google-disconnect-btn" style="display:none;">Disconnect</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-connect-card">
+        <div class="stg-card-label font-semibold text-sm mb-1">Connect Account</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2" id="google-creds-hint"></p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
+          <button class="btn btn-sm btn-ghost" id="google-disconnect-btn" style="display:none;">Disconnect</button>
         </div>
-        <div id="google-oauth-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="google-oauth-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- Calendar picker (shown after connecting) -->
-      <div class="stg-card" id="google-cal-picker-card" style="display:none;">
-        <div class="stg-card-label">Select Calendars</div>
-        <p class="section-hint">Choose which calendars to include in the "This Week" page.</p>
-        <div id="google-cal-list" style="margin-bottom:0.5rem;"></div>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="google-cal-save-btn">Save Selection</button>
-          <button class="btn-sm" id="google-cal-refresh-list-btn">↺ Refresh List</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-cal-picker-card" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Select Calendars</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Choose which calendars to include in the "This Week" page.</p>
+        <div id="google-cal-list" class="mb-3"></div>
+        <div class="stg-btn-row flex gap-2">
+          <button class="btn btn-sm btn-primary" id="google-cal-save-btn">Save Selection</button>
+          <button class="btn btn-sm btn-ghost" id="google-cal-refresh-list-btn">↺ Refresh List</button>
         </div>
       </div>
 
       <!-- Google Drive settings (shown when Google is connected) -->
-      <div class="stg-card" id="google-drive-card" style="display:none;">
-        <div class="stg-card-label">Google Drive</div>
-        <p class="section-hint">Save project JSON and PDF files to your Google Drive.</p>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-drive-card" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Google Drive</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Save project JSON and PDF files to your Google Drive.</p>
         <div id="google-drive-scope-warn" style="display:none;">
-          <p class="pco-msg error" style="margin-bottom:0.5rem;">Drive access not enabled. Disconnect and reconnect Google to grant Drive permission.</p>
+          <p class="pco-msg error alert alert-error text-xs mb-3">Drive access not enabled. Disconnect and reconnect Google to grant Drive permission.</p>
         </div>
         <div id="google-drive-folder-row">
-          <label style="font-size:0.82rem;display:block;margin-bottom:0.25rem;">
-            Drive Folder ID <span style="font-weight:400;color:#888;">(optional — paste from Drive folder URL)</span>
-          </label>
-          <div style="display:flex;gap:0.5rem;align-items:center;">
-            <input type="text" id="google-drive-folder-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="flex:1;font-size:0.82rem;padding:0.25rem 0.4rem;" />
-            <button class="btn-sm btn-sm-primary" id="google-drive-save-btn">Save</button>
+          <label class="label py-0.5"><span class="label-text text-xs">Drive Folder ID <span class="font-normal text-base-content/50">(optional — paste from Drive folder URL)</span></span></label>
+          <div class="flex gap-2 items-center">
+            <input type="text" class="input input-bordered input-sm flex-1" id="google-drive-folder-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" />
+            <button class="btn btn-sm btn-primary" id="google-drive-save-btn">Save</button>
           </div>
-          <p class="section-hint" style="margin-top:0.25rem;">Leave blank to save to My Drive root. To find a folder ID: open the folder in Google Drive and copy the last part of the URL.</p>
+          <p class="text-xs text-base-content/50 mt-1">Leave blank to save to My Drive root. To find a folder ID: open the folder in Google Drive and copy the last part of the URL.</p>
         </div>
-        <div id="google-drive-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="google-drive-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- iCal fallback (shown when not connected via OAuth) -->
-      <div class="stg-card" id="google-ical-card">
-        <div class="stg-card-label">Manual iCal Feed URLs</div>
-        <p class="section-hint">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
-        <label>iCal Feed URLs (one per line):</label>
-        <textarea id="cal-urls-input" rows="4"></textarea>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
-          <button class="btn-sm" id="cal-settings-reset-btn">Reset to Defaults</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-ical-card">
+        <div class="stg-card-label font-semibold text-sm mb-1">Manual iCal Feed URLs</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
+        <label class="label py-0.5"><span class="label-text text-xs">iCal Feed URLs (one per line):</span></label>
+        <textarea class="textarea textarea-bordered textarea-sm w-full" id="cal-urls-input" rows="4"></textarea>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
+          <button class="btn btn-sm btn-ghost" id="cal-settings-reset-btn">Reset to Defaults</button>
         </div>
       </div>
 
       <!-- Exclude list — always visible regardless of calendar connection type -->
-      <div class="stg-card">
-        <div class="stg-card-label">Exclude Events</div>
-        <label>Exclude event titles (one per line, case-insensitive):</label>
-        <textarea id="cal-excl-input" rows="3"></textarea>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="cal-excl-save-btn">Save &amp; Refresh</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Exclude Events</div>
+        <label class="label py-0.5"><span class="label-text text-xs">Exclude event titles (one per line, case-insensitive):</span></label>
+        <textarea class="textarea textarea-bordered textarea-sm w-full" id="cal-excl-input" rows="3"></textarea>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="cal-excl-save-btn">Save &amp; Refresh</button>
         </div>
       </div>
     </div>
 
     <!-- ── Serving Teams ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-serving">Serving Teams</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-serving">Serving Teams</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Teams Shown in Bulletin</div>
-        <p class="section-hint">Choose which Planning Center teams appear on the serving schedule page. New teams are included automatically on first import.</p>
-        <div id="serving-team-filter-list" style="margin-bottom:0.5rem;">
-          <span style="font-size:0.78rem;color:var(--muted);">No teams discovered yet. Import a plan from Planning Center to populate this list.</span>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Teams Shown in Bulletin</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Choose which Planning Center teams appear on the serving schedule page. New teams are included automatically on first import.</p>
+        <div id="serving-team-filter-list" class="mb-2">
+          <span class="text-xs text-base-content/50">No teams discovered yet. Import a plan from Planning Center to populate this list.</span>
         </div>
       </div>
     </div>
 
     <!-- ── Song Database ────────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-songdb">Song Database</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-songdb">Song Database</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Import / Export</div>
-        <p class="section-hint">Back up your song database or restore it from a previously exported file.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="song-db-export-btn">Export JSON</button>
-          <label class="btn-sm" style="cursor:pointer;">Import JSON<input type="file" id="song-db-import-input" accept=".json" style="display:none"></label>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Import / Export</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Back up your song database or restore it from a previously exported file.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="song-db-export-btn">Export JSON</button>
+          <label class="btn btn-sm btn-ghost" style="cursor:pointer;">Import JSON<input type="file" id="song-db-import-input" accept=".json" style="display:none"></label>
         </div>
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Clear Database</div>
-        <p class="section-hint">Permanently removes all songs from the local database. This cannot be undone — export a backup first.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm" id="song-db-clear-btn" style="color:#c0392b;">Clear All Songs</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Clear Database</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Permanently removes all songs from the local database. This cannot be undone — export a backup first.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-error btn-outline" id="song-db-clear-btn">Clear All Songs</button>
         </div>
       </div>
     </div>
 
     <!-- ── App Updates ──────────────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-updates">App Updates</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-updates">App Updates</div>
 
       <!-- Current version + check -->
-      <div class="stg-card">
-        <div class="stg-card-label">Current Version</div>
-        <p class="section-hint">Running version <strong id="update-current-version">—</strong>. Check for a newer release on GitHub.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="update-check-btn">Check for Updates</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Current Version</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Running version <strong id="update-current-version">—</strong>. Check for a newer release on GitHub.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="update-check-btn">Check for Updates</button>
         </div>
-        <div id="update-status-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="update-status-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- Update available banner (hidden until check returns hasUpdate: true) -->
-      <div class="stg-card update-available-card" id="update-banner" style="display:none;">
-        <div class="stg-card-label">Update Available</div>
-        <p class="section-hint">Version <strong id="update-latest-version">—</strong> is available.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="update-apply-btn" style="display:none;">Update Now</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3 update-available-card" id="update-banner" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Update Available</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Version <strong id="update-latest-version">—</strong> is available.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="update-apply-btn" style="display:none;">Update Now</button>
         </div>
-        <div id="update-progress-bar" style="display:none;margin-top:0.6rem;">
-          <div style="background:#e0e0e0;border-radius:6px;height:20px;overflow:hidden;position:relative;">
-            <div id="update-progress-fill" style="background:var(--primary, #7b5e3c);height:100%;width:0%;transition:width 0.5s ease;border-radius:6px;"></div>
-            <span id="update-progress-text" style="position:absolute;top:0;left:0;right:0;text-align:center;line-height:20px;font-size:0.72rem;color:#333;font-weight:600;"></span>
-          </div>
+        <div id="update-progress-bar" style="display:none;" class="mt-3">
+          <progress id="update-progress-fill" class="progress progress-primary w-full" value="0" max="100"></progress>
+          <p id="update-progress-text" class="text-xs text-center text-base-content/60 mt-1"></p>
         </div>
       </div>
 
