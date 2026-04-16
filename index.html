@@ -242,29 +242,29 @@
 </div><!-- #page-editor -->
 
 <!-- ═══ PAGE: Files ══════════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-files" style="height:calc(100vh - 88px);">
-  <div class="files-inner">
-    <div class="files-hdr">
+<div class="app-page" id="page-files" style="height:calc(100vh - 88px); overflow-y:auto;">
+  <div class="files-inner max-w-4xl mx-auto px-4 py-4">
+    <div class="files-hdr flex items-center justify-between mb-4">
       <div>
-        <h2 class="files-title">Saved Projects</h2>
-        <p id="files-count" class="files-subtitle">Loading…</p>
+        <h2 class="files-title text-xl font-bold">Saved Projects</h2>
+        <p id="files-count" class="files-subtitle text-sm text-base-content/60">Loading…</p>
       </div>
-      <div class="files-toolbar">
-        <button class="btn-sm btn-sm-primary" id="files-new-btn" type="button">+ New Project</button>
-        <label class="btn-sm" for="files-import-input" style="cursor:pointer;">↑ Import JSON</label>
+      <div class="files-toolbar flex gap-2">
+        <button class="btn btn-sm btn-primary" id="files-new-btn" type="button">+ New Project</button>
+        <label class="btn btn-sm btn-ghost" for="files-import-input" style="cursor:pointer;">↑ Import JSON</label>
         <input type="file" id="files-import-input" accept=".json" style="display:none;">
       </div>
     </div>
-    <div id="bulk-bar" class="bulk-bar">
-      <span class="bulk-bar-count" id="bulk-count">0 selected</span>
-      <button class="bulk-bar-btn" id="bulk-select-all">Select All</button>
-      <button class="bulk-bar-btn" id="bulk-export-pp">Export ProPresenter</button>
-      <button class="bulk-bar-btn" id="bulk-download-json">↓ Download JSON</button>
-      <button class="bulk-bar-btn" id="bulk-download-pdf">↓ Download PDFs</button>
-      <button class="bulk-bar-btn" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button>
-      <button class="bulk-bar-btn" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button>
-      <button class="bulk-bar-btn bulk-danger" id="bulk-delete">Delete Selected</button>
-      <button class="bulk-bar-clear" id="bulk-clear">✕ Clear</button>
+    <div id="bulk-bar" class="bulk-bar flex items-center gap-2 bg-primary text-primary-content px-4 py-2 rounded-lg mb-3 flex-wrap">
+      <span class="bulk-bar-count font-semibold text-sm" id="bulk-count">0 selected</span>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-select-all">Select All</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-export-pp">Export ProPresenter</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-json">↓ Download JSON</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-pdf">↓ Download PDFs</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button>
+      <button class="bulk-bar-btn btn btn-sm btn-error" id="bulk-delete">Delete Selected</button>
+      <button class="bulk-bar-clear btn btn-sm btn-ghost text-primary-content ml-auto" id="bulk-clear">✕ Clear</button>
     </div>
     <div id="files-list"></div>
   </div>

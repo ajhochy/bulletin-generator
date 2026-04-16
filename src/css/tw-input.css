@@ -9,4 +9,11 @@
   .tab-btn:not(.active) {
     @apply text-base-content/60;
   }
+  /* Bulk bar: hidden by default, shown via JS .visible toggle */
+  .bulk-bar {
+    display: none;
+  }
+  .bulk-bar.visible {
+    display: flex;
+  }
 }
