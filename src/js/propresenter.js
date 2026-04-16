@@ -454,17 +454,17 @@ let _proImportParsed = [];
 
 // Disclaimer gate — show modal before opening the file picker
 document.getElementById('pro-import-btn').addEventListener('click', () => {
-  document.getElementById('pro-disclaimer-modal').showModal();
+  document.getElementById('pro-disclaimer-modal').style.display = '';
 });
 document.getElementById('pro-disclaimer-close-btn').addEventListener('click', () => {
-  document.getElementById('pro-disclaimer-modal').close();
+  document.getElementById('pro-disclaimer-modal').style.display = 'none';
 });
 document.getElementById('pro-disclaimer-cancel-btn').addEventListener('click', () => {
-  document.getElementById('pro-disclaimer-modal').close();
+  document.getElementById('pro-disclaimer-modal').style.display = 'none';
 });
 // Continue button opens the file picker — must be a real click handler to preserve user gesture
 document.getElementById('pro-disclaimer-continue-btn').addEventListener('click', () => {
-  document.getElementById('pro-disclaimer-modal').close();
+  document.getElementById('pro-disclaimer-modal').style.display = 'none';
   document.getElementById('pro-import-input').click();
 });
 
@@ -567,19 +567,19 @@ function _showProPreview(results) {
     body.appendChild(more);
   }
 
-  document.getElementById('pro-preview-modal').showModal();
+  document.getElementById('pro-preview-modal').style.display = '';
 }
 
 // Preview modal buttons
 document.getElementById('pro-preview-close-btn').addEventListener('click', () => {
-  document.getElementById('pro-preview-modal').close();
+  document.getElementById('pro-preview-modal').style.display = 'none';
 });
 document.getElementById('pro-preview-cancel-btn').addEventListener('click', () => {
-  document.getElementById('pro-preview-modal').close();
+  document.getElementById('pro-preview-modal').style.display = 'none';
   _proImportParsed = [];
 });
 document.getElementById('pro-preview-continue-btn').addEventListener('click', () => {
-  document.getElementById('pro-preview-modal').close();
+  document.getElementById('pro-preview-modal').style.display = 'none';
   _showProReview();
 });
 
@@ -653,11 +653,11 @@ function _showProReview() {
   });
 
   updateConfirmBtn();
-  document.getElementById('pro-import-modal').showModal();
+  document.getElementById('pro-import-modal').style.display = '';
 }
 
-document.getElementById('pro-import-close-btn').addEventListener('click',  () => { document.getElementById('pro-import-modal').close(); });
-document.getElementById('pro-import-cancel-btn').addEventListener('click', () => { document.getElementById('pro-import-modal').close(); });
+document.getElementById('pro-import-close-btn').addEventListener('click',  () => { document.getElementById('pro-import-modal').style.display = 'none'; });
+document.getElementById('pro-import-cancel-btn').addEventListener('click', () => { document.getElementById('pro-import-modal').style.display = 'none'; });
 
 document.getElementById('pro-import-confirm-btn').addEventListener('click', () => {
   const checked = new Set(
@@ -674,7 +674,7 @@ document.getElementById('pro-import-confirm-btn').addEventListener('click', () =
   });
   saveSongDb();
   renderSongDb();
-  document.getElementById('pro-import-modal').close();
+  document.getElementById('pro-import-modal').style.display = 'none';
   setStatus(`ProPresenter import complete — ${imported} added, ${replaced} replaced.`, 'success');
 });
 

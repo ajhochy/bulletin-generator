@@ -114,13 +114,13 @@ function renderItemList() {
 
     // ── Page-break: compact dashed divider card ──────────────────────────────
     if (item.type === 'page-break') {
-      card.className = 'item-card is-break-card border-dashed border-2 border-base-300 rounded-lg my-0.5';
+      card.className = 'item-card is-break-card';
       card.innerHTML = `
-        <div class="item-card-header flex items-center gap-1 px-2 py-1">
-          <button class="icon-btn btn btn-ghost btn-xs" data-action="up"   title="Move up">&#8593;</button>
-          <span class="break-card-label flex-1 text-center text-xs text-base-content/40 font-medium tracking-wider">── Page Break ──</span>
-          <button class="icon-btn btn btn-ghost btn-xs" data-action="down" title="Move down">&#8595;</button>
-          <button class="icon-btn danger btn btn-ghost btn-xs text-error" data-action="delete" title="Remove page break">&#215;</button>
+        <div class="item-card-header">
+          <button class="icon-btn" data-action="up"   title="Move up">&#8593;</button>
+          <span class="break-card-label">── Page Break ──</span>
+          <button class="icon-btn" data-action="down" title="Move down">&#8595;</button>
+          <button class="icon-btn danger" data-action="delete" title="Remove page break">&#215;</button>
         </div>
       `;
       itemList.appendChild(card);
@@ -138,23 +138,23 @@ function renderItemList() {
       isSongType   ? 'Lyrics — paste verses, label sections (Verse 1, Chorus, etc.), copyright on last line' :
       item.type === 'liturgy' ? 'Text — line breaks preserved' :
       'Leave blank for title-only display, or add a subtitle/note';
-    card.className = `item-card border border-base-300 rounded-lg mb-1${isSection ? ' is-section-card bg-base-200' : ' bg-base-100'}${isHiddenType ? ' is-hidden-card opacity-60' : ''}${isLabelType ? ' is-label-card' : ''}${collapsed ? ' item-collapsed' : ''}`;
+    card.className = `item-card${isSection ? ' is-section-card' : ''}${isHiddenType ? ' is-hidden-card' : ''}${isLabelType ? ' is-label-card' : ''}${collapsed ? ' item-collapsed' : ''}`;
     // Title goes in header (visible when collapsed); type select goes below header
     card.innerHTML = `
-      <div class="item-card-header flex items-center gap-0.5 px-1.5 py-1">
-        <button class="item-collapse-btn btn btn-ghost btn-xs px-1" data-action="collapse" title="${collapsed ? 'Expand' : 'Collapse'}">&#9660;</button>
-        <input class="item-title-input input input-sm flex-1 min-w-0 font-medium bg-transparent border-0 focus:border focus:border-base-300 h-7 px-1" type="text"
+      <div class="item-card-header">
+        <button class="item-collapse-btn" data-action="collapse" title="${collapsed ? 'Expand' : 'Collapse'}">&#9660;</button>
+        <input class="item-title-input" type="text"
                placeholder="${isSection ? 'Section name (e.g. GATHERING)' : 'Item heading…'}"
                value="${escAttr(item.title)}" />
-        <button class="icon-btn btn btn-ghost btn-xs px-1" data-action="up"     title="Move up">&#8593;</button>
-        <button class="icon-btn btn btn-ghost btn-xs px-1" data-action="down"   title="Move down">&#8595;</button>
-        ${isSongType ? `<button class="icon-btn btn btn-ghost btn-xs px-1" data-action="db-lookup" title="Populate from Song Database">&#9835;</button>` : ''}
-        ${isSongType ? `<button class="icon-btn btn btn-ghost btn-xs px-1" data-action="db-save" title="Save / Override Song in Database">&#128190;</button>` : ''}
-        <button class="icon-btn danger btn btn-ghost btn-xs px-1 text-error" data-action="delete" title="Remove">&#215;</button>
+        <button class="icon-btn" data-action="up"     title="Move up">&#8593;</button>
+        <button class="icon-btn" data-action="down"   title="Move down">&#8595;</button>
+        ${isSongType ? `<button class="icon-btn" data-action="db-lookup" title="Populate from Song Database">&#9835;</button>` : ''}
+        ${isSongType ? `<button class="icon-btn" data-action="db-save" title="Save / Override Song in Database">&#128190;</button>` : ''}
+        <button class="icon-btn danger" data-action="delete" title="Remove">&#215;</button>
       </div>
-      <select class="item-type-select select select-bordered select-xs w-full rounded-none border-x-0 border-t border-b-0 border-base-200">${typeSelectHTML(item.type)}</select>
-      ${isHiddenType ? `<span class="hidden-type-badge badge badge-sm badge-ghost mx-2 mb-1">hidden from print</span>` : ''}
-      <textarea class="item-detail-input textarea textarea-sm w-full rounded-none rounded-b-lg border-t border-base-200 focus:outline-none resize-none"
+      <select class="item-type-select">${typeSelectHTML(item.type)}</select>
+      ${isHiddenType ? `<span class="hidden-type-badge">hidden from print</span>` : ''}
+      <textarea class="item-detail-input"
                 placeholder="${escAttr(detailPlaceholder)}"
                 rows="2">${escAttr(item.detail)}</textarea>
     `;
