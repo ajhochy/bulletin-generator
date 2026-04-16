@@ -216,11 +216,11 @@ function renderSongDb() {
   visible.forEach(song => {
     const realIdx = songDb.indexOf(song);
     const entry   = document.createElement('div');
-    entry.className = 'song-db-entry border-b border-base-300 px-3 py-2 hover:bg-base-200 cursor-pointer';
+    entry.className = 'song-db-entry border border-base-300 rounded-lg bg-base-100 mb-2 overflow-hidden hover:bg-base-200 cursor-pointer';
 
     // ── Main row (click to expand) ──
     const main = document.createElement('div');
-    main.className = 'song-db-entry-main flex items-start gap-2';
+    main.className = 'song-db-entry-main flex items-start gap-2 px-3 py-2';
 
     const info = document.createElement('div');
     info.className = 'song-db-entry-info flex-1 min-w-0';
@@ -302,11 +302,11 @@ function renderSongDb() {
     expandActions.className = 'song-db-expand-actions';
 
     const useBtn = document.createElement('button');
-    useBtn.className = 'btn-sm btn-sm-primary';
+    useBtn.className = 'btn btn-sm btn-primary';
     useBtn.textContent = '+ Use in Bulletin';
 
     const editBtn2 = document.createElement('button');
-    editBtn2.className = 'btn-sm';
+    editBtn2.className = 'btn btn-sm btn-ghost';
     editBtn2.textContent = 'Edit Song';
 
     expandActions.appendChild(useBtn);
@@ -319,13 +319,13 @@ function renderSongDb() {
     editView.className = 'sdb-inline-edit';
     editView.style.display = 'none';
     editView.innerHTML = `
-      <div class="field-row"><label>Title</label><input type="text" class="sdb-inline-title" value="" /></div>
-      <div class="field-row"><label>Author</label><input type="text" class="sdb-inline-author" value="" /></div>
-      <div class="field-row"><label>Lyrics</label><textarea class="sdb-inline-lyrics" rows="14"></textarea></div>
-      <div class="field-row"><label>Copyright</label><input type="text" class="sdb-inline-copyright" value="" /></div>
+      <div class="field-row form-control"><label class="label py-0.5"><span class="label-text text-xs">Title</span></label><input type="text" class="sdb-inline-title input input-bordered input-sm" value="" /></div>
+      <div class="field-row form-control"><label class="label py-0.5"><span class="label-text text-xs">Author</span></label><input type="text" class="sdb-inline-author input input-bordered input-sm" value="" /></div>
+      <div class="field-row form-control"><label class="label py-0.5"><span class="label-text text-xs">Lyrics</span></label><textarea class="sdb-inline-lyrics textarea textarea-bordered textarea-sm" rows="14"></textarea></div>
+      <div class="field-row form-control"><label class="label py-0.5"><span class="label-text text-xs">Copyright</span></label><input type="text" class="sdb-inline-copyright input input-bordered input-sm" value="" /></div>
       <div class="song-db-expand-actions" style="margin-top:0.5rem;">
-        <button class="btn-sm btn-sm-primary sdb-inline-save-btn">Save</button>
-        <button class="btn-sm sdb-inline-cancel-btn">Cancel</button>
+        <button class="btn btn-sm btn-primary sdb-inline-save-btn">Save</button>
+        <button class="btn btn-sm btn-ghost sdb-inline-cancel-btn">Cancel</button>
       </div>
     `;
     panel.appendChild(editView);
@@ -629,4 +629,3 @@ document.getElementById('song-db-clear-btn').addEventListener('click', () => {
 document.getElementById('song-db-search').addEventListener('input', renderSongDb);
 document.getElementById('song-db-sort').addEventListener('change', renderSongDb);
 document.getElementById('song-db-source-filter').addEventListener('change', renderSongDb);
-

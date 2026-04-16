@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="src/css/preview.css" />
   <link rel="stylesheet" href="src/css/print.css" />
   <link rel="stylesheet" href="src/css/tw-output.css" />
+  <link rel="stylesheet" href="src/css/compat.css" />
 </head>
 <body>
 
@@ -103,7 +104,7 @@
         <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
       </div>
       <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
-      <div id="stale-banner" style="display:none;" class="text-xs mt-1" style="color:#7a5c45;"></div>
+      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
       <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
       <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
       <!-- Hidden select kept for internal JS state tracking -->
@@ -252,16 +253,23 @@
         <input type="file" id="files-import-input" accept=".json" style="display:none;">
       </div>
     </div>
-    <div id="bulk-bar" class="bulk-bar flex items-center gap-2 bg-primary text-primary-content px-4 py-2 rounded-lg mb-3 flex-wrap">
-      <span class="bulk-bar-count font-semibold text-sm" id="bulk-count">0 selected</span>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-select-all">Select All</button>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-export-pp">Export ProPresenter</button>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-json">↓ Download JSON</button>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-pdf">↓ Download PDFs</button>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button>
-      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button>
-      <button class="bulk-bar-btn btn btn-sm btn-error" id="bulk-delete">Delete Selected</button>
-      <button class="bulk-bar-clear btn btn-sm btn-ghost text-primary-content ml-auto" id="bulk-clear">✕ Clear</button>
+    <div id="bulk-bar" class="bulk-bar items-center justify-between gap-2 bg-base-100 border border-base-300 px-3 py-2 rounded-lg mb-3 shadow-sm">
+      <span class="bulk-bar-count badge badge-primary badge-sm" id="bulk-count">0 selected</span>
+      <div class="flex items-center gap-2">
+        <details class="dropdown dropdown-end">
+          <summary class="btn btn-sm btn-primary">Bulk Actions</summary>
+          <ul class="menu dropdown-content z-50 mt-2 w-56 rounded-lg bg-base-100 p-2 shadow-md border border-base-300">
+            <li><button class="bulk-bar-btn" id="bulk-select-all">Select All</button></li>
+            <li><button class="bulk-bar-btn" id="bulk-export-pp">Export ProPresenter</button></li>
+            <li><button class="bulk-bar-btn" id="bulk-download-json">Download JSON</button></li>
+            <li><button class="bulk-bar-btn" id="bulk-download-pdf">Download PDFs</button></li>
+            <li><button class="bulk-bar-btn" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button></li>
+            <li><button class="bulk-bar-btn" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button></li>
+            <li><button class="bulk-bar-btn text-error" id="bulk-delete">Delete Selected</button></li>
+          </ul>
+        </details>
+        <button class="bulk-bar-clear btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
+      </div>
     </div>
     <div id="files-list"></div>
   </div>
@@ -278,7 +286,7 @@
     <div class="sdb-page-cols flex flex-1 min-h-0 divide-x divide-base-300">
 
       <!-- Left: search + list -->
-      <div class="sdb-list-col flex flex-col w-80 shrink-0 overflow-hidden">
+      <div class="sdb-list-col flex flex-col shrink-0 overflow-hidden">
         <div id="sdb-controls-page" class="p-3 border-b border-base-300">
           <input type="text" class="input input-bordered input-sm w-full mb-2" id="song-db-search" placeholder="Search title, author, CCLI, lyrics…" />
           <div class="sdb-sort-row flex items-center gap-1 flex-wrap text-xs text-base-content/60">
@@ -306,8 +314,8 @@
       </div>
 
       <!-- Right: add/edit form -->
-      <div class="sdb-form-col flex-1 overflow-y-auto p-4">
-        <div class="sdb-form-sticky">
+      <div class="sdb-form-col flex-1 overflow-y-auto p-4 bg-base-200">
+        <div class="sdb-form-sticky card bg-base-100 border border-base-300 rounded-lg p-4 shadow-sm">
           <div class="sdb-panel-actions flex gap-2 mb-3">
             <button class="btn btn-sm btn-primary flex-1" id="song-db-paste-btn">⎘ Paste from Clipboard</button>
             <button class="btn btn-sm btn-ghost flex-1" id="pro-import-btn" title="Import songs from ProPresenter .pro/.pro6/.pro7 files">⬆ Import ProPresenter</button>
@@ -405,11 +413,11 @@
       <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
         <div class="stg-card-label font-semibold text-sm mb-1">Church Logo</div>
         <p class="section-hint text-xs text-base-content/60 mb-2">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
-        <div class="img-zone" id="logo-img-zone" role="button" tabindex="0">
+        <div class="img-zone border-2 border-dashed border-base-300 rounded-lg bg-base-200 p-4 text-center cursor-pointer" id="logo-img-zone" role="button" tabindex="0">
           <input type="file" id="logo-img-input" accept="image/*" />
-          <div id="logo-img-label">Click to upload church logo</div>
+          <div class="text-sm font-medium text-base-content/70" id="logo-img-label">Click to upload church logo</div>
         </div>
-        <div class="img-preview-wrap" id="logo-img-preview-wrap" style="display:none;">
+        <div class="img-preview-wrap logo-img-preview-wrap mt-3 rounded-lg border border-base-300 bg-base-200 p-3" id="logo-img-preview-wrap" style="display:none;">
           <img class="img-preview-thumb" id="logo-img-thumb" src="" alt="" />
           <span class="img-preview-name" id="logo-img-name"></span>
           <button class="img-clear-btn btn btn-ghost btn-xs" id="logo-img-clear">Remove</button>
@@ -590,15 +598,15 @@
 
 <!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
 <dialog id="import-review-modal" class="modal">
-  <div class="modal-box max-w-2xl">
-    <div class="flex items-center justify-between mb-3">
+  <div class="modal-box max-w-2xl p-0 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-base-300 bg-base-200">
       <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
       <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
     </div>
-    <div class="py-2" id="irm-body">
+    <div class="p-5 max-h-[60vh] overflow-y-auto" id="irm-body">
       <!-- populated by JS -->
     </div>
-    <div class="modal-action">
+    <div class="modal-action px-5 py-4 mt-0 border-t border-base-300 bg-base-200">
       <button class="btn btn-ghost btn-sm" id="irm-cancel-btn">Skip All</button>
       <button class="btn btn-primary btn-sm" id="irm-apply-btn">Apply &amp; Continue</button>
     </div>
