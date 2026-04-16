@@ -223,6 +223,52 @@
       box-sizing: border-box;
       field-sizing: content;
     }
+    /* Printed welcome + announcement sections rendered by preview.js */
+    .welcome-section {
+      margin-bottom: 0.85rem;
+    }
+    .welcome-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      font-family: var(--font-serif);
+      color: #111;
+      margin-bottom: 0.2rem;
+      letter-spacing: 0.01em;
+    }
+    .welcome-divider {
+      border: none;
+      border-top: 0.75px solid #bbb;
+      margin: 0 0 0.3rem;
+    }
+    .welcome-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      font-size: 0.68rem;
+      line-height: 1.22;
+      font-family: var(--font-serif);
+      color: #111;
+    }
+    .welcome-list li {
+      padding-left: 0.8em;
+      position: relative;
+      margin-bottom: 0.10rem;
+    }
+    .welcome-list li::before {
+      content: '\2022';
+      position: absolute;
+      left: 0;
+      color: #555;
+    }
+    .ann-heading {
+      font-size: 1.35rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+      border-bottom: 1.5px solid #111;
+      padding-bottom: 0.18rem;
+      margin-bottom: 0.7rem;
+    }
     /* Printed announcement heading (title of each announcement) */
     .ann-item-heading {
       font-weight: 700;
@@ -232,7 +278,14 @@
       margin-bottom: 0.05rem;
     }
     .ann-item-heading:first-of-type { margin-top: 0; }
-    .ann-body { margin-bottom: 0.1rem; }
+    .ann-body {
+      font-size: 0.82rem;
+      line-height: 1.35;
+      color: #111;
+      white-space: pre-wrap;
+      font-family: var(--font-serif);
+      margin-bottom: 0.1rem;
+    }
 
     /* Copyright line under song lyrics — tiny, right-aligned */
     .song-copyright {

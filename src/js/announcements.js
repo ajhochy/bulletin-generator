@@ -3,16 +3,16 @@ function annRender() {
   annList.innerHTML = '';
   annData.forEach((ann, idx) => {
     const card = document.createElement('div');
-    card.className = 'ann-card';
+    card.className = 'ann-card card bg-base-100 border border-base-300 rounded-lg p-3 mb-2 shadow-sm';
     card.dataset.annIdx = idx;
 
     // Row 1: title input + move + delete
     const row1 = document.createElement('div');
-    row1.className = 'ann-card-row1';
+    row1.className = 'ann-card-row1 flex items-center gap-1.5 mb-2';
 
     const titleIn = document.createElement('input');
     titleIn.type = 'text';
-    titleIn.className = 'ann-title-input';
+    titleIn.className = 'ann-title-input input input-bordered input-sm flex-1 min-w-0';
     titleIn.placeholder = 'Heading (optional)';
     titleIn.value = ann.title || '';
     titleIn.addEventListener('input', () => {
@@ -23,28 +23,28 @@ function annRender() {
     });
 
     const upBtn = document.createElement('button');
-    upBtn.className = 'ann-icon-btn';
+    upBtn.className = 'ann-icon-btn btn btn-ghost btn-xs btn-square';
     upBtn.title = 'Move up';
     upBtn.textContent = '↑';
     upBtn.disabled = idx === 0;
     upBtn.addEventListener('click', () => annMove(idx, -1));
 
     const downBtn = document.createElement('button');
-    downBtn.className = 'ann-icon-btn';
+    downBtn.className = 'ann-icon-btn btn btn-ghost btn-xs btn-square';
     downBtn.title = 'Move down';
     downBtn.textContent = '↓';
     downBtn.disabled = idx === annData.length - 1;
     downBtn.addEventListener('click', () => annMove(idx, 1));
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'ann-icon-btn ann-del-btn';
+    delBtn.className = 'ann-icon-btn ann-del-btn btn btn-ghost btn-xs btn-square text-error';
     delBtn.title = 'Remove';
     delBtn.textContent = '✕';
     delBtn.addEventListener('click', () => annDelete(idx));
 
     // Break-before toggle (Feature 1)
     const breakToggle = document.createElement('button');
-    breakToggle.className = 'ann-break-toggle' + (ann._breakBefore ? ' active' : '');
+    breakToggle.className = 'ann-break-toggle btn btn-ghost btn-xs btn-square' + (ann._breakBefore ? ' active' : '');
     breakToggle.title = ann._breakBefore ? 'Remove forced page break before this announcement' : 'Insert page break before this announcement';
     breakToggle.textContent = '⊞';
     breakToggle.addEventListener('click', () => {
@@ -64,11 +64,11 @@ function annRender() {
 
     // Row 2: formatting toolbar
     const toolbar = document.createElement('div');
-    toolbar.className = 'ann-card-toolbar';
+    toolbar.className = 'ann-card-toolbar flex items-center gap-1 mb-2';
 
     const boldBtn = document.createElement('button');
     boldBtn.type = 'button';
-    boldBtn.className = 'ann-fmt-btn ann-fmt-bold';
+    boldBtn.className = 'ann-fmt-btn ann-fmt-bold btn btn-ghost btn-xs';
     boldBtn.title = 'Bold — select text then click';
     boldBtn.textContent = 'B';
     boldBtn.addEventListener('mousedown', e => e.preventDefault());
@@ -76,7 +76,7 @@ function annRender() {
 
     const bulletBtn = document.createElement('button');
     bulletBtn.type = 'button';
-    bulletBtn.className = 'ann-fmt-btn';
+    bulletBtn.className = 'ann-fmt-btn btn btn-ghost btn-xs';
     bulletBtn.title = 'Toggle bullet point on current line';
     bulletBtn.textContent = '•';
     bulletBtn.addEventListener('mousedown', e => e.preventDefault());
@@ -87,7 +87,7 @@ function annRender() {
 
     // Body textarea
     const bodyTA = document.createElement('textarea');
-    bodyTA.className = 'ann-body-input';
+    bodyTA.className = 'ann-body-input textarea textarea-bordered textarea-sm w-full';
     bodyTA.rows = 3;
     bodyTA.placeholder = 'Announcement text…';
     bodyTA.value = ann.body || '';
@@ -106,13 +106,13 @@ function annRender() {
 
     // URL input for QR code (Feature 6)
     const urlRow = document.createElement('div');
-    urlRow.className = 'ann-url-row';
+    urlRow.className = 'ann-url-row flex items-center gap-2 mt-2';
     const urlLabel = document.createElement('span');
-    urlLabel.className = 'ann-url-label';
+    urlLabel.className = 'ann-url-label text-xs text-base-content/50 whitespace-nowrap';
     urlLabel.textContent = 'QR URL:';
     const urlInput = document.createElement('input');
     urlInput.type = 'url';
-    urlInput.className = 'ann-url-input';
+    urlInput.className = 'ann-url-input input input-bordered input-xs flex-1 min-w-0';
     urlInput.placeholder = 'https://… (optional, generates QR code)';
     urlInput.value = ann.url || '';
     urlInput.addEventListener('input', () => {
@@ -218,13 +218,13 @@ function welcomeRender() {
   welcomeList.innerHTML = '';
   welcomeItems.forEach((text, idx) => {
     const row = document.createElement('div');
-    row.className = 'welcome-item-row';
-    row.style.cssText = 'display:flex;gap:0.3rem;align-items:center;margin-bottom:0.3rem;';
+    row.className = 'welcome-item-row flex items-center gap-2 mb-2';
+    row.style.cssText = '';
 
     const input = document.createElement('input');
     input.type = 'text';
-    input.className = 'ann-title-input';
-    input.style.cssText = 'flex:1;';
+    input.className = 'ann-title-input input input-bordered input-sm flex-1 min-w-0';
+    input.style.cssText = '';
     input.value = text;
     input.placeholder = 'Welcome item text…';
     input.addEventListener('input', () => {
@@ -234,7 +234,7 @@ function welcomeRender() {
     });
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'ann-icon-btn ann-del-btn';
+    delBtn.className = 'ann-icon-btn ann-del-btn btn btn-ghost btn-xs btn-square text-error';
     delBtn.title = 'Remove';
     delBtn.textContent = '✕';
     delBtn.addEventListener('click', () => {

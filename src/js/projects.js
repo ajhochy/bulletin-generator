@@ -1200,4 +1200,9 @@ function initProjects() {
   document.getElementById('project-browse-btn').addEventListener('click', handleProjectBrowse);
   document.getElementById('bulk-drive-json').addEventListener('click', handleBulkDriveJson);
   document.getElementById('bulk-drive-pdf').addEventListener('click', handleBulkDrivePdf);
+  document.getElementById('bulk-bar')?.addEventListener('click', e => {
+    if (e.target instanceof Element && e.target.closest('.bulk-bar-btn')) {
+      e.currentTarget.querySelector('details')?.removeAttribute('open');
+    }
+  });
 }
