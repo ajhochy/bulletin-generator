@@ -556,20 +556,20 @@
 </div><!-- #page-settings -->
 
 <!-- ═══ PAGE: Format ═════════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-format">
-  <div class="fmt-page-inner">
-    <h2 class="fmt-page-title">Document Size</h2>
-    <div class="fmt-template-row" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.4rem;">
-      <label for="doc-page-size-sel" style="font-size:0.82rem;white-space:nowrap;">Page size</label>
-      <select id="doc-page-size-sel" style="font-size:0.82rem;">
+<div class="app-page" id="page-format" style="overflow-y:auto;">
+  <div class="fmt-page-inner max-w-4xl mx-auto px-4 py-6">
+    <h2 class="fmt-page-title text-lg font-bold mb-3">Document Size</h2>
+    <div class="fmt-template-row flex items-center gap-3 mb-6">
+      <label class="text-sm whitespace-nowrap" for="doc-page-size-sel">Page size</label>
+      <select class="select select-bordered select-sm" id="doc-page-size-sel">
         <option value="5.5x8.5">5.5 × 8.5 in — half-letter (default)</option>
         <option value="8.5x11">8.5 × 11 in — letter</option>
         <option value="8.5x14">8.5 × 14 in — legal</option>
         <option value="11x17">11 × 17 in — tabloid / ledger</option>
       </select>
     </div>
-    <h2 class="fmt-page-title">Item Type Formatting</h2>
-    <p class="fmt-page-hint">
+    <h2 class="fmt-page-title text-lg font-bold mb-2">Item Type Formatting</h2>
+    <p class="fmt-page-hint text-sm text-base-content/60 mb-4">
       Set default formatting for each item type.
       <strong>Song</strong> controls all songs and hymns.
       <strong>Liturgy</strong> controls spoken/read items (prayers,
@@ -578,87 +578,91 @@
       offering, prelude, etc.). Per-item overrides in the editor
       always take precedence.
     </p>
-    <div class="fmt-filter-wrap">
-      <input type="text" id="fmt-filter" placeholder="Filter types…" autocomplete="off" />
+    <div class="fmt-filter-wrap mb-4">
+      <input type="text" class="input input-bordered input-sm w-full max-w-xs" id="fmt-filter" placeholder="Filter types…" autocomplete="off" />
     </div>
     <div class="fmt-types-grid" id="fmt-types-grid">
       <!-- populated by renderFormatPage() -->
     </div>
-    <div class="fmt-page-btns">
-      <button class="btn btn-primary" id="fmt-save-btn">Save Type Formats</button>
-      <button class="btn" id="fmt-reset-btn">Reset All to Defaults</button>
+    <div class="fmt-page-btns flex gap-2 mt-6">
+      <button class="btn btn-primary btn-sm" id="fmt-save-btn">Save Type Formats</button>
+      <button class="btn btn-ghost btn-sm" id="fmt-reset-btn">Reset All to Defaults</button>
     </div>
   </div>
 </div><!-- #page-format -->
 
 <!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
-<div id="import-review-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box">
-    <div class="irm-header">
-      <div class="irm-title" id="irm-title">Review Imported Songs</div>
-      <button class="irm-close-btn" id="irm-close-btn" title="Close">✕</button>
+<dialog id="import-review-modal" class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="irm-body">
+    <div class="py-2" id="irm-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="irm-cancel-btn">Skip All</button>
-      <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="irm-cancel-btn">Skip All</button>
+      <button class="btn btn-primary btn-sm" id="irm-apply-btn">Apply &amp; Continue</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-disclaimer-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:460px;">
-    <div class="irm-header">
-      <div class="irm-title">ProPresenter Import (Beta)</div>
-      <button class="irm-close-btn" id="pro-disclaimer-close-btn" title="Close">✕</button>
+<dialog id="pro-disclaimer-modal" class="modal">
+  <div class="modal-box max-w-md">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">ProPresenter Import (Beta)</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" style="font-size:0.84rem;line-height:1.5;">
-      <p style="margin:0 0 0.6rem;">This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
-      <p style="margin:0;">You will be able to preview a sample of the results before anything is saved.</p>
+    <div class="text-sm leading-relaxed space-y-2">
+      <p>This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
+      <p>You will be able to preview a sample of the results before anything is saved.</p>
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="pro-disclaimer-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="pro-disclaimer-continue-btn">Continue</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-disclaimer-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-disclaimer-continue-btn">Continue</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:580px;">
-    <div class="irm-header">
-      <div class="irm-title">Import from ProPresenter</div>
-      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
+<dialog id="pro-import-modal" class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Import from ProPresenter</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="pro-import-body">
+    <div class="py-2" id="pro-import-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-import-confirm-btn">Import Songs</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-preview-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:680px;">
-    <div class="irm-header">
-      <div class="irm-title">Preview Import Results</div>
-      <button class="irm-close-btn" id="pro-preview-close-btn" title="Close">✕</button>
+<dialog id="pro-preview-modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Preview Import Results</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="pro-preview-body" style="max-height:60vh;overflow-y:auto;">
+    <div class="py-2 max-h-[60vh] overflow-y-auto" id="pro-preview-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer" style="justify-content:space-between;align-items:center;">
-      <span style="font-size:0.74rem;color:#888;" id="pro-preview-hint">Scroll to review sample imports</span>
-      <div style="display:flex;gap:0.5rem;">
-        <button class="btn" id="pro-preview-cancel-btn">Cancel Import</button>
-        <button class="btn btn-primary" id="pro-preview-continue-btn">Looks Good — Continue</button>
+    <div class="modal-action justify-between items-center">
+      <span class="text-xs text-base-content/50" id="pro-preview-hint">Scroll to review sample imports</span>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" id="pro-preview-cancel-btn">Cancel Import</button>
+        <button class="btn btn-primary btn-sm" id="pro-preview-continue-btn">Looks Good — Continue</button>
       </div>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
 <div id="toast-container" class="toast toast-top toast-end z-50"></div>
 

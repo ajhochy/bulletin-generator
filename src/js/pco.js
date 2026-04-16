@@ -516,11 +516,11 @@ function showImportReviewDialog(withNotes, unmatched) {
   document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
 
   document.getElementById('irm-title').textContent = 'Review Imported Songs';
-  document.getElementById('import-review-modal').style.display = 'flex';
+  document.getElementById('import-review-modal').showModal();
 }
 
 function closeImportReviewDialog() {
-  document.getElementById('import-review-modal').style.display = 'none';
+  document.getElementById('import-review-modal').close();
 }
 
 // ─── PCO ignore list chip UI ──────────────────────────────────────────────────
@@ -834,7 +834,7 @@ function showNewTeamsDialog(newTeams) {
   };
 
   document.getElementById('irm-title').textContent = 'New Serving Teams';
-  document.getElementById('import-review-modal').style.display = 'flex';
+  document.getElementById('import-review-modal').showModal();
 }
 
 // Render the serving team checkboxes in the Settings tab
@@ -903,7 +903,7 @@ async function pcoFetchAndApplyServing(stId, planId, planSortDate, planDate) {
     if (newTeams.length > 0) {
       // If the import review modal is already showing (e.g. song review), just
       // add the new teams silently — user can adjust in Settings.
-      const modalOpen = document.getElementById('import-review-modal').style.display === 'flex';
+      const modalOpen = document.getElementById('import-review-modal').open;
       if (modalOpen) {
         newTeams.forEach(name => { servingTeamFilter[name] = true; });
       } else {
@@ -1214,7 +1214,7 @@ function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnm
 
   const hasExtra = pendingWithNotes.length || pendingUnmatched.length;
   document.getElementById('irm-title').textContent = hasExtra ? 'Review Imported Plan' : 'Review Refreshed Plan';
-  document.getElementById('import-review-modal').style.display = 'flex';
+  document.getElementById('import-review-modal').showModal();
 }
 
 // ─── Full resync diff dialogue ────────────────────────────────────────────────
@@ -1480,7 +1480,7 @@ function showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingU
   document.getElementById('irm-close-btn').onclick  = closeImportReviewDialog;
 
   document.getElementById('irm-title').textContent = 'Review Plan Changes';
-  document.getElementById('import-review-modal').style.display = 'flex';
+  document.getElementById('import-review-modal').showModal();
 }
 
 // ─── PCO ignore list event handlers ──────────────────────────────────────────
