@@ -1,32 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="vcrc">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bulletin Generator</title>
-  <link rel="stylesheet" href="src/css/base.css" />
-  <link rel="stylesheet" href="src/css/editor.css" />
   <link rel="stylesheet" href="src/css/preview.css" />
-  <link rel="stylesheet" href="src/css/pages.css" />
   <link rel="stylesheet" href="src/css/print.css" />
+  <link rel="stylesheet" href="src/css/tw-output.css" />
 </head>
 <body>
 
 
-<header>
-  <h1>Bulletin Generator</h1>
-  <p>Import from PCO &mdash; edit items &mdash; download PDF</p>
-</header>
+<div class="navbar bg-primary text-primary-content px-4 shadow-sm" style="min-height:52px;">
+  <div class="flex-1 flex flex-col gap-0 leading-tight">
+    <span class="font-bold text-base">Bulletin Generator</span>
+    <span class="text-xs opacity-60">Import from PCO &mdash; edit items &mdash; download PDF</span>
+  </div>
+</div>
 
-<div class="tab-bar">
-  <button class="tab-btn active" data-tab="page-editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M12.854 0.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zM9.793 2.5L2 10.293V14h3.707L13.5 6.207 9.793 2.5zM1 11.707V15h3.293L1 11.707z"/></svg>Booklet Editor</button>
-  <button class="tab-btn" data-tab="page-files"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/></svg>Projects</button>
-  <button class="tab-btn" data-tab="page-songdb"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M9 3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V3zm-5 0a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3zm2 10.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/></svg>Song Database</button>
-  <button class="tab-btn" data-tab="page-format"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm4 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5 6.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm.5 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M16 8c0 3.15-1.866 2.585-3.567 2.07C11.42 9.763 10.465 9.5 10 9.5c-.944 0-1.98.37-2.80.956C6.354 11.1 5.556 11.5 5 11.5c-2.207 0-4-1.794-4-4 0-4.418 3.582-8 8-8s8 3.582 8 8z"/></svg>Format</button>
-  <button class="tab-btn" data-tab="page-settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.474l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/></svg>Settings</button>
-  <div class="tab-bar-right">
-    <div id="page-count-display"></div>
-    <button class="btn btn-primary" id="btn-print" disabled>Download PDF</button>
+<div class="tab-bar flex items-stretch border-b border-base-300 bg-base-100 px-1" style="min-height:40px;">
+  <button class="tab-btn active flex items-center gap-1.5 px-3 text-sm font-medium border-b-2 border-transparent -mb-px" data-tab="page-editor"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M12.854 0.146a.5.5 0 0 0-.707 0L10.5 1.793 14.207 5.5l1.647-1.646a.5.5 0 0 0 0-.708l-3-3zM9.793 2.5L2 10.293V14h3.707L13.5 6.207 9.793 2.5zM1 11.707V15h3.293L1 11.707z"/></svg>Booklet Editor</button>
+  <button class="tab-btn flex items-center gap-1.5 px-3 text-sm font-medium border-b-2 border-transparent -mb-px" data-tab="page-files"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5v-9z"/></svg>Projects</button>
+  <button class="tab-btn flex items-center gap-1.5 px-3 text-sm font-medium border-b-2 border-transparent -mb-px" data-tab="page-songdb"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M9 3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1V3zm-5 0a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3zm2 10.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm5 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0z"/></svg>Song Database</button>
+  <button class="tab-btn flex items-center gap-1.5 px-3 text-sm font-medium border-b-2 border-transparent -mb-px" data-tab="page-format"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm4 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM5 6.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0zm.5 6.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/><path d="M16 8c0 3.15-1.866 2.585-3.567 2.07C11.42 9.763 10.465 9.5 10 9.5c-.944 0-1.98.37-2.80.956C6.354 11.1 5.556 11.5 5 11.5c-2.207 0-4-1.794-4-4 0-4.418 3.582-8 8-8s8 3.582 8 8z"/></svg>Format</button>
+  <button class="tab-btn flex items-center gap-1.5 px-3 text-sm font-medium border-b-2 border-transparent -mb-px" data-tab="page-settings"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="margin-right:5px;vertical-align:middle"><path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.474l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115l.094-.319z"/></svg>Settings</button>
+  <div class="tab-bar-right ml-auto flex items-center gap-2 px-2">
+    <div id="page-count-display" class="text-xs text-base-content/50"></div>
+    <button class="btn btn-primary btn-sm" id="btn-print" disabled>Download PDF</button>
   </div>
 </div>
 
@@ -36,53 +36,53 @@
   <aside>
 
     <!-- Import from Planning Center -->
-    <div class="panel-section" id="pco-section">
-      <div class="section-label">Import from Planning Center</div>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="pco-section">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Import from Planning Center</div>
 
       <!-- Credentials view -->
       <div id="pco-creds-view">
-        <p class="section-hint" id="pco-creds-hint"></p>
-        <button class="btn btn-primary btn-full" id="pco-connect-btn" style="margin-top:0.4rem;">Connect Planning Center</button>
+        <p class="section-hint text-xs text-base-content/60 mb-1" id="pco-creds-hint"></p>
+        <button class="btn btn-primary btn-sm w-full mt-1" id="pco-connect-btn">Connect Planning Center</button>
         <div id="pco-creds-msg" class="pco-msg"></div>
       </div>
 
       <!-- Connected / import view -->
       <div id="pco-import-view" style="display:none;">
-        <div style="background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-top: 0.5rem;">
-          <div class="pco-status-row" style="display:flex;align-items:center;justify-content:space-between;">
-            <div style="display:flex;align-items:center;gap:0.4rem;">
-              <span style="color: #2a6e2a; font-size: 0.9rem; line-height: 1;">●</span>
-              <span class="pco-connected-badge" id="pco-connected-badge">Connected</span>
+        <div class="bg-base-200 border border-base-300 rounded-lg p-3 mt-2">
+          <div class="pco-status-row flex items-center justify-between mb-2">
+            <div class="flex items-center gap-1">
+              <span class="text-success text-sm leading-none">●</span>
+              <span class="pco-connected-badge text-sm font-medium" id="pco-connected-badge">Connected</span>
             </div>
-            <button class="btn-sm" id="pco-disconnect-btn" style="display:none;font-size:0.72rem;">Disconnect</button>
+            <button class="btn btn-ghost btn-xs" id="pco-disconnect-btn" style="display:none;">Disconnect</button>
           </div>
-          <div class="field-row">
-            <label for="pco-service-type-sel">Service Type</label>
-            <select id="pco-service-type-sel"><option value="">Loading…</option></select>
+          <div class="field-row form-control mb-1">
+            <label class="label py-0.5" for="pco-service-type-sel"><span class="label-text text-xs">Service Type</span></label>
+            <select class="select select-bordered select-sm w-full" id="pco-service-type-sel"><option value="">Loading…</option></select>
           </div>
-          <div class="field-row" id="pco-plan-field" style="display:none;">
-            <label for="pco-plan-sel">Plan</label>
-            <select id="pco-plan-sel"><option value="">— Select plan —</option></select>
-            <label class="opt-row" style="margin-top:0.35rem;">
-              <input type="checkbox" id="pco-show-past" />
+          <div class="field-row form-control mb-1" id="pco-plan-field" style="display:none;">
+            <label class="label py-0.5" for="pco-plan-sel"><span class="label-text text-xs">Plan</span></label>
+            <select class="select select-bordered select-sm w-full" id="pco-plan-sel"><option value="">— Select plan —</option></select>
+            <label class="opt-row flex items-center gap-1.5 mt-1 text-xs cursor-pointer">
+              <input type="checkbox" class="checkbox checkbox-xs" id="pco-show-past" />
               Show previous plans
             </label>
           </div>
-          <button class="btn btn-primary btn-full" id="pco-import-btn" disabled style="margin-top:0.4rem;">Import Plan</button>
+          <button class="btn btn-primary btn-sm w-full mt-2" id="pco-import-btn" disabled>Import Plan</button>
           <div id="pco-import-msg" class="pco-msg"></div>
-          <div id="pco-last-import-wrap" style="display:none; margin-top:0.65rem; padding-top:0.65rem; border-top:1px solid var(--border);">
-            <div style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.4rem;">Last Imported</div>
-            <div id="pco-last-plan-label" style="font-size:0.78rem; color:var(--text); margin-bottom:0.4rem;"></div>
-            <button class="btn btn-full" id="pco-refresh-btn">↺ Refresh from PCO</button>
+          <div id="pco-last-import-wrap" style="display:none;" class="mt-3 pt-3 border-t border-base-300">
+            <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-1">Last Imported</div>
+            <div id="pco-last-plan-label" class="text-xs mb-2"></div>
+            <button class="btn btn-ghost btn-sm w-full" id="pco-refresh-btn">↺ Refresh from PCO</button>
             <div id="pco-refresh-msg" class="pco-msg"></div>
-            <div id="pco-ignore-wrap" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
-              <div style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.07em; color:var(--muted); margin-bottom:0.35rem;">Ignore Items Named</div>
-              <div id="pco-ignore-chips" style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-bottom:0.35rem;min-height:0.5rem;"></div>
-              <div style="display:flex;gap:0.3rem;">
-                <input type="text" id="pco-ignore-input" placeholder="Item name…" style="flex:1;font-size:0.8rem;" />
-                <button class="btn-sm" id="pco-ignore-add-btn">Add</button>
+            <div id="pco-ignore-wrap" class="mt-2 pt-2 border-t border-base-300">
+              <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-1">Ignore Items Named</div>
+              <div id="pco-ignore-chips" class="flex flex-wrap gap-1 mb-1 min-h-2"></div>
+              <div class="flex gap-1">
+                <input type="text" class="input input-bordered input-xs flex-1" id="pco-ignore-input" placeholder="Item name…" />
+                <button class="btn btn-ghost btn-xs" id="pco-ignore-add-btn">Add</button>
               </div>
-              <div style="font-size:0.7rem;color:var(--muted);margin-top:0.2rem;">Items with these names are skipped on import and refresh.</div>
+              <div class="text-xs text-base-content/50 mt-1">Items with these names are skipped on import and refresh.</div>
             </div>
           </div>
         </div>
@@ -90,22 +90,22 @@
     </div>
 
     <!-- File (project management) -->
-    <div class="panel-section">
-      <div class="section-label">File</div>
-      <div class="field-row">
-        <label for="bulletin-title">Bulletin Title</label>
-        <input type="text" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
+      <div class="field-row form-control mb-1">
+        <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
+        <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
       </div>
-      <div class="projects-actions" style="margin-top:0.35rem;">
-        <button class="btn-sm btn-sm-primary" id="project-save-btn" type="button">Save</button>
-        <button class="btn-sm" id="project-save-as-btn" type="button">Save New Version</button>
-        <button class="btn-sm" id="project-new-btn" type="button">New</button>
-        <button class="btn-sm btn-sm-danger" id="project-delete-btn" type="button">Delete</button>
+      <div class="projects-actions flex flex-wrap gap-1 mt-2">
+        <button class="btn btn-sm btn-primary" id="project-save-btn" type="button">Save</button>
+        <button class="btn btn-sm btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
+        <button class="btn btn-sm btn-ghost" id="project-new-btn" type="button">New</button>
+        <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
       </div>
-      <div class="project-meta" id="project-meta">Unsaved draft autosaves in this browser.</div>
-      <div id="stale-banner" style="display:none;font-size:0.75rem;color:#7a5c45;margin-top:0.2rem;"></div>
-      <div id="conflict-banner" style="display:none;font-size:0.75rem;color:#8b2020;margin-top:0.2rem;"></div>
-      <button class="btn-sm files-browse-btn" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
+      <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
+      <div id="stale-banner" style="display:none;" class="text-xs mt-1" style="color:#7a5c45;"></div>
+      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
+      <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
       <!-- Hidden select kept for internal JS state tracking -->
       <select id="project-select" style="display:none;">
         <option value="__draft__">Unsaved Draft</option>
@@ -113,22 +113,22 @@
     </div>
 
     <!-- Service Details -->
-    <div class="panel-section">
-      <div class="section-label">Service Details</div>
-      <div class="field-row">
-        <label for="svc-title">Service Title</label>
-        <input type="text" id="svc-title" placeholder="e.g. Morning Worship" />
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Service Details</div>
+      <div class="field-row form-control mb-1">
+        <label class="label py-0.5" for="svc-title"><span class="label-text text-xs">Service Title</span></label>
+        <input type="text" class="input input-bordered input-sm w-full" id="svc-title" placeholder="e.g. Morning Worship" />
       </div>
-      <div class="field-row">
-        <label for="svc-date">Date</label>
-        <input type="text" id="svc-date" placeholder="e.g. January 5, 2025" />
+      <div class="field-row form-control mb-1">
+        <label class="label py-0.5" for="svc-date"><span class="label-text text-xs">Date</span></label>
+        <input type="text" class="input input-bordered input-sm w-full" id="svc-date" placeholder="e.g. January 5, 2025" />
       </div>
     </div>
 
     <!-- Cover Image -->
-    <div class="panel-section">
-      <div class="section-label">Cover Image</div>
-      <p class="section-hint">Displayed on the cover page in place of the cross symbol.</p>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
       <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
         <input type="file" id="cover-img-input" accept="image/*" />
         <div id="cover-img-label">Click to select an image</div>
@@ -136,22 +136,22 @@
       <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
         <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
         <span class="img-preview-name" id="cover-img-name"></span>
-        <button class="img-clear-btn" id="cover-img-clear">Remove</button>
+        <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
       </div>
     </div>
 
     <!-- Options -->
-    <div class="panel-section">
-      <div class="section-label">Options</div>
-      <label class="opt-row"><input type="checkbox" id="opt-cover" checked /> Include cover page</label>
-      <label class="opt-row"><input type="checkbox" id="opt-footer" /> Include page footer</label>
-      <label class="opt-row"><input type="checkbox" id="opt-announcements" checked /> Include announcements</label>
-      <label class="opt-row"><input type="checkbox" id="opt-cal" checked /> Include "This Week" calendar page</label>
-      <label class="opt-row"><input type="checkbox" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
-      <label class="opt-row"><input type="checkbox" id="opt-staff" checked /> Include staff &amp; contact page</label>
-      <div style="margin-top:0.45rem;">
-        <div style="font-size:0.73rem;color:var(--muted);margin-bottom:0.2rem;">Booklet size target</div>
-        <select id="opt-booklet-size" style="font-size:0.76rem;padding:0.18rem 0.3rem;border:1px solid var(--border);border-radius:var(--radius);background:#fff;color:var(--text);width:100%;cursor:pointer;">
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Options</div>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cover" checked /> Include cover page</label>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-footer" /> Include page footer</label>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-announcements" checked /> Include announcements</label>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cal" checked /> Include "This Week" calendar page</label>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
+      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-staff" checked /> Include staff &amp; contact page</label>
+      <div class="form-control mt-2">
+        <label class="label py-0.5"><span class="label-text text-xs">Booklet size target</span></label>
+        <select class="select select-bordered select-sm w-full" id="opt-booklet-size">
           <option value="auto">Auto (no target)</option>
           <option value="8">8 pages</option>
           <option value="12">12 pages</option>
@@ -160,65 +160,67 @@
     </div>
 
     <!-- Welcome -->
-    <div class="panel-section" id="panel-section-welcome">
-      <div class="section-label">Welcome</div>
-      <p class="section-hint">Edit the welcome heading and items shown at the top of the announcements page. Saves per project.</p>
-      <input type="text" id="welcome-heading-input" class="ann-title-input" style="width:100%;margin-bottom:0.4rem;" placeholder="Welcome to…  (leave blank for auto)" />
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-welcome">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Welcome</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">Edit the welcome heading and items shown at the top of the announcements page. Saves per project.</p>
+      <input type="text" id="welcome-heading-input" class="ann-title-input input input-bordered input-sm w-full mb-2" placeholder="Welcome to…  (leave blank for auto)" />
       <div id="welcome-list"></div>
-      <button class="btn-sm btn-sm-primary" id="welcome-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Welcome Item</button>
+      <button class="btn btn-sm btn-primary w-full mt-2" id="welcome-add-btn">+ Add Welcome Item</button>
     </div>
 
     <!-- Announcements -->
-    <div class="panel-section" id="panel-section-announcements">
-      <div class="section-label">Announcements</div>
-      <p class="section-hint">Persists week-to-week — edit, remove, or add entries as needed. Appears on its own page in the bulletin.</p>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-announcements">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Announcements</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">Persists week-to-week — edit, remove, or add entries as needed. Appears on its own page in the bulletin.</p>
       <div id="ann-list"></div>
-      <button class="btn-sm btn-sm-primary" id="ann-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Announcement</button>
+      <button class="btn btn-sm btn-primary w-full mt-2" id="ann-add-btn">+ Add Announcement</button>
     </div>
 
     <!-- Order of Worship items -->
-    <div class="panel-section">
-      <div class="section-label">Order of Worship</div>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Order of Worship</div>
       <div id="item-list"></div>
-      <button id="add-item-btn">+ Add Item</button>
-      <button id="add-break-btn">⊞ Add Page Break</button>
+      <div class="flex gap-1 mt-2">
+        <button class="btn btn-sm btn-ghost flex-1" id="add-item-btn">+ Add Item</button>
+        <button class="btn btn-sm btn-ghost flex-1" id="add-break-btn">⊞ Add Page Break</button>
+      </div>
     </div>
 
     <!-- Calendar -->
-    <div class="panel-section" id="panel-section-calendar">
-      <div class="section-label">Calendar</div>
-      <p class="section-hint">Fetches events from Google Calendar for the "This Week" page. Configure feeds in <strong>Settings</strong>.</p>
-      <div style="display:flex; gap:0.4rem; align-items:center; flex-wrap:wrap; margin-bottom:0.4rem;">
-        <button class="btn-sm btn-sm-primary" id="cal-refresh-btn">↺ Refresh Calendar</button>
-        <span id="cal-status-text" style="font-size:0.72rem; color:var(--muted);"></span>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-calendar">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Calendar</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">Fetches events from Google Calendar for the "This Week" page. Configure feeds in <strong>Settings</strong>.</p>
+      <div class="flex gap-2 items-center flex-wrap mb-2">
+        <button class="btn btn-sm btn-primary" id="cal-refresh-btn">↺ Refresh Calendar</button>
+        <span id="cal-status-text" class="text-xs text-base-content/50"></span>
       </div>
       <div id="cal-event-editor"></div>
-      <button class="btn-sm" id="cal-add-event-btn" style="display:none; margin-top:0.4rem; width:100%;">+ Add Event</button>
+      <button class="btn btn-sm btn-ghost w-full mt-2" id="cal-add-event-btn" style="display:none;">+ Add Event</button>
     </div>
 
     <!-- Volunteers / Serving Schedule editor -->
-    <div class="panel-section" id="panel-section-volunteers">
-      <div class="section-label">Volunteers</div>
-      <p class="section-hint">Auto-populated from Planning Center. Edit names or add entries manually.</p>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-volunteers">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Volunteers</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">Auto-populated from Planning Center. Edit names or add entries manually.</p>
       <div id="vol-editor"></div>
-      <div id="vol-empty" style="font-size:0.78rem; color:var(--muted); font-style:italic; padding:0.3rem 0;">
+      <div id="vol-empty" class="text-xs text-base-content/50 italic py-1">
         Import a plan from Planning Center to populate volunteer assignments.
       </div>
-      <div id="vol-error" style="display:none; font-size:0.78rem; color:var(--danger); padding:0.3rem 0;"></div>
+      <div id="vol-error" style="display:none;" class="text-xs text-error py-1"></div>
     </div>
 
     <!-- Church Staff & Contact -->
-    <div class="panel-section" id="panel-section-staff">
-      <div class="section-label">Church Staff &amp; Contact</div>
-      <p class="section-hint">These entries appear on the last page of every bulletin. Changes are saved automatically.</p>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto auto auto; gap:0.25rem; margin-bottom:0.3rem; padding-bottom:0.2rem; border-bottom:1px solid var(--border);">
-        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Name</span>
-        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Role / Title</span>
-        <span style="font-size:0.67rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted);">Email</span>
+    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-staff">
+      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Church Staff &amp; Contact</div>
+      <p class="section-hint text-xs text-base-content/60 mb-2">These entries appear on the last page of every bulletin. Changes are saved automatically.</p>
+      <div class="grid gap-1 mb-2 pb-1 border-b border-base-300" style="grid-template-columns:1fr 1fr 1fr auto auto auto;">
+        <span class="text-xs font-bold uppercase tracking-wide text-base-content/50">Name</span>
+        <span class="text-xs font-bold uppercase tracking-wide text-base-content/50">Role / Title</span>
+        <span class="text-xs font-bold uppercase tracking-wide text-base-content/50">Email</span>
         <span></span><span></span><span></span>
       </div>
       <div id="staff-editor"></div>
-      <button class="btn-sm btn-sm-primary" id="staff-add-btn" style="width:100%; margin-top:0.4rem;">+ Add Person</button>
+      <button class="btn btn-sm btn-primary w-full mt-2" id="staff-add-btn">+ Add Person</button>
     </div>
 
   </aside>
@@ -237,29 +239,29 @@
 </div><!-- #page-editor -->
 
 <!-- ═══ PAGE: Files ══════════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-files" style="height:calc(100vh - 88px);">
-  <div class="files-inner">
-    <div class="files-hdr">
+<div class="app-page" id="page-files" style="height:calc(100vh - 88px); overflow-y:auto;">
+  <div class="files-inner max-w-4xl mx-auto px-4 py-4">
+    <div class="files-hdr flex items-center justify-between mb-4">
       <div>
-        <h2 class="files-title">Saved Projects</h2>
-        <p id="files-count" class="files-subtitle">Loading…</p>
+        <h2 class="files-title text-xl font-bold">Saved Projects</h2>
+        <p id="files-count" class="files-subtitle text-sm text-base-content/60">Loading…</p>
       </div>
-      <div class="files-toolbar">
-        <button class="btn-sm btn-sm-primary" id="files-new-btn" type="button">+ New Project</button>
-        <label class="btn-sm" for="files-import-input" style="cursor:pointer;">↑ Import JSON</label>
+      <div class="files-toolbar flex gap-2">
+        <button class="btn btn-sm btn-primary" id="files-new-btn" type="button">+ New Project</button>
+        <label class="btn btn-sm btn-ghost" for="files-import-input" style="cursor:pointer;">↑ Import JSON</label>
         <input type="file" id="files-import-input" accept=".json" style="display:none;">
       </div>
     </div>
-    <div id="bulk-bar" class="bulk-bar">
-      <span class="bulk-bar-count" id="bulk-count">0 selected</span>
-      <button class="bulk-bar-btn" id="bulk-select-all">Select All</button>
-      <button class="bulk-bar-btn" id="bulk-export-pp">Export ProPresenter</button>
-      <button class="bulk-bar-btn" id="bulk-download-json">↓ Download JSON</button>
-      <button class="bulk-bar-btn" id="bulk-download-pdf">↓ Download PDFs</button>
-      <button class="bulk-bar-btn" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button>
-      <button class="bulk-bar-btn" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button>
-      <button class="bulk-bar-btn bulk-danger" id="bulk-delete">Delete Selected</button>
-      <button class="bulk-bar-clear" id="bulk-clear">✕ Clear</button>
+    <div id="bulk-bar" class="bulk-bar flex items-center gap-2 bg-primary text-primary-content px-4 py-2 rounded-lg mb-3 flex-wrap">
+      <span class="bulk-bar-count font-semibold text-sm" id="bulk-count">0 selected</span>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-select-all">Select All</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-export-pp">Export ProPresenter</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-json">↓ Download JSON</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-download-pdf">↓ Download PDFs</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-json" style="display:none;">Save JSON to Drive</button>
+      <button class="bulk-bar-btn btn btn-sm btn-ghost text-primary-content" id="bulk-drive-pdf" style="display:none;">Save PDF to Drive</button>
+      <button class="bulk-bar-btn btn btn-sm btn-error" id="bulk-delete">Delete Selected</button>
+      <button class="bulk-bar-clear btn btn-sm btn-ghost text-primary-content ml-auto" id="bulk-clear">✕ Clear</button>
     </div>
     <div id="files-list"></div>
   </div>
@@ -267,71 +269,71 @@
 
 <!-- ═══ PAGE: Song Database ══════════════════════════════════════════════════ -->
 <div class="app-page" id="page-songdb" style="height:calc(100vh - 88px);">
-  <div class="sdb-page-inner">
+  <div class="sdb-page-inner flex flex-col h-full">
 
-    <div class="sdb-page-header">
-      <div class="sdb-page-title">Song Database</div>
+    <div class="sdb-page-header px-4 pt-4 pb-2 border-b border-base-300">
+      <div class="sdb-page-title text-xl font-bold">Song Database</div>
     </div>
 
-    <div class="sdb-page-cols">
+    <div class="sdb-page-cols flex flex-1 min-h-0 divide-x divide-base-300">
 
       <!-- Left: search + list -->
-      <div class="sdb-list-col">
-        <div id="sdb-controls-page">
-          <input type="text" id="song-db-search" placeholder="Search title, author, CCLI, lyrics…" />
-          <div class="sdb-sort-row">
-            <span>Sort by:</span>
-            <select id="song-db-sort">
+      <div class="sdb-list-col flex flex-col w-80 shrink-0 overflow-hidden">
+        <div id="sdb-controls-page" class="p-3 border-b border-base-300">
+          <input type="text" class="input input-bordered input-sm w-full mb-2" id="song-db-search" placeholder="Search title, author, CCLI, lyrics…" />
+          <div class="sdb-sort-row flex items-center gap-1 flex-wrap text-xs text-base-content/60">
+            <span>Sort:</span>
+            <select class="select select-bordered select-xs" id="song-db-sort">
               <option value="az">A → Z</option>
               <option value="za">Z → A</option>
               <option value="used">Most Used</option>
               <option value="lastused">Last Used</option>
               <option value="added">Recently Added</option>
             </select>
-            <span style="margin-left:0.8rem;">Show:</span>
-            <select id="song-db-source-filter">
+            <span>Show:</span>
+            <select class="select select-bordered select-xs" id="song-db-source-filter">
               <option value="all">All Songs</option>
-              <option value="propresenter">ProPresenter Imports</option>
-              <option value="manual">Manually Added</option>
+              <option value="propresenter">ProPresenter</option>
+              <option value="manual">Manual</option>
             </select>
           </div>
         </div>
-        <div class="sdb-count" id="sdb-count"></div>
-        <div id="song-db-scroll">
+        <div class="sdb-count text-xs text-base-content/50 px-3 py-1" id="sdb-count"></div>
+        <div id="song-db-scroll" class="flex-1 overflow-y-auto">
           <div id="song-db-list"></div>
-          <div id="song-db-empty">No songs yet — add your first song above.</div>
+          <div id="song-db-empty" class="text-sm text-base-content/50 italic p-4">No songs yet — add your first song above.</div>
         </div>
       </div>
 
       <!-- Right: add/edit form -->
-      <div class="sdb-form-col">
+      <div class="sdb-form-col flex-1 overflow-y-auto p-4">
         <div class="sdb-form-sticky">
-          <div class="sdb-panel-actions">
-            <button class="btn-sm btn-sm-primary" id="song-db-paste-btn" style="flex:1;">⎘ Paste from Clipboard</button>
-            <button class="btn-sm" id="pro-import-btn" title="Import songs from ProPresenter .pro/.pro6/.pro7 files" style="flex:1;">⬆ Import ProPresenter</button>
+          <div class="sdb-panel-actions flex gap-2 mb-3">
+            <button class="btn btn-sm btn-primary flex-1" id="song-db-paste-btn">⎘ Paste from Clipboard</button>
+            <button class="btn btn-sm btn-ghost flex-1" id="pro-import-btn" title="Import songs from ProPresenter .pro/.pro6/.pro7 files">⬆ Import ProPresenter</button>
             <input type="file" id="pro-import-input" accept=".pro,.pro6,.pro7,.propresenter" multiple style="display:none">
           </div>
-          <div class="sdb-panel-divider"></div>
-          <h3 id="sdb-form-heading">Add Song Manually</h3>
-          <div class="field-row">
-            <label for="sdb-title">Song Title</label>
-            <input type="text" id="sdb-title" placeholder="e.g. Holy Holy Holy" />
+          <div class="sdb-panel-divider divider my-2"></div>
+          <h3 class="font-semibold text-sm mb-3" id="sdb-form-heading">Add Song Manually</h3>
+          <div class="field-row form-control mb-2">
+            <label class="label py-0.5" for="sdb-title"><span class="label-text text-xs">Song Title</span></label>
+            <input type="text" class="input input-bordered input-sm w-full" id="sdb-title" placeholder="e.g. Holy Holy Holy" />
           </div>
-          <div class="field-row">
-            <label for="sdb-author">Author / Composer</label>
-            <input type="text" id="sdb-author" placeholder="e.g. Reginald Heber" />
+          <div class="field-row form-control mb-2">
+            <label class="label py-0.5" for="sdb-author"><span class="label-text text-xs">Author / Composer</span></label>
+            <input type="text" class="input input-bordered input-sm w-full" id="sdb-author" placeholder="e.g. Reginald Heber" />
           </div>
-          <div class="field-row">
-            <label for="sdb-lyrics">Lyrics</label>
-            <textarea id="sdb-lyrics" rows="12" placeholder="Enter lyrics here — line breaks and blank lines are preserved.&#10;&#10;Label sections with Verse 1, Chorus, Bridge, etc. on their own line to display them in italics.&#10;&#10;Use ALL: at the start of a line to bold a congregational response."></textarea>
+          <div class="field-row form-control mb-2">
+            <label class="label py-0.5" for="sdb-lyrics"><span class="label-text text-xs">Lyrics</span></label>
+            <textarea class="textarea textarea-bordered textarea-sm w-full" id="sdb-lyrics" rows="12" placeholder="Enter lyrics here — line breaks and blank lines are preserved.&#10;&#10;Label sections with Verse 1, Chorus, Bridge, etc. on their own line to display them in italics.&#10;&#10;Use ALL: at the start of a line to bold a congregational response."></textarea>
           </div>
-          <div class="field-row">
-            <label for="sdb-copyright">Copyright</label>
-            <input type="text" id="sdb-copyright" placeholder="e.g. © 2001 Integrity Music | CCLI #1234567" />
+          <div class="field-row form-control mb-2">
+            <label class="label py-0.5" for="sdb-copyright"><span class="label-text text-xs">Copyright</span></label>
+            <input type="text" class="input input-bordered input-sm w-full" id="sdb-copyright" placeholder="e.g. © 2001 Integrity Music | CCLI #1234567" />
           </div>
-          <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
-            <button class="btn-sm btn-sm-primary" id="sdb-save-btn" style="flex:1;">Add Song</button>
-            <button class="btn-sm" id="sdb-cancel-btn" style="flex:1;">Clear</button>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-sm btn-primary flex-1" id="sdb-save-btn">Add Song</button>
+            <button class="btn btn-sm btn-ghost flex-1" id="sdb-cancel-btn">Clear</button>
           </div>
         </div>
       </div>
@@ -340,70 +342,69 @@
   </div>
 
   <!-- Paste fallback dialog (shown when clipboard API is unavailable or denied) -->
-  <dialog id="sdb-paste-dialog" style="border:1px solid #ccc;border-radius:8px;padding:1.2rem;max-width:480px;width:90%;">
-    <h3 style="margin:0 0 0.5rem;">Paste Song Lyrics</h3>
-    <p style="font-size:0.85rem;color:#555;margin:0 0 0.6rem;">Clipboard access was denied or unavailable. Paste your copied text below:</p>
-    <textarea id="sdb-paste-fallback-ta" rows="10" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:0.9rem;" placeholder="Paste lyrics here (Ctrl+V / Cmd+V)…"></textarea>
-    <div style="display:flex;gap:0.5rem;margin-top:0.6rem;justify-content:flex-end;">
-      <button type="button" class="btn-sm" id="sdb-paste-dialog-cancel">Cancel</button>
-      <button type="button" class="btn-sm btn-sm-primary" id="sdb-paste-dialog-ok">Import</button>
+  <dialog id="sdb-paste-dialog" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-base mb-2">Paste Song Lyrics</h3>
+      <p class="text-sm text-base-content/60 mb-3">Clipboard access was denied or unavailable. Paste your copied text below:</p>
+      <textarea class="textarea textarea-bordered w-full" id="sdb-paste-fallback-ta" rows="10" placeholder="Paste lyrics here (Ctrl+V / Cmd+V)…"></textarea>
+      <div class="modal-action">
+        <button type="button" class="btn btn-ghost" id="sdb-paste-dialog-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="sdb-paste-dialog-ok">Import</button>
+      </div>
     </div>
   </dialog>
 
 </div><!-- #page-songdb -->
 
 <!-- ═══ PAGE: Settings ═══════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-settings" style="height:calc(100vh - 88px);">
-  <div class="stg-inner">
+<div class="app-page" id="page-settings" style="height:calc(100vh - 88px); overflow-y:auto;">
+  <div class="stg-inner max-w-2xl mx-auto px-4 py-6">
 
-    <div class="stg-page-title">Settings</div>
+    <div class="stg-page-title text-2xl font-bold mb-3">Settings</div>
 
-    <div class="stg-anchor-nav">
-      <a href="#" class="stg-anchor-link" data-target="stg-identity">Identity</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-branding">Branding</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-calendar">Calendar</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-serving">Serving Teams</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-songdb">Song Database</a>
-      <span class="stg-anchor-sep">·</span>
-      <a href="#" class="stg-anchor-link" data-target="stg-updates">App Updates</a>
+    <div class="stg-anchor-nav flex flex-wrap gap-1 mb-6 text-sm">
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-identity">Identity</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-branding">Branding</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-calendar">Calendar</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-serving">Serving Teams</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-songdb">Song Database</a>
+      <span class="stg-anchor-sep text-base-content/30">·</span>
+      <a href="#" class="stg-anchor-link link link-hover text-base-content/60" data-target="stg-updates">App Updates</a>
     </div>
 
     <!-- ── Editor Identity (server mode) ────────────────────────────────── -->
-    <div class="stg-group" id="stg-identity-group">
-      <div class="stg-group-heading" id="stg-identity">Editor Identity</div>
-      <div class="stg-card">
-        <div class="stg-card-label">Display Name</div>
-        <p class="section-hint">Your name is attached to project saves so others can see who last edited each bulletin.</p>
-        <input type="text" id="editor-display-name-input" placeholder="e.g. Alex"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+    <div class="stg-group mb-8" id="stg-identity-group">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-identity">Editor Identity</div>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Display Name</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Your name is attached to project saves so others can see who last edited each bulletin.</p>
+        <input type="text" class="input input-bordered input-sm w-full" id="editor-display-name-input" placeholder="e.g. Alex" />
       </div>
     </div>
 
     <!-- ── Church Branding ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-branding">Church Branding</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-branding">Church Branding</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Church Name</div>
-        <p class="section-hint">Appears on the bulletin cover. Set once here and it carries across all bulletins automatically.</p>
-        <input type="text" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Church Name</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Appears on the bulletin cover. Set once here and it carries across all bulletins automatically.</p>
+        <input type="text" class="input input-bordered input-sm w-full" id="svc-church" placeholder="e.g. Visalia Christian Reformed Church" />
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Give Online URL</div>
-        <p class="section-hint">URL for your church's online giving page. If set, a QR code and "Give Online" label appear above the logo on the staff/contact page.</p>
-        <input type="url" id="give-online-url-input" placeholder="https://your-giving-link.com"
-               style="width:100%; box-sizing:border-box; padding:0.25rem 0.4rem; font-size:0.78rem; border:1px solid var(--border); border-radius:var(--radius); margin-top:0.15rem;" />
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Give Online URL</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">URL for your church's online giving page. If set, a QR code and "Give Online" label appear above the logo on the staff/contact page.</p>
+        <input type="url" class="input input-bordered input-sm w-full" id="give-online-url-input" placeholder="https://your-giving-link.com" />
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Church Logo</div>
-        <p class="section-hint">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Church Logo</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Displayed at the bottom of the staff/contact page. Saved automatically for next session.</p>
         <div class="img-zone" id="logo-img-zone" role="button" tabindex="0">
           <input type="file" id="logo-img-input" accept="image/*" />
           <div id="logo-img-label">Click to upload church logo</div>
@@ -411,142 +412,138 @@
         <div class="img-preview-wrap" id="logo-img-preview-wrap" style="display:none;">
           <img class="img-preview-thumb" id="logo-img-thumb" src="" alt="" />
           <span class="img-preview-name" id="logo-img-name"></span>
-          <button class="img-clear-btn" id="logo-img-clear">Remove</button>
+          <button class="img-clear-btn btn btn-ghost btn-xs" id="logo-img-clear">Remove</button>
         </div>
       </div>
 
     </div>
 
     <!-- ── Google Calendar ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-calendar">Google Calendar</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-calendar">Google Calendar</div>
 
       <!-- OAuth connect card -->
-      <div class="stg-card" id="google-connect-card">
-        <div class="stg-card-label">Connect Account</div>
-        <p class="section-hint" id="google-creds-hint"></p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
-          <button class="btn-sm" id="google-disconnect-btn" style="display:none;">Disconnect</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-connect-card">
+        <div class="stg-card-label font-semibold text-sm mb-1">Connect Account</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2" id="google-creds-hint"></p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="google-connect-btn" style="display:none;">Connect Google Calendar</button>
+          <button class="btn btn-sm btn-ghost" id="google-disconnect-btn" style="display:none;">Disconnect</button>
         </div>
-        <div id="google-oauth-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="google-oauth-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- Calendar picker (shown after connecting) -->
-      <div class="stg-card" id="google-cal-picker-card" style="display:none;">
-        <div class="stg-card-label">Select Calendars</div>
-        <p class="section-hint">Choose which calendars to include in the "This Week" page.</p>
-        <div id="google-cal-list" style="margin-bottom:0.5rem;"></div>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="google-cal-save-btn">Save Selection</button>
-          <button class="btn-sm" id="google-cal-refresh-list-btn">↺ Refresh List</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-cal-picker-card" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Select Calendars</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Choose which calendars to include in the "This Week" page.</p>
+        <div id="google-cal-list" class="mb-3"></div>
+        <div class="stg-btn-row flex gap-2">
+          <button class="btn btn-sm btn-primary" id="google-cal-save-btn">Save Selection</button>
+          <button class="btn btn-sm btn-ghost" id="google-cal-refresh-list-btn">↺ Refresh List</button>
         </div>
       </div>
 
       <!-- Google Drive settings (shown when Google is connected) -->
-      <div class="stg-card" id="google-drive-card" style="display:none;">
-        <div class="stg-card-label">Google Drive</div>
-        <p class="section-hint">Save project JSON and PDF files to your Google Drive.</p>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-drive-card" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Google Drive</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Save project JSON and PDF files to your Google Drive.</p>
         <div id="google-drive-scope-warn" style="display:none;">
-          <p class="pco-msg error" style="margin-bottom:0.5rem;">Drive access not enabled. Disconnect and reconnect Google to grant Drive permission.</p>
+          <p class="pco-msg error alert alert-error text-xs mb-3">Drive access not enabled. Disconnect and reconnect Google to grant Drive permission.</p>
         </div>
         <div id="google-drive-folder-row">
-          <label style="font-size:0.82rem;display:block;margin-bottom:0.25rem;">
-            Drive Folder ID <span style="font-weight:400;color:#888;">(optional — paste from Drive folder URL)</span>
-          </label>
-          <div style="display:flex;gap:0.5rem;align-items:center;">
-            <input type="text" id="google-drive-folder-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" style="flex:1;font-size:0.82rem;padding:0.25rem 0.4rem;" />
-            <button class="btn-sm btn-sm-primary" id="google-drive-save-btn">Save</button>
+          <label class="label py-0.5"><span class="label-text text-xs">Drive Folder ID <span class="font-normal text-base-content/50">(optional — paste from Drive folder URL)</span></span></label>
+          <div class="flex gap-2 items-center">
+            <input type="text" class="input input-bordered input-sm flex-1" id="google-drive-folder-id" placeholder="e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" />
+            <button class="btn btn-sm btn-primary" id="google-drive-save-btn">Save</button>
           </div>
-          <p class="section-hint" style="margin-top:0.25rem;">Leave blank to save to My Drive root. To find a folder ID: open the folder in Google Drive and copy the last part of the URL.</p>
+          <p class="text-xs text-base-content/50 mt-1">Leave blank to save to My Drive root. To find a folder ID: open the folder in Google Drive and copy the last part of the URL.</p>
         </div>
-        <div id="google-drive-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="google-drive-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- iCal fallback (shown when not connected via OAuth) -->
-      <div class="stg-card" id="google-ical-card">
-        <div class="stg-card-label">Manual iCal Feed URLs</div>
-        <p class="section-hint">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
-        <label>iCal Feed URLs (one per line):</label>
-        <textarea id="cal-urls-input" rows="4"></textarea>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
-          <button class="btn-sm" id="cal-settings-reset-btn">Reset to Defaults</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3" id="google-ical-card">
+        <div class="stg-card-label font-semibold text-sm mb-1">Manual iCal Feed URLs</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Alternative: paste iCal feed URLs directly. Used when not connected via Google sign-in.</p>
+        <label class="label py-0.5"><span class="label-text text-xs">iCal Feed URLs (one per line):</span></label>
+        <textarea class="textarea textarea-bordered textarea-sm w-full" id="cal-urls-input" rows="4"></textarea>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="cal-settings-save-btn">Save &amp; Refresh</button>
+          <button class="btn btn-sm btn-ghost" id="cal-settings-reset-btn">Reset to Defaults</button>
         </div>
       </div>
 
       <!-- Exclude list — always visible regardless of calendar connection type -->
-      <div class="stg-card">
-        <div class="stg-card-label">Exclude Events</div>
-        <label>Exclude event titles (one per line, case-insensitive):</label>
-        <textarea id="cal-excl-input" rows="3"></textarea>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="cal-excl-save-btn">Save &amp; Refresh</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Exclude Events</div>
+        <label class="label py-0.5"><span class="label-text text-xs">Exclude event titles (one per line, case-insensitive):</span></label>
+        <textarea class="textarea textarea-bordered textarea-sm w-full" id="cal-excl-input" rows="3"></textarea>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="cal-excl-save-btn">Save &amp; Refresh</button>
         </div>
       </div>
     </div>
 
     <!-- ── Serving Teams ──────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-serving">Serving Teams</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-serving">Serving Teams</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Teams Shown in Bulletin</div>
-        <p class="section-hint">Choose which Planning Center teams appear on the serving schedule page. New teams are included automatically on first import.</p>
-        <div id="serving-team-filter-list" style="margin-bottom:0.5rem;">
-          <span style="font-size:0.78rem;color:var(--muted);">No teams discovered yet. Import a plan from Planning Center to populate this list.</span>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Teams Shown in Bulletin</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Choose which Planning Center teams appear on the serving schedule page. New teams are included automatically on first import.</p>
+        <div id="serving-team-filter-list" class="mb-2">
+          <span class="text-xs text-base-content/50">No teams discovered yet. Import a plan from Planning Center to populate this list.</span>
         </div>
       </div>
     </div>
 
     <!-- ── Song Database ────────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-songdb">Song Database</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-songdb">Song Database</div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Import / Export</div>
-        <p class="section-hint">Back up your song database or restore it from a previously exported file.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="song-db-export-btn">Export JSON</button>
-          <label class="btn-sm" style="cursor:pointer;">Import JSON<input type="file" id="song-db-import-input" accept=".json" style="display:none"></label>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Import / Export</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Back up your song database or restore it from a previously exported file.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="song-db-export-btn">Export JSON</button>
+          <label class="btn btn-sm btn-ghost" style="cursor:pointer;">Import JSON<input type="file" id="song-db-import-input" accept=".json" style="display:none"></label>
         </div>
       </div>
 
-      <div class="stg-card">
-        <div class="stg-card-label">Clear Database</div>
-        <p class="section-hint">Permanently removes all songs from the local database. This cannot be undone — export a backup first.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm" id="song-db-clear-btn" style="color:#c0392b;">Clear All Songs</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Clear Database</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Permanently removes all songs from the local database. This cannot be undone — export a backup first.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-error btn-outline" id="song-db-clear-btn">Clear All Songs</button>
         </div>
       </div>
     </div>
 
     <!-- ── App Updates ──────────────────────────────────────────────────────── -->
-    <div class="stg-group">
-      <div class="stg-group-heading" id="stg-updates">App Updates</div>
+    <div class="stg-group mb-8">
+      <div class="stg-group-heading text-xs font-bold uppercase tracking-widest text-base-content/50 border-b border-base-300 pb-1 mb-3" id="stg-updates">App Updates</div>
 
       <!-- Current version + check -->
-      <div class="stg-card">
-        <div class="stg-card-label">Current Version</div>
-        <p class="section-hint">Running version <strong id="update-current-version">—</strong>. Check for a newer release on GitHub.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="update-check-btn">Check for Updates</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3">
+        <div class="stg-card-label font-semibold text-sm mb-1">Current Version</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Running version <strong id="update-current-version">—</strong>. Check for a newer release on GitHub.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="update-check-btn">Check for Updates</button>
         </div>
-        <div id="update-status-msg" class="pco-msg" style="margin-top:0.4rem;"></div>
+        <div id="update-status-msg" class="pco-msg mt-2"></div>
       </div>
 
       <!-- Update available banner (hidden until check returns hasUpdate: true) -->
-      <div class="stg-card update-available-card" id="update-banner" style="display:none;">
-        <div class="stg-card-label">Update Available</div>
-        <p class="section-hint">Version <strong id="update-latest-version">—</strong> is available.</p>
-        <div class="stg-btn-row">
-          <button class="btn-sm btn-sm-primary" id="update-apply-btn" style="display:none;">Update Now</button>
+      <div class="stg-card card bg-base-100 border border-base-300 rounded-lg p-4 mb-3 update-available-card" id="update-banner" style="display:none;">
+        <div class="stg-card-label font-semibold text-sm mb-1">Update Available</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Version <strong id="update-latest-version">—</strong> is available.</p>
+        <div class="stg-btn-row flex gap-2 mt-2">
+          <button class="btn btn-sm btn-primary" id="update-apply-btn" style="display:none;">Update Now</button>
         </div>
-        <div id="update-progress-bar" style="display:none;margin-top:0.6rem;">
-          <div style="background:#e0e0e0;border-radius:6px;height:20px;overflow:hidden;position:relative;">
-            <div id="update-progress-fill" style="background:var(--primary, #7b5e3c);height:100%;width:0%;transition:width 0.5s ease;border-radius:6px;"></div>
-            <span id="update-progress-text" style="position:absolute;top:0;left:0;right:0;text-align:center;line-height:20px;font-size:0.72rem;color:#333;font-weight:600;"></span>
-          </div>
+        <div id="update-progress-bar" style="display:none;" class="mt-3">
+          <progress id="update-progress-fill" class="progress progress-primary w-full" value="0" max="100"></progress>
+          <p id="update-progress-text" class="text-xs text-center text-base-content/60 mt-1"></p>
         </div>
       </div>
 
@@ -556,20 +553,20 @@
 </div><!-- #page-settings -->
 
 <!-- ═══ PAGE: Format ═════════════════════════════════════════════════════════ -->
-<div class="app-page" id="page-format">
-  <div class="fmt-page-inner">
-    <h2 class="fmt-page-title">Document Size</h2>
-    <div class="fmt-template-row" style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.4rem;">
-      <label for="doc-page-size-sel" style="font-size:0.82rem;white-space:nowrap;">Page size</label>
-      <select id="doc-page-size-sel" style="font-size:0.82rem;">
+<div class="app-page" id="page-format" style="overflow-y:auto;">
+  <div class="fmt-page-inner max-w-4xl mx-auto px-4 py-6">
+    <h2 class="fmt-page-title text-lg font-bold mb-3">Document Size</h2>
+    <div class="fmt-template-row flex items-center gap-3 mb-6">
+      <label class="text-sm whitespace-nowrap" for="doc-page-size-sel">Page size</label>
+      <select class="select select-bordered select-sm" id="doc-page-size-sel">
         <option value="5.5x8.5">5.5 × 8.5 in — half-letter (default)</option>
         <option value="8.5x11">8.5 × 11 in — letter</option>
         <option value="8.5x14">8.5 × 14 in — legal</option>
         <option value="11x17">11 × 17 in — tabloid / ledger</option>
       </select>
     </div>
-    <h2 class="fmt-page-title">Item Type Formatting</h2>
-    <p class="fmt-page-hint">
+    <h2 class="fmt-page-title text-lg font-bold mb-2">Item Type Formatting</h2>
+    <p class="fmt-page-hint text-sm text-base-content/60 mb-4">
       Set default formatting for each item type.
       <strong>Song</strong> controls all songs and hymns.
       <strong>Liturgy</strong> controls spoken/read items (prayers,
@@ -578,89 +575,93 @@
       offering, prelude, etc.). Per-item overrides in the editor
       always take precedence.
     </p>
-    <div class="fmt-filter-wrap">
-      <input type="text" id="fmt-filter" placeholder="Filter types…" autocomplete="off" />
+    <div class="fmt-filter-wrap mb-4">
+      <input type="text" class="input input-bordered input-sm w-full max-w-xs" id="fmt-filter" placeholder="Filter types…" autocomplete="off" />
     </div>
     <div class="fmt-types-grid" id="fmt-types-grid">
       <!-- populated by renderFormatPage() -->
     </div>
-    <div class="fmt-page-btns">
-      <button class="btn btn-primary" id="fmt-save-btn">Save Type Formats</button>
-      <button class="btn" id="fmt-reset-btn">Reset All to Defaults</button>
+    <div class="fmt-page-btns flex gap-2 mt-6">
+      <button class="btn btn-primary btn-sm" id="fmt-save-btn">Save Type Formats</button>
+      <button class="btn btn-ghost btn-sm" id="fmt-reset-btn">Reset All to Defaults</button>
     </div>
   </div>
 </div><!-- #page-format -->
 
 <!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
-<div id="import-review-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box">
-    <div class="irm-header">
-      <div class="irm-title" id="irm-title">Review Imported Songs</div>
-      <button class="irm-close-btn" id="irm-close-btn" title="Close">✕</button>
+<dialog id="import-review-modal" class="modal">
+  <div class="modal-box max-w-2xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="irm-body">
+    <div class="py-2" id="irm-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="irm-cancel-btn">Skip All</button>
-      <button class="btn btn-primary" id="irm-apply-btn">Apply &amp; Continue</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="irm-cancel-btn">Skip All</button>
+      <button class="btn btn-primary btn-sm" id="irm-apply-btn">Apply &amp; Continue</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-disclaimer-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:460px;">
-    <div class="irm-header">
-      <div class="irm-title">ProPresenter Import (Beta)</div>
-      <button class="irm-close-btn" id="pro-disclaimer-close-btn" title="Close">✕</button>
+<dialog id="pro-disclaimer-modal" class="modal">
+  <div class="modal-box max-w-md">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">ProPresenter Import (Beta)</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" style="font-size:0.84rem;line-height:1.5;">
-      <p style="margin:0 0 0.6rem;">This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
-      <p style="margin:0;">You will be able to preview a sample of the results before anything is saved.</p>
+    <div class="text-sm leading-relaxed space-y-2">
+      <p>This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
+      <p>You will be able to preview a sample of the results before anything is saved.</p>
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="pro-disclaimer-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="pro-disclaimer-continue-btn">Continue</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-disclaimer-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-disclaimer-continue-btn">Continue</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-import-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:580px;">
-    <div class="irm-header">
-      <div class="irm-title">Import from ProPresenter</div>
-      <button class="irm-close-btn" id="pro-import-close-btn" title="Close">✕</button>
+<dialog id="pro-import-modal" class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Import from ProPresenter</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="pro-import-body">
+    <div class="py-2" id="pro-import-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer">
-      <button class="btn" id="pro-import-cancel-btn">Cancel</button>
-      <button class="btn btn-primary" id="pro-import-confirm-btn">Import Songs</button>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-import-confirm-btn">Import Songs</button>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="pro-preview-modal" class="irm-overlay" style="display:none;" role="dialog" aria-modal="true">
-  <div class="irm-box" style="max-width:680px;">
-    <div class="irm-header">
-      <div class="irm-title">Preview Import Results</div>
-      <button class="irm-close-btn" id="pro-preview-close-btn" title="Close">✕</button>
+<dialog id="pro-preview-modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Preview Import Results</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close">✕</button>
     </div>
-    <div class="irm-body" id="pro-preview-body" style="max-height:60vh;overflow-y:auto;">
+    <div class="py-2 max-h-[60vh] overflow-y-auto" id="pro-preview-body">
       <!-- populated by JS -->
     </div>
-    <div class="irm-footer" style="justify-content:space-between;align-items:center;">
-      <span style="font-size:0.74rem;color:#888;" id="pro-preview-hint">Scroll to review sample imports</span>
-      <div style="display:flex;gap:0.5rem;">
-        <button class="btn" id="pro-preview-cancel-btn">Cancel Import</button>
-        <button class="btn btn-primary" id="pro-preview-continue-btn">Looks Good — Continue</button>
+    <div class="modal-action justify-between items-center">
+      <span class="text-xs text-base-content/50" id="pro-preview-hint">Scroll to review sample imports</span>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" id="pro-preview-cancel-btn">Cancel Import</button>
+        <button class="btn btn-primary btn-sm" id="pro-preview-continue-btn">Looks Good — Continue</button>
       </div>
     </div>
   </div>
-</div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 
-<div id="toast-container"></div>
+<div id="toast-container" class="toast toast-top toast-end z-50"></div>
 
 
 <script type="module" src="src/js/main.js"></script>

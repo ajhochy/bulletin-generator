@@ -216,23 +216,23 @@ function renderSongDb() {
   visible.forEach(song => {
     const realIdx = songDb.indexOf(song);
     const entry   = document.createElement('div');
-    entry.className = 'song-db-entry';
+    entry.className = 'song-db-entry border-b border-base-300 px-3 py-2 hover:bg-base-200 cursor-pointer';
 
     // ── Main row (click to expand) ──
     const main = document.createElement('div');
-    main.className = 'song-db-entry-main';
+    main.className = 'song-db-entry-main flex items-start gap-2';
 
     const info = document.createElement('div');
-    info.className = 'song-db-entry-info';
+    info.className = 'song-db-entry-info flex-1 min-w-0';
 
     const titleEl = document.createElement('div');
-    titleEl.className = 'song-db-entry-title';
+    titleEl.className = 'song-db-entry-title font-medium text-sm truncate';
     titleEl.textContent = song.title;
     info.appendChild(titleEl);
 
     if (song.author) {
       const authEl = document.createElement('div');
-      authEl.className = 'song-db-entry-author';
+      authEl.className = 'song-db-entry-author text-xs text-base-content/60 truncate';
       authEl.textContent = song.author;
       info.appendChild(authEl);
     }
@@ -240,7 +240,7 @@ function renderSongDb() {
     const crLine = sdbBuildCopyright(song);
     if (crLine) {
       const copyEl = document.createElement('div');
-      copyEl.className = 'song-db-entry-copy';
+      copyEl.className = 'song-db-entry-copy text-xs text-base-content/40 truncate';
       copyEl.textContent = crLine;
       info.appendChild(copyEl);
     }
@@ -252,23 +252,23 @@ function renderSongDb() {
     else if (song.date_added) metaParts.push(`Added: ${sdbFormatDate(song.date_added)}`);
     if (metaParts.length) {
       const metaEl = document.createElement('div');
-      metaEl.className = 'song-db-entry-meta';
+      metaEl.className = 'song-db-entry-meta text-xs text-base-content/40';
       metaEl.textContent = metaParts.join(' · ');
       info.appendChild(metaEl);
     }
 
     const toggleBtn = document.createElement('button');
-    toggleBtn.className = 'icon-btn sdb-insert-btn';
+    toggleBtn.className = 'icon-btn sdb-insert-btn btn btn-xs btn-ghost shrink-0';
     toggleBtn.title = 'Insert into plan';
     toggleBtn.textContent = '▼ Insert';
 
     const editBtn = document.createElement('button');
-    editBtn.className = 'icon-btn';
+    editBtn.className = 'icon-btn btn btn-xs btn-ghost shrink-0';
     editBtn.title = 'Edit song';
     editBtn.textContent = '\u270E';
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'icon-btn danger';
+    delBtn.className = 'icon-btn danger btn btn-xs btn-ghost text-error shrink-0';
     delBtn.title = 'Delete song';
     delBtn.innerHTML = '&times;';
 

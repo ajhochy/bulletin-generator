@@ -244,10 +244,10 @@ function buildFmtControls(fmtObj, fmtKey_prefix, onChange) {
   // fmtKey_prefix: 'title' or 'body'
   const isTitle = fmtKey_prefix === 'title';
   const row = document.createElement('div');
-  row.className = 'fmt-type-row';
+  row.className = 'fmt-type-row flex items-center gap-1 px-3 py-1.5 flex-wrap border-t border-base-200';
 
   const lbl = document.createElement('span');
-  lbl.className = 'fmt-row-label';
+  lbl.className = 'fmt-row-label text-xs text-base-content/60 w-8 shrink-0';
   lbl.textContent = isTitle ? 'Title' : 'Body';
   row.appendChild(lbl);
 
@@ -340,7 +340,7 @@ function buildFmtControls(fmtObj, fmtKey_prefix, onChange) {
     ? [['','Auto'],['sm','Small'],['lg','Large'],['xl','XL']]
     : [['','Auto'],['sm','Small'],['lg','Large']];
   const sizeSel = document.createElement('select');
-  sizeSel.className = 'fmt-size-sel';
+  sizeSel.className = 'fmt-size-sel select select-bordered select-xs';
   sizeOpts.forEach(([val, lbl2]) => {
     const opt = document.createElement('option');
     opt.value = val;
@@ -411,7 +411,7 @@ function renderFormatPage() {
     // Insert group heading when group changes
     if (group !== lastGroup) {
       const heading = document.createElement('div');
-      heading.className = 'fmt-group-label';
+      heading.className = 'fmt-group-label text-xs font-semibold uppercase tracking-wider text-base-content/50 mt-3 mb-1 col-span-full';
       heading.textContent = group;
       grid.appendChild(heading);
       lastGroup = group;
@@ -423,19 +423,19 @@ function renderFormatPage() {
     const fmtObj = typeFormats[typeVal];
 
     const card = document.createElement('div');
-    card.className = 'fmt-type-card fmt-card-collapsed';
+    card.className = 'fmt-type-card fmt-card-collapsed border border-base-300 rounded-lg bg-base-100 overflow-hidden';
     card.dataset.typeVal   = typeVal;
     card.dataset.typeLabel = typeLabel2.toLowerCase();
 
     const name = document.createElement('div');
-    name.className = 'fmt-type-name';
+    name.className = 'fmt-type-name flex items-center justify-between px-3 py-2 cursor-pointer select-none font-medium text-sm hover:bg-base-200';
 
     const nameText = document.createElement('span');
     nameText.textContent = typeLabel2;
     name.appendChild(nameText);
 
     const toggle = document.createElement('span');
-    toggle.className = 'fmt-card-toggle';
+    toggle.className = 'fmt-card-toggle text-base-content/50 text-lg leading-none';
     toggle.textContent = '+';
     name.appendChild(toggle);
 
@@ -454,7 +454,7 @@ function renderFormatPage() {
       card.appendChild(buildFmtControls(fmtObj, 'body',  onChange));
     } else {
       const hint = document.createElement('p');
-      hint.style.cssText = 'font-size:0.72rem;color:var(--muted);margin:0;font-style:italic;';
+      hint.className = 'text-xs text-base-content/40 italic px-3 py-2 m-0';
       hint.textContent = 'Hidden from print — no formatting needed.';
       card.appendChild(hint);
     }
