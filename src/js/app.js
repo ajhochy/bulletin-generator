@@ -26,6 +26,8 @@ function handleTabClick(btn) {
   document.getElementById(btn.dataset.tab).classList.add('active');
   if (btn.dataset.tab === 'page-format') {
     renderFormatPage();
+  } else if (btn.dataset.tab === 'page-templates') {
+    renderTemplateGallery();
   } else {
     const flt = document.getElementById('fmt-filter');
     if (flt) flt.value = '';
