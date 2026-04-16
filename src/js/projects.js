@@ -80,6 +80,7 @@ function collectCurrentProjectState() {
     breakBeforeStaff:    breakBeforeStaff,
     calBreakBeforeDates: calBreakBeforeDates.slice(),
     bottomMerge: Object.assign({}, bottomMerge),
+    activeDocTemplate: JSON.parse(JSON.stringify(activeDocTemplate || { pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] })),
   };
 }
 
@@ -140,6 +141,8 @@ function applyProjectState(state) {
   bottomMerge.serving  = !!bm.serving;
   bottomMerge.calendar = !!bm.calendar;
   bottomMerge.staff    = !!bm.staff;
+  setActiveDocTemplate(safe.activeDocTemplate || activeDocTemplate);
+  applyDocTemplate();
   if (typeof renderPcoIgnoreChips === 'function') renderPcoIgnoreChips();
   updateDocTitle();
   applyingProjectState = false;
@@ -760,6 +763,8 @@ function applyProjectStateForExport(state) {
   bottomMerge.serving  = !!bmExport.serving;
   bottomMerge.calendar = !!bmExport.calendar;
   bottomMerge.staff    = !!bmExport.staff;
+  setActiveDocTemplate(safe.activeDocTemplate || activeDocTemplate);
+  applyDocTemplate();
 }
 
 // ── Server-side PDF helpers ────────────────────────────────────────────────────
@@ -777,6 +782,12 @@ async function buildPrintDocHtml(pagesHtml, title) {
 
   const safeTitle = escAttr(title || 'Bulletin');
   const { w, h } = getPageDims();
+  const cssVars = activeDocTemplate.cssVars || {};
+  const pdfFontSans = cssVars.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily;
+  const pdfPrimary = cssVars.primary || cssVars.text || DEFAULT_TEMPLATE_CSS_VARS.primary;
+  const pdfMuted = cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted;
+  const pdfAccent = cssVars.accent || DEFAULT_TEMPLATE_CSS_VARS.accent;
+  const pdfBorder = cssVars.border || DEFAULT_TEMPLATE_CSS_VARS.border;
   return `<!DOCTYPE html>
 <html lang="en" style="--doc-page-w:${w}in;--doc-page-h:${h}in;"><head>
 <meta charset="UTF-8">
@@ -786,9 +797,11 @@ ${css}
 /* Headless PDF overrides — placed after embedded CSS so page-size variables win */
 :root {
   --doc-page-w: ${w}in; --doc-page-h: ${h}in;
-  /* system-ui / -apple-system don't resolve consistently on Linux/Docker,
-     so override with a reliable cross-platform stack for PDF output. */
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: ${pdfFontSans};
+  --text: ${pdfPrimary};
+  --muted: ${pdfMuted};
+  --accent: ${pdfAccent};
+  --border: ${pdfBorder};
 }
 @page { size: ${w}in ${h}in; margin: 0; }
 body { margin: 0; padding: 0; background: white !important; display: block !important; }

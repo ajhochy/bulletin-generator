@@ -609,6 +609,19 @@
       </div>
     </div>
     <p class="text-sm text-base-content/60 mb-6">Choose a template to apply to your current project, or design your own.</p>
+    <div class="rounded-lg border border-base-300 bg-base-100 p-3 mb-5">
+      <div class="flex items-center justify-between gap-3 mb-2">
+        <div>
+          <div class="text-sm font-semibold">Fonts</div>
+          <div class="text-xs text-base-content/60">Upload licensed TTF, OTF, WOFF, or WOFF2 files for template font pickers.</div>
+        </div>
+        <div>
+          <button class="btn btn-ghost btn-sm" id="tpl-font-upload-btn">Upload Font…</button>
+          <input type="file" id="tpl-font-upload-input" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+        </div>
+      </div>
+      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" id="tpl-font-list"></div>
+    </div>
     <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" id="tpl-grid">
       <!-- populated by renderTemplateGallery() in templates.js -->
     </div>
@@ -620,6 +633,7 @@
       <button class="btn btn-ghost btn-sm" id="tpl-designer-back">← Back</button>
       <input class="input input-bordered input-sm flex-1 max-w-xs font-medium" id="tpl-designer-name" type="text" placeholder="Template name…">
       <div class="flex gap-2 ml-auto">
+        <button class="btn btn-ghost btn-sm" id="tpl-designer-export">Export</button>
         <button class="btn btn-ghost btn-sm" id="tpl-designer-save-as">Save As…</button>
         <button class="btn btn-primary btn-sm" id="tpl-designer-save">Save</button>
       </div>

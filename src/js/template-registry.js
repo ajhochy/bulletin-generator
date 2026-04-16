@@ -140,11 +140,18 @@ function applyElementFmt(el, fmt) {
   if (!fmt || !el) return;
   if (fmt.bold    !== undefined) el.style.fontWeight  = fmt.bold    ? 'bold' : 'normal';
   if (fmt.italic  !== undefined) el.style.fontStyle   = fmt.italic  ? 'italic' : 'normal';
+  if (fmt.underline !== undefined) el.style.textDecoration = fmt.underline ? 'underline' : '';
+  if (fmt.fontFamily)             el.style.fontFamily    = fmt.fontFamily;
   if (fmt.color)                 el.style.color        = fmt.color;
   if (fmt.align)                 el.style.textAlign    = fmt.align;
   if (fmt.size) {
     const sizeMap = { sm: '0.78em', lg: '1.1em', xl: '1.25em' };
     if (sizeMap[fmt.size]) el.style.fontSize = sizeMap[fmt.size];
+  }
+  if (fmt.layout && fmt.layout.position === 'free') {
+    el.style.position = 'relative';
+    el.style.left = (fmt.layout.x || 0) + 'px';
+    el.style.top = (fmt.layout.y || 0) + 'px';
   }
 }
 

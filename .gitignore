@@ -18,6 +18,7 @@ __pycache__/
 # Local app data
 data/*.json
 !data/*.example.json
+data/fonts/
 song-database.json
 song-database-*.json
 

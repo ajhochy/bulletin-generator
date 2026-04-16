@@ -98,6 +98,15 @@ const PAGE_SIZE_PRESETS = {
   '11x17':    { label: '11 × 17 in — tabloid / ledger',         w: 11,   h: 17   },
 };
 
+const DEFAULT_TEMPLATE_CSS_VARS = {
+  fontFamily: 'system-ui, -apple-system, sans-serif',
+  primary: '#111827',
+  muted: '#6b7280',
+  accent: '#172429',
+  border: '#e5e7eb',
+};
+const SYSTEM_TEMPLATE_FONTS = new Set(['system-ui', 'arial', 'helvetica', 'georgia', 'times new roman', 'trebuchet ms', 'verdana']);
+
 let activeDocTemplate = { pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] };
 let templates = [];  // all saved templates loaded from /api/templates  OWNER: templates.js
 
@@ -105,10 +114,61 @@ function getPageDims() {
   return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];
 }
 
+function templateFontSlug(name) {
+  return String(name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function collectTemplateFontFamilies(template) {
+  const names = new Set();
+  const cssFont = template?.cssVars?.fontFamily;
+  if (cssFont) names.add(cssFont);
+  (template?.zones || []).forEach(zone => {
+    Object.values(zone?.elements || {}).forEach(fmt => {
+      if (fmt?.fontFamily) names.add(fmt.fontFamily);
+    });
+  });
+  return Array.from(names).filter(name => {
+    const lower = String(name || '').trim().toLowerCase();
+    return lower && !SYSTEM_TEMPLATE_FONTS.has(lower) && !lower.includes('system-ui');
+  });
+}
+
+function syncTemplateFontLinks(template) {
+  const wanted = new Set();
+  collectTemplateFontFamilies(template).forEach(name => {
+    const slug = templateFontSlug(name);
+    if (!slug) return;
+    [
+      [`tpl-font-user-${slug}`, `/fonts/user/${slug}/font.css`],
+      [`tpl-font-cache-${slug}`, `/fonts/cache/${slug}/font.css`],
+    ].forEach(([id, href]) => {
+      wanted.add(id);
+      let link = document.getElementById(id);
+      if (!link) {
+        link = document.createElement('link');
+        link.id = id;
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
+      if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+    });
+  });
+  document.querySelectorAll('link[id^="tpl-font-user-"], link[id^="tpl-font-cache-"]').forEach(link => {
+    if (!wanted.has(link.id)) link.remove();
+  });
+}
+
 function applyDocTemplate() {
   const { w, h } = getPageDims();
+  const cssVars = activeDocTemplate.cssVars || {};
+  syncTemplateFontLinks(activeDocTemplate);
   document.documentElement.style.setProperty('--doc-page-w', w + 'in');
   document.documentElement.style.setProperty('--doc-page-h', h + 'in');
+  document.documentElement.style.setProperty('--font-sans', cssVars.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily);
+  document.documentElement.style.setProperty('--text', cssVars.primary || cssVars.text || DEFAULT_TEMPLATE_CSS_VARS.primary);
+  document.documentElement.style.setProperty('--muted', cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted);
+  document.documentElement.style.setProperty('--accent', cssVars.accent || DEFAULT_TEMPLATE_CSS_VARS.accent);
+  document.documentElement.style.setProperty('--border', cssVars.border || DEFAULT_TEMPLATE_CSS_VARS.border);
   // Inject @page size — CSS variables cannot be used inside @page size
   let pageStyle = document.getElementById('doc-page-style');
   if (!pageStyle) {
@@ -131,8 +191,8 @@ function saveTypeFormats() {
 // so we check !== undefined. For string properties the empty string '' means
 // "reset to default", so we use a truthy check — this ensures stale ''
 // overrides in saved projects don't silently block type-level formatting.
-function getEffectiveFmt(item) {
-  return getEffectiveFmtCore(typeFormats, item);
+function getEffectiveFmt(item, template = activeDocTemplate, elementKey = '', binding = '') {
+  return getEffectiveFmtCore(typeFormats, item, template, elementKey, binding);
 }
 const CAL_CACHE_MS   = 15 * 60 * 1000;
 const CAL_URLS_KEY   = 'worshipCalUrls';

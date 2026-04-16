@@ -1,7 +1,52 @@
+function getPcoElementFmt(item, elementKey) {
+  return getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, elementKey);
+}
+
+function getPcoElementFormats(item, keys) {
+  return keys.reduce((acc, key) => {
+    acc[key] = getPcoElementFmt(item, key);
+    return acc;
+  }, {});
+}
+
+function appendTemplateInlineRow(parent, item, elements, row = 'title-row', anchorKey = '') {
+  const formats = getPcoElementFormats(item, Object.keys(elements));
+  const rowKeys = deriveInlineRowKeysCore(formats, row, anchorKey).filter(key => elements[key]);
+  if (rowKeys.length <= 1) {
+    if (anchorKey && elements[anchorKey]) parent.appendChild(elements[anchorKey]);
+    return false;
+  }
+
+  const rowEl = document.createElement('div');
+  rowEl.className = `tpl-inline-row tpl-inline-row-${row}`;
+  const gap = rowKeys.map(key => formats[key]?.layout?.gap).find(Boolean);
+  if (gap) rowEl.style.gap = gap;
+
+  rowKeys.forEach(key => {
+    const el = elements[key];
+    const layout = formats[key]?.layout || {};
+    el.classList.add('tpl-inline-row-item');
+    if (layout.align === 'right' || layout.align === 'space-between') el.style.marginLeft = 'auto';
+    if (layout.verticalAlign) el.style.alignSelf = layout.verticalAlign === 'middle' ? 'center' : layout.verticalAlign;
+    rowEl.appendChild(el);
+  });
+
+  parent.appendChild(rowEl);
+  return true;
+}
+
 function buildPreviewItemEl(item, idx) {
   const t = (item.title  || '').trim();
   const d = (item.detail || '').trim();
-  const fmt = getEffectiveFmt(item);
+  const itemType = item.type || 'label';
+  const titleKey = itemType === 'section' ? 'heading'
+    : itemType === 'song' ? 'songTitle'
+    : 'title';
+  const bodyKey = itemType === 'song' ? 'stanzaText'
+    : itemType === 'liturgy' ? 'bodyParagraph'
+    : 'body';
+  const titleFmt = getEffectiveFmt(item, activeDocTemplate, titleKey, 'pco_items');
+  const bodyFmt = getEffectiveFmt(item, activeDocTemplate, bodyKey, 'pco_items');
 
   if (item.type === 'section') {
     const wrapper = document.createElement('div');
@@ -12,15 +57,16 @@ function buildPreviewItemEl(item, idx) {
     heading.className = 'section-heading';
     heading.textContent = t || 'Section';
     // Apply only color and alignment overrides — size/weight/case come from CSS
-    if (fmt.titleColor) heading.style.color = fmt.titleColor;
-    if (fmt.titleAlign) heading.style.textAlign = fmt.titleAlign;
+    applyElementFmt(heading, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, 'heading'));
+    if (titleFmt.titleColor) heading.style.color = titleFmt.titleColor;
+    if (titleFmt.titleAlign) heading.style.textAlign = titleFmt.titleAlign;
     wrapper.appendChild(heading);
 
     if (d) {
       const body = document.createElement('div');
       body.className = 'item-body';
       body.style.marginTop = '0.3rem';
-      applyBodyFmt(body, fmt);
+      applyBodyFmt(body, getEffectiveFmt(item));
       renderBodyText(body, d, true);
       wrapper.appendChild(body);
     }
@@ -30,39 +76,50 @@ function buildPreviewItemEl(item, idx) {
     wrapper.className = 'order-item preview-linkable';
     applyPreviewLinkMeta(wrapper, { section: 'oow', itemIdx: idx });
 
+    let heading = null;
     if (t) {
-      const heading = document.createElement('div');
+      heading = document.createElement('div');
       const hasRule = !!(item.detail || '').trim();
       heading.className = 'item-heading' + (hasRule ? ' has-rule' : '');
       heading.textContent = t;
-      applyTitleFmt(heading, fmt);
-      wrapper.appendChild(heading);
+      applyElementFmt(heading, getPcoElementFmt(item, titleKey));
+      applyTitleFmt(heading, titleFmt);
     }
 
     if (d) {
       const isSong = item.type === 'song';
       if (isSong) {
         const { body: lyricBody, copyright } = splitLyricsCopyright(d);
+        let body = null;
         if (lyricBody) {
-          const body = document.createElement('div');
+          body = document.createElement('div');
           body.className = 'item-body';
-          applyBodyFmt(body, fmt);
+          applyElementFmt(body, getPcoElementFmt(item, 'stanzaText'));
+          applyBodyFmt(body, bodyFmt);
           renderBodyText(body, lyricBody);
-          wrapper.appendChild(body);
         }
+        let cpEl = null;
         if (copyright) {
-          const cpEl = document.createElement('div');
+          cpEl = document.createElement('div');
           cpEl.className = 'song-copyright';
           cpEl.textContent = copyright;
-          wrapper.appendChild(cpEl);
+          applyElementFmt(cpEl, getPcoElementFmt(item, 'copyright'));
+          applyBodyFmt(cpEl, getEffectiveFmt(item, activeDocTemplate, 'copyright', 'pco_items'));
         }
+        appendTemplateInlineRow(wrapper, item, { songTitle: heading, copyright: cpEl }, 'title-row', 'songTitle');
+        if (body) wrapper.appendChild(body);
+        if (cpEl && !cpEl.parentElement) wrapper.appendChild(cpEl);
       } else {
+        if (heading) wrapper.appendChild(heading);
         const body = document.createElement('div');
         body.className = 'item-body';
-        applyBodyFmt(body, fmt);
+        applyElementFmt(body, getPcoElementFmt(item, bodyKey));
+        applyBodyFmt(body, bodyFmt);
         renderBodyText(body, d, true);
         wrapper.appendChild(body);
       }
+    } else if (heading) {
+      wrapper.appendChild(heading);
     }
     return wrapper;
   }
@@ -393,7 +450,12 @@ function applyPreviewLinkMeta(el, chunk) {
 // A `---` line inside song lyrics creates a forced-break sentinel between sections.
 function buildChunks(item, idx) {
   const plan = deriveChunkPlanCore(item, idx);
-  const fmt = getEffectiveFmt(item);
+  const titleKey = item.type === 'song' ? 'songTitle' : 'title';
+  const bodyKey = item.type === 'song' ? 'stanzaText'
+    : item.type === 'liturgy' ? 'bodyParagraph'
+    : 'body';
+  const titleFmt = getEffectiveFmt(item, activeDocTemplate, titleKey, 'pco_items');
+  const bodyFmt = getEffectiveFmt(item, activeDocTemplate, bodyKey, 'pco_items');
 
   return plan.map(part => {
     if (part.renderKind === 'sentinel') {
@@ -430,24 +492,30 @@ function buildChunks(item, idx) {
         (part.isLastStanza ? '' : ' song-stanza') +
         (part.isFirstStanza ? ' preview-linkable' : '');
       applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, stanzaIdx: part.stanzaIdx });
+      let h = null;
       if (part.isFirstStanza && part.title) {
-        const h = document.createElement('div');
+        h = document.createElement('div');
         h.className = 'item-heading has-rule';
         h.textContent = part.title;
-        applyTitleFmt(h, fmt);
-        wrap.appendChild(h);
+        applyElementFmt(h, getPcoElementFmt(item, 'songTitle'));
+        applyTitleFmt(h, titleFmt);
       }
       const body = document.createElement('div');
       body.className = 'item-body';
-      applyBodyFmt(body, fmt);
+      applyElementFmt(body, getPcoElementFmt(item, 'stanzaText'));
+      applyBodyFmt(body, bodyFmt);
       renderBodyText(body, part.stanza);
-      wrap.appendChild(body);
+      let cp = null;
       if (part.isLastStanza && part.copyright) {
-        const cp = document.createElement('div');
+        cp = document.createElement('div');
         cp.className = 'song-copyright';
         cp.textContent = part.copyright;
-        wrap.appendChild(cp);
+        applyElementFmt(cp, getPcoElementFmt(item, 'copyright'));
+        applyBodyFmt(cp, getEffectiveFmt(item, activeDocTemplate, 'copyright', 'pco_items'));
       }
+      if (h || cp) appendTemplateInlineRow(wrap, item, { songTitle: h, copyright: cp }, 'title-row', 'songTitle');
+      wrap.appendChild(body);
+      if (cp && !cp.parentElement) wrap.appendChild(cp);
       return makeChunk({
         section: part.section,
         sourceId: part.sourceId,
@@ -465,12 +533,14 @@ function buildChunks(item, idx) {
       const h = document.createElement('div');
       h.className = 'item-heading has-rule';
       h.textContent = part.title;
-      applyTitleFmt(h, fmt);
+      applyElementFmt(h, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, 'title'));
+      applyTitleFmt(h, titleFmt);
       wrap.appendChild(h);
     }
     const body = document.createElement('div');
     body.className = 'item-body';
-    applyBodyFmt(body, fmt);
+    applyElementFmt(body, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, bodyKey));
+    applyBodyFmt(body, bodyFmt);
     renderBodyText(body, part.paragraph, true);
     wrap.appendChild(body);
     return makeChunk({
@@ -509,6 +579,7 @@ function renderPreview() {
   // Used by appendBottomSection() to decide whether a bottom page can share it.
   let lastRenderedPageEl = null;
   let lastPageUsedH      = 0;
+  let lastRenderedBinding = '';
 
   previewPane.querySelectorAll('.booklet-page, .pg-break-ctrl').forEach(el => el.remove());
   previewEmpty.style.display = 'none';
@@ -516,8 +587,10 @@ function renderPreview() {
   const hasContent = items.length > 0 || title || date || hasAnn;
   if (!hasContent) { previewEmpty.style.display = ''; updatePrintBtn(); return; }
 
-  // ── Cover page ──────────────────────────────────────────────────────────────
-  if (optCover.checked) {
+  // ── Zone renderers ─────────────────────────────────────────────────────────
+  function renderCoverZone() {
+    if (!optCover.checked) return;
+
     const cover = document.createElement('div');
 
     if (coverImageUrl) {
@@ -540,6 +613,7 @@ function renderPreview() {
         const el = document.createElement('div');
         el.className = 'cover-church';
         el.textContent = church;
+        applyElementFmt(el, getTemplateElementFmt(activeDocTemplate, 'cover', '', '', 'churchName'));
         cover.appendChild(el);
       }
 
@@ -550,23 +624,27 @@ function renderPreview() {
       const titleEl = document.createElement('div');
       titleEl.className = 'cover-title';
       titleEl.textContent = title;
+      applyElementFmt(titleEl, getTemplateElementFmt(activeDocTemplate, 'cover', '', '', 'subtitle'));
       cover.appendChild(titleEl);
 
       if (date) {
         const dateEl = document.createElement('div');
         dateEl.className = 'cover-date';
         dateEl.textContent = date;
+        applyElementFmt(dateEl, getTemplateElementFmt(activeDocTemplate, 'cover', '', '', 'serviceDate'));
         cover.appendChild(dateEl);
       }
     }
 
     previewPane.appendChild(cover);
+    lastRenderedPageEl = cover;
+    lastPageUsedH = getPageDims().h * 96;
+    lastRenderedBinding = 'cover';
   }
 
-  // ── Welcome + Announcements page(s) ─────────────────────────────────────────
-  // Announcements are measured and packed like order-of-worship chunks so the
-  // preview and PDF always match — no more overflow-only-in-print surprises.
-  {
+  function renderAnnouncementsZone() {
+    // Announcements are measured and packed like order-of-worship chunks so the
+    // preview and PDF always match — no more overflow-only-in-print surprises.
     const annAvailH = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
 
     // Build the welcome section (always on the first page)
@@ -610,6 +688,7 @@ function renderPreview() {
         if (ann.url && ann.url.trim()) {
           const qrWrap = document.createElement('div');
           qrWrap.className = 'ann-qr-wrap';
+          applyElementFmt(qrWrap, getTemplateElementFmt(activeDocTemplate, 'announcements', '', ann.title, 'url'));
           const qrImg = document.createElement('img');
           qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=68x68&data=${encodeURIComponent(ann.url.trim())}`;
           qrImg.alt = 'QR Code';
@@ -621,11 +700,13 @@ function renderPreview() {
           const h = document.createElement('div');
           h.className = 'ann-item-heading';
           h.textContent = ann.title.trim();
+          applyElementFmt(h, getTemplateElementFmt(activeDocTemplate, 'announcements', '', ann.title, 'title'));
           wrap.appendChild(h);
         }
         if (ann.body.trim()) {
           const b = document.createElement('div');
           b.className = 'ann-body';
+          applyElementFmt(b, getTemplateElementFmt(activeDocTemplate, 'announcements', '', ann.title, 'body'));
           renderBodyText(b, ann.body, true);
           wrap.appendChild(b);
         }
@@ -727,14 +808,16 @@ function renderPreview() {
     if (renderedAnnPageEls.length > 0) {
       lastRenderedPageEl = renderedAnnPageEls[renderedAnnPageEls.length - 1];
       lastPageUsedH = annUsed;
+      lastRenderedBinding = 'announcements';
     }
   }
 
-  // ── Interior pages ────────────────────────────────────────────────────────────
-  // Unified algorithm: works for both auto-packing and manual (page-break item)
-  // mode.  forceBreak chunks always start a new page; noBreakBefore suppresses
-  // the auto overflow-break before a specific chunk.
-  if (items.length > 0) {
+  function renderOOWZone() {
+    // Unified algorithm: works for both auto-packing and manual (page-break item)
+    // mode. forceBreak chunks always start a new page; noBreakBefore suppresses
+    // the auto overflow-break before a specific chunk.
+    if (items.length === 0) return;
+
     // Available content height per CSS px (96 px/in).
     // Page height − 0.35in top pad − 0.45in bottom pad − optional 0.55in footer.
     const AVAIL_H = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
@@ -764,8 +847,9 @@ function renderPreview() {
 
     // ── Ann→OOW merge logic (Features 2+3) ──────────────────────────────────
     // Capture the ann/OOW boundary state before packing modifies lastRenderedPageEl.
-    const annLastPageEl   = lastRenderedPageEl;
-    const annLastPageUsedH = lastPageUsedH;
+    const canMergeWithAnnouncements = lastRenderedBinding === 'announcements';
+    const annLastPageEl   = canMergeWithAnnouncements ? lastRenderedPageEl : null;
+    const annLastPageUsedH = canMergeWithAnnouncements ? lastPageUsedH : 0;
     const doMergeOOW = bottomMerge.oow && annLastPageEl !== null;
 
     // Build the pg-break-ctrl for the ann/OOW boundary (visible only if ann pages exist).
@@ -906,6 +990,7 @@ function renderPreview() {
     if (renderedPageEls.length > 0) {
       lastRenderedPageEl = renderedPageEls[renderedPageEls.length - 1];
       lastPageUsedH = used;
+      lastRenderedBinding = 'pco_items';
     }
   }
 
@@ -973,11 +1058,14 @@ function renderPreview() {
       }
       lastRenderedPageEl = pg;
       lastPageUsedH      = contentH;
+      lastRenderedBinding = mergeKey;
     }
+    lastRenderedBinding = mergeKey;
   }
 
-  // ── Serving schedule ────────────────────────────────────────────────────────
-  if (servingSchedule && optVolunteers.checked) {
+  function renderServingZone() {
+    if (!(servingSchedule && optVolunteers.checked)) return;
+
     const srvChunks = buildServingChunks(servingSchedule, servingTeamFilter, volTeamFilter);
 
     // Pack chunks into pages[] using pre-resolved forceBreak flags.
@@ -1042,12 +1130,15 @@ function renderPreview() {
         } else previewPane.appendChild(pg);
         lastRenderedPageEl = pg;
         lastPageUsedH = contentH;
+        lastRenderedBinding = 'serving_schedule';
       }
     });
+    if (pages.some(pageChunks => pageChunks.length > 0)) lastRenderedBinding = 'serving_schedule';
   }
 
-  // ── Calendar ────────────────────────────────────────────────────────────────
-  if (optCal.checked) {
+  function renderCalendarZone() {
+    if (!optCal.checked) return;
+
     const calChunks = buildCalendarChunks(church);
     calChunks.forEach((chunk, si) => {
       const calContent = document.createElement('div');
@@ -1079,6 +1170,7 @@ function renderPreview() {
         }
         lastRenderedPageEl = pg;
         lastPageUsedH      = contentH;
+        lastRenderedBinding = 'calendar';
       } else if (si === 0) {
         // First chunk: use appendBottomSection to control serving→calendar merge toggle
         appendBottomSection(calContent, 'calendar');
@@ -1107,13 +1199,16 @@ function renderPreview() {
           else previewPane.appendChild(pg);
           lastRenderedPageEl = pg;
           lastPageUsedH      = contentH;
+          lastRenderedBinding = 'calendar';
         }
       }
     });
+    if (calChunks.length > 0) lastRenderedBinding = 'calendar';
   }
 
-  // ── Staff / Contact ─────────────────────────────────────────────────────────
-  if (optStaff.checked) {
+  function renderStaffZone() {
+    if (!optStaff.checked) return;
+
     const staffContent = document.createElement('div');
 
     const content = document.createElement('div');
@@ -1135,12 +1230,15 @@ function renderPreview() {
       const tdName = document.createElement('td');
       tdName.className = 'sname';
       tdName.textContent = name;
+      applyElementFmt(tdName, getTemplateElementFmt(activeDocTemplate, 'staff', '', name, 'staffName'));
       const tdRole = document.createElement('td');
       tdRole.className = 'srole';
       tdRole.textContent = role;
+      applyElementFmt(tdRole, getTemplateElementFmt(activeDocTemplate, 'staff', '', name, 'staffRole'));
       const tdEmail = document.createElement('td');
       tdEmail.className = 'semail';
       tdEmail.textContent = email;
+      applyElementFmt(tdEmail, getTemplateElementFmt(activeDocTemplate, 'staff', '', name, 'staffEmail'));
       tr.appendChild(tdName);
       tr.appendChild(tdRole);
       tr.appendChild(tdEmail);
@@ -1224,10 +1322,28 @@ function renderPreview() {
       }
       lastRenderedPageEl = pg;
       lastPageUsedH      = measureBottomContent(staffContent);
+      lastRenderedBinding = 'staff';
     } else {
       appendBottomSection(staffContent, 'staff');
     }
   }
+
+  const ZONE_RENDERERS = {
+    cover: renderCoverZone,
+    announcements: renderAnnouncementsZone,
+    pco_items: renderOOWZone,
+    serving_schedule: renderServingZone,
+    calendar: renderCalendarZone,
+    staff: renderStaffZone,
+  };
+
+  function previewZoneOrder() {
+    return derivePreviewZoneOrderCore(activeDocTemplate, Object.keys(ZONE_RENDERERS));
+  }
+
+  previewZoneOrder().forEach(binding => {
+    ZONE_RENDERERS[binding]();
+  });
 
   // ── Booklet size targeting: pad with blank pages or warn if over target ─────
   const bookletTarget = parseInt(optBookletSize.value, 10);

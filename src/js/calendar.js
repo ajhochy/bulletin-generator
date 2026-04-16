@@ -754,18 +754,21 @@ function buildCalEventRow(ev) {
   const timeEl = document.createElement('div');
   timeEl.className = 'cal-event-time';
   timeEl.textContent = formatCalTime(ev.start.iso, ev.start.allDay);
+  applyElementFmt(timeEl, getTemplateElementFmt(activeDocTemplate, 'calendar', '', ev.title, 'eventTime'));
   row.appendChild(timeEl);
   const info = document.createElement('div');
   info.className = 'cal-event-info';
   const titleSpan = document.createElement('div');
   titleSpan.className = 'cal-event-title';
   titleSpan.textContent = ev.title;
+  applyElementFmt(titleSpan, getTemplateElementFmt(activeDocTemplate, 'calendar', '', ev.title, 'eventTitle'));
   info.appendChild(titleSpan);
   const isAtChurch = /1030\s*s\.?\s*linwood/i.test(ev.location);
   if (ev.location && !isAtChurch) {
     const locSpan = document.createElement('div');
     locSpan.className = 'cal-event-loc';
     locSpan.textContent = ev.location;
+    applyElementFmt(locSpan, getTemplateElementFmt(activeDocTemplate, 'calendar', '', ev.title, 'eventDescription'));
     info.appendChild(locSpan);
   }
   row.appendChild(info);
@@ -819,6 +822,7 @@ function buildCalendarSegments(church) {
     const dayH = document.createElement('div');
     dayH.className = 'cal-day-heading';
     dayH.textContent = calDayLabel(dayKey);
+    applyElementFmt(dayH, getTemplateElementFmt(activeDocTemplate, 'calendar', '', calDayLabel(dayKey), 'dayHeading'));
     container.appendChild(dayH);
     evs.forEach(ev => container.appendChild(buildCalEventRow(ev)));
     segments.push({ date: dayKey, el: container });
@@ -854,7 +858,17 @@ function buildCalendarChunks(church) {
 }
 
 function renderServingTeam(container, team, weekIdx, teamIdx) {
-  // Team name subheading removed — only position rows are shown
+  const teamNameFmt = getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', team.name, 'teamName');
+  if (team.name && Object.keys(teamNameFmt || {}).length) {
+    const teamNameEl = document.createElement('div');
+    teamNameEl.className = 'serving-team-name';
+    teamNameEl.textContent = team.name;
+    teamNameEl.style.marginTop = '0.25rem';
+    applyElementFmt(teamNameEl, teamNameFmt);
+    container.appendChild(teamNameEl);
+  }
+
+  // Team name subheading is hidden by default; only position rows are shown.
   team.positions.forEach(pos => {
     const row = document.createElement('div');
     row.className = 'serving-row preview-linkable';
@@ -863,8 +877,12 @@ function renderServingTeam(container, team, weekIdx, teamIdx) {
     const roleSpan = document.createElement('span');
     roleSpan.className = 'serving-role';
     roleSpan.textContent = pos.role + ': ';
+    applyElementFmt(roleSpan, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', pos.role, 'positionLabel'));
     row.appendChild(roleSpan);
-    row.appendChild(document.createTextNode(formatNameList(pos.names)));
+    const namesSpan = document.createElement('span');
+    namesSpan.textContent = formatNameList(pos.names);
+    applyElementFmt(namesSpan, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', pos.role, 'volunteerName'));
+    row.appendChild(namesSpan);
     container.appendChild(row);
   });
 }
@@ -880,6 +898,7 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
   const wLabel = document.createElement('div');
   wLabel.className = 'serving-week-label';
   wLabel.textContent = labelText;
+  applyElementFmt(wLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', labelText, 'weekHeading'));
   container.appendChild(wLabel);
 
   // Check whether any teams carry service-time info (from PCO import)
@@ -924,6 +943,7 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
       stLabel.dataset.previewVolWeekIdx = weekIdx;
       stLabel.dataset.previewVolSt      = svcTime;
       stLabel.textContent = svcTime;
+      applyElementFmt(stLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', svcTime, 'serviceTime'));
       container.appendChild(stLabel);
     }
     timeGroups[svcTime].forEach(team => {

@@ -9,7 +9,12 @@ import {
   insertSongSeparatorAfter as insertSongSeparatorAfterCore,
   removeSongSeparatorBefore as removeSongSeparatorBeforeCore,
 } from './modules/text-core.js';
-import { deriveChunkPlan as deriveChunkPlanCore } from './modules/preview-core.js';
+import {
+  deriveChunkPlan as deriveChunkPlanCore,
+  deriveInlineDropLayout as deriveInlineDropLayoutCore,
+  deriveInlineRowKeys as deriveInlineRowKeysCore,
+  derivePreviewZoneOrder as derivePreviewZoneOrderCore,
+} from './modules/preview-core.js';
 import {
   shouldRefreshCalendar as shouldRefreshCalendarCore,
   mergeCalendarEvents as mergeCalendarEventsCore,
@@ -35,6 +40,9 @@ Object.assign(globalThis, {
   insertSongSeparatorAfterCore,
   removeSongSeparatorBeforeCore,
   deriveChunkPlanCore,
+  deriveInlineDropLayoutCore,
+  deriveInlineRowKeysCore,
+  derivePreviewZoneOrderCore,
   shouldRefreshCalendarCore,
   mergeCalendarEventsCore,
   deriveCalendarFetchStateCore,
@@ -46,8 +54,8 @@ Object.assign(globalThis, {
 });
 
 export const LEGACY_SCRIPT_PATHS = [
-  '/src/js/template-registry.js',
   '/src/js/state.js',
+  '/src/js/template-registry.js',
   '/src/js/utils.js',
   '/src/js/api.js',
   '/src/js/formatting.js',

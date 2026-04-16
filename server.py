@@ -18,6 +18,9 @@ import os
 import sys
 import platform
 import threading
+import copy
+import cgi
+import mimetypes
 
 # PyInstaller bundles Python without the system CA certificates.
 # Use certifi's bundled CA bundle so all HTTPS requests verify correctly.
@@ -63,12 +66,163 @@ SETTINGS_FILE      = DATA_DIR / "settings.json"
 SONGS_FILE         = DATA_DIR / "song_database.json"
 MIGRATIONS_FILE    = DATA_DIR / "migrations.json"
 TEMPLATES_FILE     = DATA_DIR / "templates.json"
+FONTS_DIR          = DATA_DIR / "fonts"
+USER_FONTS_DIR     = FONTS_DIR / "user"
+FONT_CACHE_DIR     = FONTS_DIR / "cache"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
 ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
 TEMPLATES_EXAMPLE_FILE     = _EXAMPLE_DIR / "templates.example.json"
+
+ALLOWED_FONT_EXTS = {".ttf", ".otf", ".woff", ".woff2"}
+SYSTEM_FONT_FAMILIES = {"system-ui", "arial", "helvetica", "georgia", "times new roman", "trebuchet ms", "verdana"}
+
+
+def _slugify(value):
+    slug = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().lower()).strip("-")
+    return slug or "font"
+
+
+def _font_family_from_slug(slug):
+    return " ".join(part.capitalize() for part in _slugify(slug).split("-"))
+
+
+def _font_format(ext):
+    return {
+        ".ttf": "truetype",
+        ".otf": "opentype",
+        ".woff": "woff",
+        ".woff2": "woff2",
+    }.get(ext.lower(), "truetype")
+
+
+def _safe_child(base, *parts):
+    root = Path(base).resolve()
+    candidate = root.joinpath(*parts).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError("invalid path")
+    return candidate
+
+
+def _classic_template(page_size="5.5x8.5"):
+    return {
+        "id": "classic",
+        "name": "Classic",
+        "builtIn": True,
+        "pageSize": page_size or "5.5x8.5",
+        "cssVars": {},
+        "typeFormats": {},
+        "zones": [
+            {"id": "z-cover",   "binding": "cover",            "order": 1, "enabled": True,  "match": {}, "elements": {"churchName": {}, "serviceDate": {}, "subtitle": {}}},
+            {"id": "z-ann",     "binding": "announcements",    "order": 2, "enabled": True,  "match": {}, "elements": {"title": {}, "body": {}, "url": {}}},
+            {"id": "z-oow-section", "binding": "pco_items",    "order": 3, "enabled": True,  "match": {"type": "section"}, "elements": {"heading": {}}},
+            {"id": "z-oow-song",    "binding": "pco_items",    "order": 4, "enabled": True,  "match": {"type": "song"}, "elements": {"songTitle": {}, "stanzaText": {}, "copyright": {}}},
+            {"id": "z-oow-liturgy", "binding": "pco_items",    "order": 5, "enabled": True,  "match": {"type": "liturgy"}, "elements": {"title": {}, "bodyParagraph": {}}},
+            {"id": "z-oow-label",   "binding": "pco_items",    "order": 6, "enabled": True,  "match": {"type": "label"}, "elements": {"title": {}, "body": {}}},
+            {"id": "z-cal",     "binding": "calendar",         "order": 7, "enabled": True,  "match": {}, "elements": {"dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {}}},
+            {"id": "z-serving", "binding": "serving_schedule", "order": 8, "enabled": True,  "match": {}, "elements": {"weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {}}},
+            {"id": "z-staff",   "binding": "staff",            "order": 9, "enabled": True,  "match": {}, "elements": {"staffName": {}, "staffRole": {}, "staffEmail": {}}},
+        ],
+    }
+
+
+def _modern_template():
+    return {
+        "id": "modern",
+        "name": "Modern",
+        "builtIn": True,
+        "pageSize": "5.5x8.5",
+        "cssVars": {
+            "fontFamily": "Open Sans",
+            "primary": "#1f2933",
+            "muted": "#64748b",
+            "accent": "#2f5d62",
+            "border": "#cbd5d1",
+        },
+        "typeFormats": {},
+        "zones": [
+            {"id": "modern-cover", "binding": "cover", "order": 1, "enabled": True, "match": {}, "elements": {
+                "churchName": {"fontFamily": "Open Sans", "size": "lg", "bold": True, "color": "#1f2933", "align": "center"},
+                "serviceDate": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b", "align": "center"},
+                "subtitle": {"fontFamily": "Times New Roman", "size": "xl", "italic": True, "color": "#2f5d62", "align": "center"}
+            }},
+            {"id": "modern-ann", "binding": "announcements", "order": 2, "enabled": True, "match": {}, "elements": {
+                "title": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "body": {"fontFamily": "Open Sans", "size": "sm", "color": "#1f2933"},
+                "url": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
+            }},
+            {"id": "modern-section", "binding": "pco_items", "order": 3, "enabled": True, "match": {"type": "section"}, "elements": {
+                "heading": {"fontFamily": "Open Sans", "bold": True, "size": "lg", "color": "#2f5d62", "align": "center"}
+            }},
+            {"id": "modern-song", "binding": "pco_items", "order": 4, "enabled": True, "match": {"type": "song"}, "elements": {
+                "songTitle": {"fontFamily": "Times New Roman", "italic": True, "size": "lg", "color": "#1f2933"},
+                "stanzaText": {"fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933"},
+                "copyright": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b", "layout": {"position": "inline", "row": "title-row", "align": "right", "verticalAlign": "baseline", "gap": "0.45rem"}}
+            }},
+            {"id": "modern-liturgy", "binding": "pco_items", "order": 5, "enabled": True, "match": {"type": "liturgy"}, "elements": {
+                "title": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "bodyParagraph": {"fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933"}
+            }},
+            {"id": "modern-label", "binding": "pco_items", "order": 6, "enabled": True, "match": {"type": "label"}, "elements": {
+                "title": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
+                "body": {"fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933"}
+            }},
+            {"id": "modern-cal", "binding": "calendar", "order": 7, "enabled": True, "match": {}, "elements": {
+                "dayHeading": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "eventTitle": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
+                "eventTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
+                "eventDescription": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
+            }},
+            {"id": "modern-serving", "binding": "serving_schedule", "order": 8, "enabled": True, "match": {}, "elements": {
+                "weekHeading": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "teamName": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
+                "serviceTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
+                "positionLabel": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
+                "volunteerName": {"fontFamily": "Open Sans", "color": "#1f2933"}
+            }},
+            {"id": "modern-staff", "binding": "staff", "order": 9, "enabled": True, "match": {}, "elements": {
+                "staffName": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
+                "staffRole": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
+                "staffEmail": {"fontFamily": "Open Sans", "size": "sm", "color": "#2f5d62"}
+            }},
+        ],
+    }
+
+
+def _builtin_templates():
+    return [_classic_template(), _modern_template()]
+
+
+def _backfill_project_doc_templates():
+    projects = _read_json(PROJECTS_FILE, [])
+    if not isinstance(projects, list):
+        return False
+
+    changed = False
+    for project in projects:
+        if not isinstance(project, dict):
+            continue
+        state = project.get("state")
+        if not isinstance(state, dict):
+            continue
+        existing = state.get("activeDocTemplate")
+        if isinstance(existing, dict) and isinstance(existing.get("zones"), list) and existing["zones"]:
+            continue
+        page_size = "5.5x8.5"
+        if isinstance(existing, dict):
+            page_size = existing.get("pageSize") or page_size
+        migrated = _classic_template(page_size)
+        if isinstance(existing, dict):
+            migrated.update(copy.deepcopy(existing))
+            migrated["zones"] = copy.deepcopy(_classic_template(page_size)["zones"])
+        state["activeDocTemplate"] = migrated
+        changed = True
+
+    if changed:
+        _write_json(PROJECTS_FILE, projects)
+    return changed
 
 # ── App version and update config ──────────────────────────────────────────────
 APP_VERSION    = os.environ.get("APP_VERSION", "1.11.0").lstrip("v")
@@ -607,7 +761,7 @@ def _migration_001_songdb_extraction():
 
 
 def _migration_002_classic_template_default():
-    """Ensure templates.json exists and contains the Classic built-in template.
+    """Ensure templates/projects have a backward-compatible Classic template.
 
     Projects saved before the template system was introduced will have no
     activeDocTemplate.zones. The Classic template (all-empty elements) is a
@@ -615,33 +769,74 @@ def _migration_002_classic_template_default():
     bulletins look identical after the migration.
     """
     templates = _read_json(TEMPLATES_FILE, [])
-    # Only insert Classic if it isn't already present
-    if any(t.get("id") == "classic" for t in templates):
+    if not isinstance(templates, list):
+        templates = []
+    if not any(t.get("id") == "classic" for t in templates if isinstance(t, dict)):
+        templates.insert(0, _classic_template())
+        _write_json(TEMPLATES_FILE, templates)
+
+    _backfill_project_doc_templates()
+
+
+def _migration_003_project_template_backfill():
+    """Backfill project templates for installs that already ran M002."""
+    _backfill_project_doc_templates()
+
+
+def _migration_004_classic_staff_zone_enabled():
+    """Keep Classic visually aligned with the pre-template staff toggle behavior."""
+    templates = _read_json(TEMPLATES_FILE, [])
+    if not isinstance(templates, list):
         return
-    classic = {
-        "id": "classic",
-        "name": "Classic",
-        "builtIn": True,
-        "pageSize": "5.5x8.5",
-        "cssVars": {},
-        "typeFormats": {},
-        "zones": [
-            {"id": "z-cover",   "binding": "cover",            "order": 1, "enabled": True,  "match": {}, "elements": {}},
-            {"id": "z-ann",     "binding": "announcements",    "order": 2, "enabled": True,  "match": {}, "elements": {}},
-            {"id": "z-oow",     "binding": "pco_items",        "order": 3, "enabled": True,  "match": {}, "elements": {}},
-            {"id": "z-cal",     "binding": "calendar",         "order": 4, "enabled": True,  "match": {}, "elements": {}},
-            {"id": "z-serving", "binding": "serving_schedule", "order": 5, "enabled": True,  "match": {}, "elements": {}},
-            {"id": "z-staff",   "binding": "staff",            "order": 6, "enabled": False, "match": {}, "elements": {}},
-        ],
-    }
-    templates.insert(0, classic)
-    _write_json(TEMPLATES_FILE, templates)
+    changed = False
+    for template in templates:
+        if not isinstance(template, dict) or template.get("id") != "classic":
+            continue
+        for zone in template.get("zones") or []:
+            if isinstance(zone, dict) and zone.get("binding") == "staff" and zone.get("enabled") is False:
+                zone["enabled"] = True
+                changed = True
+    if changed:
+        _write_json(TEMPLATES_FILE, templates)
+
+
+def _sync_builtin_templates():
+    templates = _read_json(TEMPLATES_FILE, [])
+    if not isinstance(templates, list):
+        templates = []
+    by_id = {t.get("id"): i for i, t in enumerate(templates) if isinstance(t, dict)}
+    changed = False
+    for builtin in _builtin_templates():
+        idx = by_id.get(builtin["id"])
+        if idx is None:
+            templates.append(builtin)
+            changed = True
+        else:
+            existing = templates[idx]
+            if existing.get("builtIn") or builtin["id"] in {"classic", "modern"}:
+                keep_page_size = existing.get("pageSize") or builtin.get("pageSize")
+                merged = copy.deepcopy(builtin)
+                merged["pageSize"] = keep_page_size
+                if existing != merged:
+                    templates[idx] = merged
+                    changed = True
+    if changed:
+        _write_json(TEMPLATES_FILE, templates)
+    return changed
+
+
+def _migration_005_builtin_template_presets():
+    """Refresh built-in templates and seed Modern for existing installs."""
+    _sync_builtin_templates()
 
 
 # Registry: list of (id, callable). Order matters — append only, never reorder.
 _MIGRATION_REGISTRY = [
     ("M001_songdb_extraction",        _migration_001_songdb_extraction),
     ("M002_classic_template_default", _migration_002_classic_template_default),
+    ("M003_project_template_backfill", _migration_003_project_template_backfill),
+    ("M004_classic_staff_zone_enabled", _migration_004_classic_staff_zone_enabled),
+    ("M005_builtin_template_presets", _migration_005_builtin_template_presets),
 ]
 
 
@@ -746,6 +941,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         raw = self.rfile.read(length)
         return json.loads(raw.decode("utf-8"))
 
+    def _send_bytes(self, data, content_type, status=200, cache_control="public, max-age=31536000"):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(data)
+
     # ── Routing ────────────────────────────────────────────────────────────────
 
     # ── Routing tables ─────────────────────────────────────────────────────────
@@ -763,6 +968,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/settings',             '_handle_get_settings'),
         ('/api/songs',                '_handle_get_songs'),
         ('/api/templates',            '_handle_get_templates'),
+        ('/api/fonts',                '_handle_get_fonts'),
         ('/api/bootstrap',            '_handle_bootstrap'),
         ('/api/google-calendars',     '_handle_google_calendars'),
         ('/api/admin/check-update',   '_handle_check_update'),
@@ -772,6 +978,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/oauth/google/start',       '_handle_google_oauth_start'),
         ('/oauth/google/callback',    '_handle_google_oauth_callback'),
         ('/pco-proxy/',               '_proxy_pco'),
+        ('/fonts/cache/',             '_handle_google_font_cache'),
+        ('/fonts/user/',              '_handle_user_font_file'),
         ('/cal',                      '_handle_cal'),
         ('/src/',                     '_handle_static'),
     ]
@@ -782,6 +990,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/settings',             '_handle_post_settings'),
         ('/api/songs',                '_handle_post_songs'),
         ('/api/templates',            '_handle_post_templates'),
+        ('/api/fonts',                '_handle_post_fonts'),
         ('/api/pdf',                  '_handle_pdf'),
         ('/api/propresenter-export',  '_handle_propresenter_export'),
         ('/api/drive/upload',         '_handle_drive_upload'),
@@ -793,6 +1002,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _DELETE_ROUTES = [
         ('/api/projects/',            '_handle_delete_project'),
         ('/api/templates/',           '_handle_delete_template'),
+        ('/api/fonts/',               '_handle_delete_font'),
     ]
 
     def _route(self, routes):
@@ -1001,19 +1211,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_get_templates(self):
         self._send_json(_read_json(TEMPLATES_FILE, []))
 
+    def _validate_template(self, template):
+        if not isinstance(template, dict):
+            return "template must be an object"
+        if not isinstance(template.get("id"), str) or not template["id"].strip():
+            return "template must include an id"
+        if not isinstance(template.get("name"), str) or not template["name"].strip():
+            return "template must include a name"
+        if "zones" not in template or not isinstance(template["zones"], list):
+            return "template must include zones"
+        if template.get("builtIn"):
+            return "built-in templates cannot be modified"
+        for zone in template["zones"]:
+            if not isinstance(zone, dict):
+                return "zone must be an object"
+            if not isinstance(zone.get("id"), str) or not zone.get("id"):
+                return "zone must include an id"
+            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "serving_schedule", "staff"}:
+                return "zone has invalid binding"
+            if not isinstance(zone.get("elements", {}), dict):
+                return "zone elements must be an object"
+        return None
+
     def _handle_post_templates(self):
         try:
             template = self._read_body_json()
         except Exception:
             self._send_json({"error": "invalid JSON"}, 400)
             return
-        if not isinstance(template, dict) or "id" not in template:
-            self._send_json({"error": "template must be an object with an id"}, 400)
+        error = self._validate_template(template)
+        if error:
+            status = 403 if "built-in" in error else 400
+            self._send_json({"error": error}, status)
             return
-        # Built-in templates (builtIn: true) cannot be overwritten via the API
-        if template.get("builtIn"):
-            self._send_json({"error": "built-in templates cannot be modified"}, 403)
-            return
+        template["id"] = _slugify(template["id"])
+        template["builtIn"] = False
         with _lock:
             templates = _read_json(TEMPLATES_FILE, [])
             idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
@@ -1043,6 +1275,183 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             templates = [t for t in templates if t.get("id") != template_id]
             _write_json(TEMPLATES_FILE, templates)
         self._send_json({"ok": True})
+
+    # ── Fonts ────────────────────────────────────────────────────────────────
+
+    def _list_user_fonts(self):
+        fonts = []
+        if USER_FONTS_DIR.exists():
+            for family_dir in sorted(p for p in USER_FONTS_DIR.iterdir() if p.is_dir()):
+                files = sorted(f.name for f in family_dir.iterdir() if f.is_file() and f.suffix.lower() in ALLOWED_FONT_EXTS)
+                if not files:
+                    continue
+                fonts.append({
+                    "family": _font_family_from_slug(family_dir.name),
+                    "slug": family_dir.name,
+                    "source": "user",
+                    "files": files,
+                    "cssUrl": f"/fonts/user/{family_dir.name}/font.css",
+                })
+        return fonts
+
+    def _list_cached_fonts(self):
+        fonts = []
+        if FONT_CACHE_DIR.exists():
+            for family_dir in sorted(p for p in FONT_CACHE_DIR.iterdir() if p.is_dir()):
+                if not (family_dir / "font.css").exists():
+                    continue
+                fonts.append({
+                    "family": _font_family_from_slug(family_dir.name),
+                    "slug": family_dir.name,
+                    "source": "google",
+                    "cssUrl": f"/fonts/cache/{family_dir.name}/font.css",
+                })
+        return fonts
+
+    def _handle_get_fonts(self):
+        self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
+
+    def _handle_post_fonts(self):
+        ctype = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in ctype:
+            self._send_json({"error": "multipart/form-data required"}, 400)
+            return
+        form = cgi.FieldStorage(
+            fp=self.rfile,
+            headers=self.headers,
+            environ={
+                "REQUEST_METHOD": "POST",
+                "CONTENT_TYPE": ctype,
+                "CONTENT_LENGTH": self.headers.get("Content-Length", "0"),
+            },
+        )
+        if "file" not in form:
+            self._send_json({"error": "missing file"}, 400)
+            return
+        field = form["file"]
+        if isinstance(field, list):
+            field = field[0]
+        filename = Path(field.filename or "").name
+        ext = Path(filename).suffix.lower()
+        if ext not in ALLOWED_FONT_EXTS:
+            self._send_json({"error": "font must be TTF, OTF, WOFF, or WOFF2"}, 400)
+            return
+        family = ""
+        if "family" in form:
+            family = str(form["family"].value or "").strip()
+        if not family:
+            family = Path(filename).stem
+        slug = _slugify(family)
+        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
+        dest_dir = _safe_child(USER_FONTS_DIR, slug)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        data = field.file.read()
+        if not data:
+            self._send_json({"error": "empty font file"}, 400)
+            return
+        _safe_child(dest_dir, safe_name).write_bytes(data)
+        self._send_json({"ok": True, "font": {
+            "family": family,
+            "slug": slug,
+            "source": "user",
+            "files": [safe_name],
+            "cssUrl": f"/fonts/user/{slug}/font.css",
+        }})
+
+    def _handle_delete_font(self):
+        path = self.path.split("?")[0]
+        slug = _slugify(urllib.parse.unquote(path[len("/api/fonts/"):]))
+        if not slug:
+            self._send_json({"error": "missing font family"}, 400)
+            return
+        target = _safe_child(USER_FONTS_DIR, slug)
+        if target.exists():
+            shutil.rmtree(target)
+        self._send_json({"ok": True})
+
+    def _handle_user_font_file(self):
+        path = urllib.parse.unquote(self.path.split("?")[0])
+        rest = path[len("/fonts/user/"):].strip("/")
+        parts = rest.split("/", 1)
+        if len(parts) != 2:
+            self._send_json({"error": "font file not found"}, 404)
+            return
+        slug = _slugify(parts[0])
+        file_name = Path(parts[1]).name
+        font_dir = _safe_child(USER_FONTS_DIR, slug)
+        if file_name == "font.css":
+            css = self._build_user_font_css(slug, font_dir).encode("utf-8")
+            self._send_bytes(css, "text/css; charset=utf-8", cache_control="no-store")
+            return
+        file_path = _safe_child(font_dir, file_name)
+        if not file_path.exists() or file_path.suffix.lower() not in ALLOWED_FONT_EXTS:
+            self._send_json({"error": "font file not found"}, 404)
+            return
+        self._send_bytes(file_path.read_bytes(), mimetypes.guess_type(file_path.name)[0] or "font/woff2")
+
+    def _build_user_font_css(self, slug, font_dir):
+        family = _font_family_from_slug(slug)
+        if not font_dir.exists():
+            return ""
+        rules = []
+        for file_path in sorted(font_dir.iterdir()):
+            if file_path.suffix.lower() not in ALLOWED_FONT_EXTS:
+                continue
+            rules.append(
+                "@font-face { "
+                f"font-family: \"{family}\"; "
+                f"src: url(\"/fonts/user/{slug}/{file_path.name}\") format(\"{_font_format(file_path.suffix)}\"); "
+                "font-weight: 400 900; font-style: normal; font-display: swap; }"
+            )
+        return "\n".join(rules)
+
+    def _handle_google_font_cache(self):
+        path = urllib.parse.unquote(self.path.split("?")[0])
+        rest = path[len("/fonts/cache/"):].strip("/")
+        parts = rest.split("/", 1)
+        if len(parts) != 2:
+            self._send_json({"error": "font file not found"}, 404)
+            return
+        slug = _slugify(parts[0])
+        file_name = Path(parts[1]).name
+        cache_dir = _safe_child(FONT_CACHE_DIR, slug)
+        if file_name == "font.css":
+            css_path = cache_dir / "font.css"
+            if not css_path.exists():
+                self._cache_google_font(slug, cache_dir)
+            if css_path.exists():
+                self._send_bytes(css_path.read_bytes(), "text/css; charset=utf-8", cache_control="public, max-age=3600")
+            else:
+                self._send_bytes(b"", "text/css; charset=utf-8", cache_control="no-store")
+            return
+        file_path = _safe_child(cache_dir, file_name)
+        if not file_path.exists():
+            self._send_json({"error": "font file not found"}, 404)
+            return
+        self._send_bytes(file_path.read_bytes(), mimetypes.guess_type(file_path.name)[0] or "font/woff2")
+
+    def _cache_google_font(self, slug, cache_dir):
+        family = _font_family_from_slug(slug)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            query = urllib.parse.urlencode({"family": f"{family}:wght@400;600;700", "display": "swap"})
+            req = urllib.request.Request(
+                f"https://fonts.googleapis.com/css2?{query}",
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                css = resp.read().decode("utf-8")
+            urls = re.findall(r"url\\((https://[^)]+)\\)", css)
+            for idx, url in enumerate(urls):
+                ext = Path(urllib.parse.urlparse(url).path).suffix or ".woff2"
+                local_name = f"{slug}-{idx}{ext}"
+                with urllib.request.urlopen(url, timeout=20) as font_resp:
+                    _safe_child(cache_dir, local_name).write_bytes(font_resp.read())
+                css = css.replace(url, f"/fonts/cache/{slug}/{local_name}")
+            (cache_dir / "font.css").write_text(css, encoding="utf-8")
+        except Exception as e:
+            print(f"  [fonts] Google font cache failed for {family}: {e}")
+            (cache_dir / "font.css").write_text("", encoding="utf-8")
 
     # ── PCO OAuth ──────────────────────────────────────────────────────────────
 

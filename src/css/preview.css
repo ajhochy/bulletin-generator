@@ -119,6 +119,41 @@
       padding-bottom: 0.15rem;
       margin-bottom: 0.25rem;
     }
+    .tpl-inline-row {
+      display: flex;
+      align-items: baseline;
+      gap: 0.45rem;
+      width: 100%;
+      margin-bottom: 0.25rem;
+    }
+    .tpl-inline-row .item-heading.has-rule {
+      flex: 1 1 auto;
+      margin-bottom: 0;
+    }
+    .tpl-inline-row .song-copyright {
+      flex: 0 0 auto;
+      margin-top: 0;
+      white-space: nowrap;
+    }
+    #tpl-live-canvas .tpl-selectable-element {
+      position: relative;
+    }
+    #tpl-live-canvas .tpl-selectable-element::after {
+      content: "";
+      position: absolute;
+      right: -0.32rem;
+      top: 50%;
+      width: 0.18rem;
+      height: 0.72rem;
+      border-left: 1px solid #2563eb;
+      border-right: 1px solid #2563eb;
+      opacity: 0;
+      transform: translateY(-50%);
+      pointer-events: none;
+    }
+    #tpl-live-canvas .tpl-selectable-element:hover::after {
+      opacity: 0.75;
+    }
 
     /* Body text — lyrics, responsive readings, scripture text */
     .item-body {

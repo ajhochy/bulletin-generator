@@ -1,5 +1,72 @@
 import { splitLyricsCopyright, splitLyricSectionIntoStanzas } from './text-core.js';
 
+export const DEFAULT_PREVIEW_ZONE_ORDER = [
+  'cover',
+  'announcements',
+  'pco_items',
+  'calendar',
+  'serving_schedule',
+  'staff',
+];
+
+export function derivePreviewZoneOrder(template, supportedBindings = DEFAULT_PREVIEW_ZONE_ORDER) {
+  const supported = new Set(supportedBindings);
+  const zones = Array.isArray(template?.zones) ? template.zones : [];
+  if (!zones.length) return DEFAULT_PREVIEW_ZONE_ORDER.filter(binding => supported.has(binding));
+
+  const bindingOrder = new Map();
+  zones.forEach(zone => {
+    if (!zone || zone.enabled === false || !supported.has(zone.binding)) return;
+    const fallbackOrder = DEFAULT_PREVIEW_ZONE_ORDER.indexOf(zone.binding);
+    const numericOrder = Number(zone.order);
+    const order = Number.isFinite(numericOrder)
+      ? numericOrder
+      : (fallbackOrder >= 0 ? fallbackOrder : Number.MAX_SAFE_INTEGER);
+    const current = bindingOrder.get(zone.binding);
+    if (current === undefined || order < current) bindingOrder.set(zone.binding, order);
+  });
+
+  return Array.from(bindingOrder.entries())
+    .sort((a, b) => a[1] - b[1])
+    .map(([binding]) => binding);
+}
+
+export function isInlineLayout(fmt, row = 'title-row') {
+  const layout = fmt?.layout;
+  if (!layout || layout.position !== 'inline') return false;
+  return (layout.row || 'title-row') === row;
+}
+
+export function deriveInlineRowKeys(elementFormats, row = 'title-row', anchorKey = '') {
+  const formats = elementFormats || {};
+  const inlineKeys = Object.keys(formats).filter(key => isInlineLayout(formats[key], row));
+  const keys = anchorKey ? [anchorKey].concat(inlineKeys.filter(key => key !== anchorKey)) : inlineKeys;
+  return keys.sort((a, b) => {
+    const aAlign = formats[a]?.layout?.align || (a === anchorKey ? 'left' : 'right');
+    const bAlign = formats[b]?.layout?.align || (b === anchorKey ? 'left' : 'right');
+    const rank = { left: 0, center: 1, right: 2, 'space-between': 2 };
+    return (rank[aAlign] ?? 2) - (rank[bAlign] ?? 2);
+  });
+}
+
+export function deriveInlineDropLayout(dragBox, targetBox, threshold = 12) {
+  if (!dragBox || !targetBox) return null;
+  const dragMidY = (dragBox.top + dragBox.bottom) / 2;
+  const targetMidY = (targetBox.top + targetBox.bottom) / 2;
+  const verticallyAligned = Math.abs(dragMidY - targetMidY) <= threshold;
+  const besideTarget = dragBox.left >= targetBox.left - threshold || dragBox.right <= targetBox.right + threshold;
+  if (!verticallyAligned || !besideTarget) return null;
+  const dragMidX = (dragBox.left + dragBox.right) / 2;
+  const targetMidX = (targetBox.left + targetBox.right) / 2;
+  return {
+    position: 'inline',
+    row: 'title-row',
+    align: dragMidX >= targetMidX ? 'right' : 'left',
+    verticalAlign: 'baseline',
+    gap: '0.45rem',
+  };
+}
+
 export function deriveChunkPlan(item, idx) {
   const safeItem = item || {};
   if (safeItem.type === 'page-break') {

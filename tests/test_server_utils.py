@@ -57,6 +57,118 @@ class TestReadWriteJson:
         assert server._read_json(p, {})["name"] == "Héllo Wörld 🎵"
 
 
+# ── Template migrations ───────────────────────────────────────────────────────
+
+class TestTemplateMigration:
+    def test_classic_template_migration_seeds_templates_and_projects(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        projects_path = tmp_path / "projects.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        monkeypatch.setattr(server, "PROJECTS_FILE", projects_path)
+
+        server._write_json(projects_path, [
+            {
+                "id": "proj_old",
+                "state": {
+                    "svcTitle": "Legacy",
+                    "activeDocTemplate": {"pageSize": "8.5x11"},
+                },
+            }
+        ])
+
+        server._migration_002_classic_template_default()
+
+        templates = server._read_json(templates_path, [])
+        projects = server._read_json(projects_path, [])
+        assert [t["id"] for t in templates] == ["classic"]
+        migrated = projects[0]["state"]["activeDocTemplate"]
+        assert migrated["id"] == "classic"
+        assert migrated["pageSize"] == "8.5x11"
+        assert migrated["zones"]
+
+    def test_classic_template_migration_is_idempotent(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        projects_path = tmp_path / "projects.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        monkeypatch.setattr(server, "PROJECTS_FILE", projects_path)
+
+        server._write_json(projects_path, [{"id": "proj_old", "state": {}}])
+
+        server._migration_002_classic_template_default()
+        server._migration_002_classic_template_default()
+
+        templates = server._read_json(templates_path, [])
+        projects = server._read_json(projects_path, [])
+        assert len([t for t in templates if t.get("id") == "classic"]) == 1
+        assert projects[0]["state"]["activeDocTemplate"]["zones"]
+
+    def test_project_backfill_runs_when_m002_was_already_applied(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        projects_path = tmp_path / "projects.json"
+        migrations_path = tmp_path / "migrations.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        monkeypatch.setattr(server, "PROJECTS_FILE", projects_path)
+        monkeypatch.setattr(server, "MIGRATIONS_FILE", migrations_path)
+
+        server._write_json(templates_path, [server._classic_template()])
+        server._write_json(projects_path, [{"id": "proj_old", "state": {}}])
+        server._write_json(migrations_path, ["M001_songdb_extraction", "M002_classic_template_default"])
+
+        server.run_migrations()
+
+        projects = server._read_json(projects_path, [])
+        migrations = server._read_json(migrations_path, [])
+        assert projects[0]["state"]["activeDocTemplate"]["zones"]
+        assert "M003_project_template_backfill" in migrations
+
+    def test_classic_staff_zone_migration_enables_staff(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        classic = server._classic_template()
+        for zone in classic["zones"]:
+            if zone["binding"] == "staff":
+                zone["enabled"] = False
+        server._write_json(templates_path, [classic])
+
+        server._migration_004_classic_staff_zone_enabled()
+
+        templates = server._read_json(templates_path, [])
+        staff_zone = next(z for z in templates[0]["zones"] if z["binding"] == "staff")
+        assert staff_zone["enabled"] is True
+
+    def test_builtin_template_sync_seeds_classic_and_modern(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        server._write_json(templates_path, [])
+
+        server._sync_builtin_templates()
+
+        templates = server._read_json(templates_path, [])
+        ids = [t["id"] for t in templates]
+        assert ids == ["classic", "modern"]
+        assert all(t["builtIn"] for t in templates)
+        assert templates[1]["cssVars"]["fontFamily"] == "Open Sans"
+
+    def test_template_validator_rejects_builtin_modification(self):
+        class Dummy:
+            pass
+        dummy = Dummy()
+        dummy._validate_template = server.Handler._validate_template.__get__(dummy, Dummy)
+        assert dummy._validate_template(server._classic_template()) == "built-in templates cannot be modified"
+
+    def test_user_font_css_generation(self, tmp_path):
+        font_dir = tmp_path / "my-font"
+        font_dir.mkdir()
+        (font_dir / "MyFont.woff2").write_bytes(b"font")
+        class Dummy:
+            pass
+        dummy = Dummy()
+        dummy._build_user_font_css = server.Handler._build_user_font_css.__get__(dummy, Dummy)
+        css = dummy._build_user_font_css("my-font", font_dir)
+        assert 'font-family: "My Font"' in css
+        assert "/fonts/user/my-font/MyFont.woff2" in css
+
+
 # ── iCal helpers ──────────────────────────────────────────────────────────────
 
 class TestUnfoldIcal:

@@ -7,12 +7,138 @@
     "cssVars": {},
     "typeFormats": {},
     "zones": [
-      { "id": "z-cover",    "binding": "cover",            "order": 1, "enabled": true,  "match": {}, "elements": {} },
-      { "id": "z-ann",      "binding": "announcements",    "order": 2, "enabled": true,  "match": {}, "elements": {} },
-      { "id": "z-oow",      "binding": "pco_items",        "order": 3, "enabled": true,  "match": {}, "elements": {} },
-      { "id": "z-cal",      "binding": "calendar",         "order": 4, "enabled": true,  "match": {}, "elements": {} },
-      { "id": "z-serving",  "binding": "serving_schedule", "order": 5, "enabled": true,  "match": {}, "elements": {} },
-      { "id": "z-staff",    "binding": "staff",            "order": 6, "enabled": false, "match": {}, "elements": {} }
+      { "id": "z-cover", "binding": "cover", "order": 1, "enabled": true, "match": {}, "elements": { "churchName": {}, "serviceDate": {}, "subtitle": {} } },
+      { "id": "z-ann", "binding": "announcements", "order": 2, "enabled": true, "match": {}, "elements": { "title": {}, "body": {}, "url": {} } },
+      { "id": "z-oow-section", "binding": "pco_items", "order": 3, "enabled": true, "match": { "type": "section" }, "elements": { "heading": {} } },
+      { "id": "z-oow-song", "binding": "pco_items", "order": 4, "enabled": true, "match": { "type": "song" }, "elements": { "songTitle": {}, "stanzaText": {}, "copyright": {} } },
+      { "id": "z-oow-liturgy", "binding": "pco_items", "order": 5, "enabled": true, "match": { "type": "liturgy" }, "elements": { "title": {}, "bodyParagraph": {} } },
+      { "id": "z-oow-label", "binding": "pco_items", "order": 6, "enabled": true, "match": { "type": "label" }, "elements": { "title": {}, "body": {} } },
+      { "id": "z-cal", "binding": "calendar", "order": 7, "enabled": true, "match": {}, "elements": { "dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {} } },
+      { "id": "z-serving", "binding": "serving_schedule", "order": 8, "enabled": true, "match": {}, "elements": { "weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {} } },
+      { "id": "z-staff", "binding": "staff", "order": 9, "enabled": true, "match": {}, "elements": { "staffName": {}, "staffRole": {}, "staffEmail": {} } }
+    ]
+  },
+  {
+    "id": "modern",
+    "name": "Modern",
+    "builtIn": true,
+    "pageSize": "5.5x8.5",
+    "cssVars": {
+      "fontFamily": "Open Sans",
+      "primary": "#1f2933",
+      "muted": "#64748b",
+      "accent": "#2f5d62",
+      "border": "#cbd5d1"
+    },
+    "typeFormats": {},
+    "zones": [
+      {
+        "id": "modern-cover",
+        "binding": "cover",
+        "order": 1,
+        "enabled": true,
+        "match": {},
+        "elements": {
+          "churchName": { "fontFamily": "Open Sans", "size": "lg", "bold": true, "color": "#1f2933", "align": "center" },
+          "serviceDate": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b", "align": "center" },
+          "subtitle": { "fontFamily": "Times New Roman", "size": "xl", "italic": true, "color": "#2f5d62", "align": "center" }
+        }
+      },
+      {
+        "id": "modern-ann",
+        "binding": "announcements",
+        "order": 2,
+        "enabled": true,
+        "match": {},
+        "elements": {
+          "title": { "fontFamily": "Open Sans", "bold": true, "color": "#2f5d62" },
+          "body": { "fontFamily": "Open Sans", "size": "sm", "color": "#1f2933" },
+          "url": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b" }
+        }
+      },
+      {
+        "id": "modern-section",
+        "binding": "pco_items",
+        "order": 3,
+        "enabled": true,
+        "match": { "type": "section" },
+        "elements": {
+          "heading": { "fontFamily": "Open Sans", "bold": true, "size": "lg", "color": "#2f5d62", "align": "center" }
+        }
+      },
+      {
+        "id": "modern-song",
+        "binding": "pco_items",
+        "order": 4,
+        "enabled": true,
+        "match": { "type": "song" },
+        "elements": {
+          "songTitle": { "fontFamily": "Times New Roman", "italic": true, "size": "lg", "color": "#1f2933" },
+          "stanzaText": { "fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933" },
+          "copyright": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b", "layout": { "position": "inline", "row": "title-row", "align": "right", "verticalAlign": "baseline", "gap": "0.45rem" } }
+        }
+      },
+      {
+        "id": "modern-liturgy",
+        "binding": "pco_items",
+        "order": 5,
+        "enabled": true,
+        "match": { "type": "liturgy" },
+        "elements": {
+          "title": { "fontFamily": "Open Sans", "bold": true, "color": "#2f5d62" },
+          "bodyParagraph": { "fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933" }
+        }
+      },
+      {
+        "id": "modern-label",
+        "binding": "pco_items",
+        "order": 6,
+        "enabled": true,
+        "match": { "type": "label" },
+        "elements": {
+          "title": { "fontFamily": "Open Sans", "bold": true, "color": "#1f2933" },
+          "body": { "fontFamily": "Times New Roman", "size": "sm", "color": "#1f2933" }
+        }
+      },
+      {
+        "id": "modern-cal",
+        "binding": "calendar",
+        "order": 7,
+        "enabled": true,
+        "match": {},
+        "elements": {
+          "dayHeading": { "fontFamily": "Open Sans", "bold": true, "color": "#2f5d62" },
+          "eventTitle": { "fontFamily": "Open Sans", "bold": true, "color": "#1f2933" },
+          "eventTime": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b" },
+          "eventDescription": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b" }
+        }
+      },
+      {
+        "id": "modern-serving",
+        "binding": "serving_schedule",
+        "order": 8,
+        "enabled": true,
+        "match": {},
+        "elements": {
+          "weekHeading": { "fontFamily": "Open Sans", "bold": true, "color": "#2f5d62" },
+          "teamName": { "fontFamily": "Open Sans", "italic": true, "color": "#64748b" },
+          "serviceTime": { "fontFamily": "Open Sans", "size": "sm", "color": "#64748b" },
+          "positionLabel": { "fontFamily": "Open Sans", "bold": true, "color": "#1f2933" },
+          "volunteerName": { "fontFamily": "Open Sans", "color": "#1f2933" }
+        }
+      },
+      {
+        "id": "modern-staff",
+        "binding": "staff",
+        "order": 9,
+        "enabled": true,
+        "match": {},
+        "elements": {
+          "staffName": { "fontFamily": "Open Sans", "bold": true, "color": "#1f2933" },
+          "staffRole": { "fontFamily": "Open Sans", "italic": true, "color": "#64748b" },
+          "staffEmail": { "fontFamily": "Open Sans", "size": "sm", "color": "#2f5d62" }
+        }
+      }
     ]
   }
 ]
