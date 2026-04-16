@@ -34,12 +34,14 @@ function isServerMode()  { return _publicConfig.appMode === 'server';  }
 
 async function loadAllFromServer() {
   try {
-    const [projectsData, bootstrap, annsData] = await Promise.all([
+    const [projectsData, bootstrap, annsData, templatesData] = await Promise.all([
       apiFetch('/api/projects').catch(() => ({ projects: [] })),
       apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),
-      apiFetch('/api/announcements').catch(() => [])
+      apiFetch('/api/announcements').catch(() => []),
+      apiFetch('/api/templates').catch(() => []),
     ]);
     setProjects(projectsData.projects);
+    setTemplates(Array.isArray(templatesData) ? templatesData : []);
     _serverSettings = bootstrap.settings || {};
     _publicConfig = Object.assign({}, _publicConfig, bootstrap.config || {});
     if (!_publicConfig.calendarDefaults) {

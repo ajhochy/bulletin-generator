@@ -26,7 +26,13 @@ function setCalendarSettings(urls, exclude) {
   _calExclude = Array.isArray(exclude) ? exclude : null;
 }
 function setActiveDocTemplate(template) {
-  activeDocTemplate = Object.assign({ pageSize: '5.5x8.5' }, template || {});
+  const t = template || {};
+  // Backward compat: old shape was just { pageSize }. Merge onto a valid base
+  // so callers always get a fully-shaped template object.
+  activeDocTemplate = Object.assign({ pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] }, t);
+}
+function setTemplates(arr) {
+  templates = Array.isArray(arr) ? arr : [];
 }
 function setEditorDisplayName(name) {
   _editorDisplayName = typeof name === 'string' ? name : '';
@@ -92,7 +98,8 @@ const PAGE_SIZE_PRESETS = {
   '11x17':    { label: '11 × 17 in — tabloid / ledger',         w: 11,   h: 17   },
 };
 
-let activeDocTemplate = { pageSize: '5.5x8.5' };
+let activeDocTemplate = { pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] };
+let templates = [];  // all saved templates loaded from /api/templates  OWNER: templates.js
 
 function getPageDims() {
   return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];

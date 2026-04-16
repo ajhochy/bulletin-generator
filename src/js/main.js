@@ -46,6 +46,7 @@ Object.assign(globalThis, {
 });
 
 export const LEGACY_SCRIPT_PATHS = [
+  '/src/js/template-registry.js',
   '/src/js/state.js',
   '/src/js/utils.js',
   '/src/js/api.js',

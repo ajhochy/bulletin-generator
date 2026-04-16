@@ -1,0 +1,18 @@
+[
+  {
+    "id": "classic",
+    "name": "Classic",
+    "builtIn": true,
+    "pageSize": "5.5x8.5",
+    "cssVars": {},
+    "typeFormats": {},
+    "zones": [
+      { "id": "z-cover",    "binding": "cover",            "order": 1, "enabled": true,  "match": {}, "elements": {} },
+      { "id": "z-ann",      "binding": "announcements",    "order": 2, "enabled": true,  "match": {}, "elements": {} },
+      { "id": "z-oow",      "binding": "pco_items",        "order": 3, "enabled": true,  "match": {}, "elements": {} },
+      { "id": "z-cal",      "binding": "calendar",         "order": 4, "enabled": true,  "match": {}, "elements": {} },
+      { "id": "z-serving",  "binding": "serving_schedule", "order": 5, "enabled": true,  "match": {}, "elements": {} },
+      { "id": "z-staff",    "binding": "staff",            "order": 6, "enabled": false, "match": {}, "elements": {} }
+    ]
+  }
+]

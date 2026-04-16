@@ -62,11 +62,13 @@ ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
 SETTINGS_FILE      = DATA_DIR / "settings.json"
 SONGS_FILE         = DATA_DIR / "song_database.json"
 MIGRATIONS_FILE    = DATA_DIR / "migrations.json"
+TEMPLATES_FILE     = DATA_DIR / "templates.json"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
 ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
 SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
+TEMPLATES_EXAMPLE_FILE     = _EXAMPLE_DIR / "templates.example.json"
 
 # ── App version and update config ──────────────────────────────────────────────
 APP_VERSION    = os.environ.get("APP_VERSION", "1.11.0").lstrip("v")
@@ -604,9 +606,42 @@ def _migration_001_songdb_extraction():
         _write_json(SONGS_FILE, [])
 
 
+def _migration_002_classic_template_default():
+    """Ensure templates.json exists and contains the Classic built-in template.
+
+    Projects saved before the template system was introduced will have no
+    activeDocTemplate.zones. The Classic template (all-empty elements) is a
+    perfect no-op: it preserves the hardcoded CSS defaults exactly, so existing
+    bulletins look identical after the migration.
+    """
+    templates = _read_json(TEMPLATES_FILE, [])
+    # Only insert Classic if it isn't already present
+    if any(t.get("id") == "classic" for t in templates):
+        return
+    classic = {
+        "id": "classic",
+        "name": "Classic",
+        "builtIn": True,
+        "pageSize": "5.5x8.5",
+        "cssVars": {},
+        "typeFormats": {},
+        "zones": [
+            {"id": "z-cover",   "binding": "cover",            "order": 1, "enabled": True,  "match": {}, "elements": {}},
+            {"id": "z-ann",     "binding": "announcements",    "order": 2, "enabled": True,  "match": {}, "elements": {}},
+            {"id": "z-oow",     "binding": "pco_items",        "order": 3, "enabled": True,  "match": {}, "elements": {}},
+            {"id": "z-cal",     "binding": "calendar",         "order": 4, "enabled": True,  "match": {}, "elements": {}},
+            {"id": "z-serving", "binding": "serving_schedule", "order": 5, "enabled": True,  "match": {}, "elements": {}},
+            {"id": "z-staff",   "binding": "staff",            "order": 6, "enabled": False, "match": {}, "elements": {}},
+        ],
+    }
+    templates.insert(0, classic)
+    _write_json(TEMPLATES_FILE, templates)
+
+
 # Registry: list of (id, callable). Order matters — append only, never reorder.
 _MIGRATION_REGISTRY = [
-    ("M001_songdb_extraction", _migration_001_songdb_extraction),
+    ("M001_songdb_extraction",        _migration_001_songdb_extraction),
+    ("M002_classic_template_default", _migration_002_classic_template_default),
 ]
 
 
@@ -727,6 +762,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/announcements',        '_handle_get_announcements'),
         ('/api/settings',             '_handle_get_settings'),
         ('/api/songs',                '_handle_get_songs'),
+        ('/api/templates',            '_handle_get_templates'),
         ('/api/bootstrap',            '_handle_bootstrap'),
         ('/api/google-calendars',     '_handle_google_calendars'),
         ('/api/admin/check-update',   '_handle_check_update'),
@@ -745,6 +781,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/announcements',        '_handle_post_announcements'),
         ('/api/settings',             '_handle_post_settings'),
         ('/api/songs',                '_handle_post_songs'),
+        ('/api/templates',            '_handle_post_templates'),
         ('/api/pdf',                  '_handle_pdf'),
         ('/api/propresenter-export',  '_handle_propresenter_export'),
         ('/api/drive/upload',         '_handle_drive_upload'),
@@ -755,6 +792,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     _DELETE_ROUTES = [
         ('/api/projects/',            '_handle_delete_project'),
+        ('/api/templates/',           '_handle_delete_template'),
     ]
 
     def _route(self, routes):
@@ -956,6 +994,54 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             projects = _read_json(PROJECTS_FILE, [])
             projects = [p for p in projects if p.get("id") != project_id]
             _write_json(PROJECTS_FILE, projects)
+        self._send_json({"ok": True})
+
+    # ── Templates ─────────────────────────────────────────────────────────────
+
+    def _handle_get_templates(self):
+        self._send_json(_read_json(TEMPLATES_FILE, []))
+
+    def _handle_post_templates(self):
+        try:
+            template = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(template, dict) or "id" not in template:
+            self._send_json({"error": "template must be an object with an id"}, 400)
+            return
+        # Built-in templates (builtIn: true) cannot be overwritten via the API
+        if template.get("builtIn"):
+            self._send_json({"error": "built-in templates cannot be modified"}, 403)
+            return
+        with _lock:
+            templates = _read_json(TEMPLATES_FILE, [])
+            idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
+            if idx >= 0:
+                # Preserve builtIn flag if the stored record has it (prevent downgrade attack)
+                if templates[idx].get("builtIn"):
+                    self._send_json({"error": "built-in templates cannot be modified"}, 403)
+                    return
+                templates[idx] = template
+            else:
+                templates.append(template)
+            _write_json(TEMPLATES_FILE, templates)
+        self._send_json({"ok": True})
+
+    def _handle_delete_template(self):
+        path = self.path.split("?")[0]
+        template_id = path[len("/api/templates/"):]
+        if not template_id:
+            self._send_json({"error": "missing template id"}, 400)
+            return
+        with _lock:
+            templates = _read_json(TEMPLATES_FILE, [])
+            target = next((t for t in templates if t.get("id") == template_id), None)
+            if target and target.get("builtIn"):
+                self._send_json({"error": "built-in templates cannot be deleted"}, 403)
+                return
+            templates = [t for t in templates if t.get("id") != template_id]
+            _write_json(TEMPLATES_FILE, templates)
         self._send_json({"ok": True})
 
     # ── PCO OAuth ──────────────────────────────────────────────────────────────
@@ -1713,6 +1799,7 @@ def run_server(port=8080):
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
+    _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
