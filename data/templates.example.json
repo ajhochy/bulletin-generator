@@ -25,10 +25,10 @@
     "pageSize": "5.5x8.5",
     "cssVars": {
       "fontFamily": "Open Sans",
-      "primary": "#1f2933",
-      "muted": "#64748b",
-      "accent": "#2f5d62",
-      "border": "#cbd5d1"
+      "primary": "#0e1318",
+      "muted": "#737373",
+      "accent": "#8b3dff",
+      "border": "#e5e7eb"
     },
     "typeFormats": {},
     "zones": [

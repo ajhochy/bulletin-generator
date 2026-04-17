@@ -94,6 +94,7 @@ function elementFmtToLegacyFmt(elementKey, elementFmt) {
   if (elementFmt.align) out[`${prefix}Align`] = elementFmt.align;
   if (elementFmt.size) out[`${prefix}Size`] = elementFmt.size;
   if (elementFmt.color) out[`${prefix}Color`] = elementFmt.color;
+  if (elementFmt.fontFamily) out[`${prefix}Font`] = elementFmt.fontFamily;
   return out;
 }
 
@@ -110,8 +111,10 @@ export function getEffectiveFmt(typeFormats, item, template = null, elementKey =
     titleAlign:  over.titleAlign  || layer.titleAlign  || '',
     titleSize:   over.titleSize   || layer.titleSize   || '',
     titleColor:  over.titleColor  || layer.titleColor  || '',
+    titleFont:   over.titleFont   || layer.titleFont   || '',
     bodyAlign:   over.bodyAlign   || layer.bodyAlign   || '',
     bodySize:    over.bodySize    || layer.bodySize    || '',
     bodyColor:   over.bodyColor   || layer.bodyColor   || '',
+    bodyFont:    over.bodyFont    || layer.bodyFont    || '',
   };
 }

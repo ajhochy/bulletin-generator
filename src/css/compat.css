@@ -197,6 +197,9 @@ aside {
 .item-card.item-collapsed .item-fmt-toolbar { display: none; }
 .item-fmt-row { display: flex; align-items: center; gap: 0.16rem; margin-bottom: 0.18rem; flex-wrap: wrap; }
 .item-fmt-row:last-child { margin-bottom: 0; }
+.fmt-font-sel { max-width: 7rem; }
+.item-fmt-cp-row { gap: 0.3rem; margin-top: 0.1rem; padding-top: 0.18rem; border-top: 1px solid var(--border); }
+.fmt-cp-btn { padding: 0.08rem 0.55rem; font-size: 0.68rem; color: var(--muted); }
 .fmt-target-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); min-width: 2.1rem; margin-right: 0.08rem; font-family: var(--font-sans); }
 .fmt-sep { width: 1px; height: 1rem; background: var(--border); margin: 0 0.1rem; flex-shrink: 0; }
 .fmt-btn { padding: 0.08rem 0.38rem; font-size: 0.71rem; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; cursor: pointer; line-height: 1.6; font-family: var(--font-sans); color: var(--text); flex-shrink: 0; transition: background 0.1s, border-color 0.1s; }

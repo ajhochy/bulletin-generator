@@ -147,6 +147,7 @@ function applyElementFmt(el, fmt) {
   if (fmt.size) {
     const sizeMap = { sm: '0.78em', lg: '1.1em', xl: '1.25em' };
     if (sizeMap[fmt.size]) el.style.fontSize = sizeMap[fmt.size];
+    else if (/^\d+(\.\d+)?(pt|px|em|rem)$/.test(fmt.size)) el.style.fontSize = fmt.size;
   }
   if (fmt.layout && fmt.layout.position === 'free') {
     el.style.position = 'relative';

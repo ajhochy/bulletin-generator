@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="src/css/print.css" />
   <link rel="stylesheet" href="src/css/tw-output.css" />
   <link rel="stylesheet" href="src/css/compat.css" />
+  <link rel="stylesheet" href="src/css/template-designer.css" />
 </head>
 <body>
 
@@ -603,26 +604,15 @@
     <div class="flex items-center justify-between mb-2">
       <h2 class="text-lg font-bold">Templates</h2>
       <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" id="tpl-fonts-btn">Fonts…</button>
         <button class="btn btn-ghost btn-sm" id="tpl-import-btn">Import…</button>
         <button class="btn btn-primary btn-sm" id="tpl-new-btn">+ New Template</button>
         <input type="file" id="tpl-import-input" accept=".json" style="display:none">
+        <input type="file" id="tpl-font-upload-input" accept=".ttf,.otf,.woff,.woff2" style="display:none">
       </div>
     </div>
-    <p class="text-sm text-base-content/60 mb-6">Choose a template to apply to your current project, or design your own.</p>
-    <div class="rounded-lg border border-base-300 bg-base-100 p-3 mb-5">
-      <div class="flex items-center justify-between gap-3 mb-2">
-        <div>
-          <div class="text-sm font-semibold">Fonts</div>
-          <div class="text-xs text-base-content/60">Upload licensed TTF, OTF, WOFF, or WOFF2 files for template font pickers.</div>
-        </div>
-        <div>
-          <button class="btn btn-ghost btn-sm" id="tpl-font-upload-btn">Upload Font…</button>
-          <input type="file" id="tpl-font-upload-input" accept=".ttf,.otf,.woff,.woff2" style="display:none">
-        </div>
-      </div>
-      <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" id="tpl-font-list"></div>
-    </div>
-    <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" id="tpl-grid">
+    <p class="text-sm text-base-content/60 mb-4">Choose a template to apply to your current project, or design your own.</p>
+    <div class="grid gap-3" style="grid-template-columns:repeat(auto-fill,minmax(220px,1fr))" id="tpl-grid">
       <!-- populated by renderTemplateGallery() in templates.js -->
     </div>
   </div>

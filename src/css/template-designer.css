@@ -1,0 +1,540 @@
+/* ─── Template Designer — Canva-style polish (issue #180) ──────────────────── */
+
+/* ─── Token Layer ──────────────────────────────────────────────────────────── */
+#tpl-designer-overlay {
+  --td-bg:      #ffffff;
+  --td-ink:     #0e1318;
+  --td-muted:   #737373;
+  --td-accent:  #8b3dff;
+  --td-border:  rgba(14, 19, 24, 0.14);
+  --td-radius:  8px;
+  --td-gap:     14px;
+  --td-font:    'Open Sans', system-ui, sans-serif;
+  font-family: var(--td-font);
+  color: var(--td-ink);
+}
+
+/* Header bar */
+#tpl-designer-overlay > div:first-child {
+  font-family: var(--td-font);
+  font-size: 14.4px;
+  border-bottom: 1px solid var(--td-border);
+}
+
+/* Toolbar */
+#tpl-designer-toolbar {
+  font-family: var(--td-font);
+  font-size: 13.3333px;
+  gap: 6px;
+  padding: 4px 12px;
+  min-height: 44px;
+  background: var(--td-bg);
+  border-bottom: 1px solid var(--td-border) !important;
+  flex-wrap: wrap;
+}
+
+/* Zone and match panels */
+#tpl-zone-panel,
+#tpl-match-panel {
+  font-family: var(--td-font);
+  font-size: 14.4px;
+  border-color: var(--td-border) !important;
+}
+
+/* Panel section titles */
+.tpl-panel-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--td-muted, #737373);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+
+/* ─── Interaction States ────────────────────────────────────────────────────── */
+.tpl-designer-action {
+  border-radius: var(--td-radius);
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.tpl-designer-action:hover {
+  background: color-mix(in srgb, var(--td-accent) 8%, transparent);
+}
+.tpl-designer-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--td-accent) 70%, white);
+  outline-offset: 2px;
+}
+.tpl-designer-action:active {
+  background: color-mix(in srgb, var(--td-accent) 16%, transparent);
+}
+.tpl-designer-action.tpl-active {
+  background: color-mix(in srgb, var(--td-accent) 16%, transparent);
+  color: var(--td-accent);
+}
+.tpl-designer-action:disabled {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+/* ─── Toolbar Clusters ──────────────────────────────────────────────────────── */
+.tpl-toolbar-cluster {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px 3px;
+  border-radius: var(--td-radius, 8px);
+  border: 1px solid var(--td-border, rgba(14,19,24,0.14));
+  background: var(--td-bg, #fff);
+}
+.tpl-toolbar-cluster-label {
+  font-size: 10px;
+  color: var(--td-muted, #737373);
+  white-space: nowrap;
+  padding: 0 5px 0 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  align-self: center;
+}
+.tpl-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--td-border, rgba(14,19,24,0.14));
+  flex-shrink: 0;
+  margin: 0 4px;
+  align-self: center;
+}
+.tpl-toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--td-ink, #0e1318);
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: var(--td-font, 'Open Sans', system-ui, sans-serif);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.tpl-toolbar-btn:hover {
+  background: color-mix(in srgb, var(--td-accent, #8b3dff) 8%, transparent);
+}
+.tpl-toolbar-btn.active {
+  background: color-mix(in srgb, var(--td-accent, #8b3dff) 16%, transparent);
+  color: var(--td-accent, #8b3dff);
+}
+
+/* Color swatch wrapper */
+.tpl-color-swatch-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  height: 28px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.tpl-color-swatch-wrap:hover {
+  background: color-mix(in srgb, var(--td-accent, #8b3dff) 6%, transparent);
+}
+.tpl-color-swatch-preview {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(14,19,24,0.18);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.tpl-color-swatch-name {
+  font-size: 11px;
+  color: var(--td-muted, #737373);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.tpl-color-swatch-wrap input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+
+/* Inline selects in toolbar */
+.tpl-toolbar-select {
+  height: 28px;
+  padding: 0 20px 0 7px;
+  border: 1px solid var(--td-border, rgba(14,19,24,0.14));
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-family: var(--td-font, 'Open Sans', system-ui, sans-serif);
+  color: var(--td-ink, #0e1318);
+  background: var(--td-bg, #fff);
+  appearance: auto;
+  cursor: pointer;
+  max-width: 150px;
+}
+
+/* ─── Custom font picker ─────────────────────────────────────────────────────── */
+.tpl-font-picker {
+  position: relative;
+  display: inline-block;
+}
+.tpl-font-picker-btn {
+  appearance: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tpl-font-picker-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+}
+.tpl-font-picker-item {
+  line-height: 1.4;
+}
+.tpl-font-picker-item.active {
+  background: #eef2ff;
+}
+
+/* ─── Workspace ─────────────────────────────────────────────────────────────── */
+#tpl-designer-workspace {
+  background: #dfe3e8;
+  position: relative;
+}
+
+/* Canvas pages inside the designer */
+.tpl-canvas-page {
+  box-shadow: 0 4px 24px rgba(14, 19, 24, 0.16), 0 1px 4px rgba(14, 19, 24, 0.08) !important;
+  transition: box-shadow 0.18s ease;
+  margin-bottom: 20px;
+}
+.tpl-canvas-page:last-child { margin-bottom: 0; }
+
+/* ─── Selection ─────────────────────────────────────────────────────────────── */
+.tpl-selectable-element {
+  cursor: pointer !important;
+}
+.tpl-selectable-element:hover {
+  outline: 1px dashed rgba(139, 61, 255, 0.45) !important;
+  outline-offset: 2px !important;
+}
+
+/* ─── Snap Guide ────────────────────────────────────────────────────────────── */
+#tpl-snap-guide {
+  border-color: #8b3dff !important;
+}
+
+/* ─── Floating Selection Label ──────────────────────────────────────────────── */
+.tpl-floating-label {
+  position: absolute;
+  background: #8b3dff;
+  color: #fff;
+  font-size: 11px;
+  font-family: 'Open Sans', system-ui, sans-serif;
+  font-weight: 500;
+  padding: 2px 8px 3px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 20;
+  line-height: 1.4;
+  box-shadow: 0 2px 8px rgba(139,61,255,0.3);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.tpl-floating-label::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 10px;
+  border: 5px solid transparent;
+  border-top-color: #8b3dff;
+}
+
+/* Corner handles */
+.tpl-selection-handle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border: 2px solid #8b3dff;
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 15;
+  transition: opacity 0.18s ease;
+}
+
+/* ─── Zone Panel ────────────────────────────────────────────────────────────── */
+.tpl-zone-row--selected {
+  border-color: #8b3dff !important;
+  background: rgba(139,61,255,0.07) !important;
+}
+.tpl-zone-child--selected {
+  background: rgba(139,61,255,0.1) !important;
+  color: #8b3dff !important;
+}
+
+/* ─── Right Panel Tabs ──────────────────────────────────────────────────────── */
+.tpl-panel-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--td-border, rgba(14,19,24,0.14));
+  margin: -0.75rem -0.75rem 0.75rem;
+  background: var(--td-bg, #fff);
+}
+.tpl-panel-tab {
+  flex: 1;
+  padding: 9px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--td-muted, #737373);
+  font-family: var(--td-font, 'Open Sans', system-ui, sans-serif);
+  transition: color 0.15s ease, border-color 0.15s ease;
+  white-space: nowrap;
+}
+.tpl-panel-tab:hover { color: var(--td-ink, #0e1318); }
+.tpl-panel-tab.active {
+  color: #8b3dff;
+  border-bottom-color: #8b3dff;
+}
+.tpl-panel-body { display: none; }
+.tpl-panel-body.active { display: block; }
+
+/* ─── Zoom Controls ─────────────────────────────────────────────────────────── */
+#tpl-zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: #fff;
+  border: 1px solid rgba(14,19,24,0.14);
+  border-radius: 8px;
+  padding: 3px 4px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(14,19,24,0.1);
+  font-family: 'Open Sans', system-ui, sans-serif;
+}
+.tpl-zoom-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  color: #0e1318;
+  font-size: 15px;
+  line-height: 1;
+}
+.tpl-zoom-btn:hover {
+  background: rgba(139,61,255,0.08);
+}
+#tpl-zoom-level {
+  min-width: 40px;
+  text-align: center;
+  font-size: 11.5px;
+  color: #737373;
+  user-select: none;
+  padding: 0 2px;
+}
+
+/* ─── Template Gallery Cards ────────────────────────────────────────────────── */
+.tpl-template-card {
+  border-radius: 8px !important;
+  border: 1px solid rgba(14,19,24,0.12) !important;
+  background: #fff !important;
+  overflow: hidden;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  padding: 0 !important;
+  gap: 0 !important;
+  display: flex !important;
+  flex-direction: column;
+  cursor: pointer;
+}
+.tpl-template-card:hover {
+  box-shadow: 0 4px 18px rgba(14,19,24,0.1);
+  border-color: rgba(139,61,255,0.3) !important;
+}
+.tpl-thumb-wrap {
+  width: 100%;
+  background: var(--base-200, #f3f4f6);
+  border-bottom: 1px solid rgba(14,19,24,0.08);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.tpl-card-info {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+}
+.tpl-template-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.tpl-template-badge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 5px;
+  border-radius: 99px;
+  border: 1px solid;
+  font-family: 'Open Sans', system-ui, sans-serif;
+  line-height: 1.5;
+}
+.tpl-badge-builtin {
+  color: #737373;
+  border-color: rgba(14,19,24,0.16);
+  background: rgba(14,19,24,0.04);
+}
+.tpl-badge-custom {
+  color: #8b3dff;
+  border-color: rgba(139,61,255,0.28);
+  background: rgba(139,61,255,0.06);
+}
+.tpl-badge-fonts {
+  color: #0284c7;
+  border-color: rgba(2,132,199,0.28);
+  background: rgba(2,132,199,0.06);
+}
+
+/* ─── In-App Modals ─────────────────────────────────────────────────────────── */
+.td-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 600;
+  background: rgba(14, 19, 24, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.td-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 40px rgba(14,19,24,0.2), 0 2px 8px rgba(14,19,24,0.08);
+  padding: 24px;
+  min-width: 320px;
+  max-width: 420px;
+  width: 100%;
+  font-family: 'Open Sans', system-ui, sans-serif;
+  color: #0e1318;
+}
+.td-modal-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 18px;
+  color: #0e1318;
+}
+.td-modal-field-label {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #0e1318;
+}
+.td-modal-input,
+.td-modal-select {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 13.3333px;
+  border: 1px solid rgba(14,19,24,0.2);
+  border-radius: 6px;
+  outline: none;
+  font-family: inherit;
+  color: #0e1318;
+  background: #fff;
+  margin-bottom: 14px;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.td-modal-input:focus,
+.td-modal-select:focus {
+  border-color: #8b3dff;
+  box-shadow: 0 0 0 3px rgba(139,61,255,0.14);
+}
+.td-modal-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.td-modal-btn {
+  padding: 7px 18px;
+  font-size: 13.3333px;
+  font-family: inherit;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: opacity 0.15s ease;
+}
+.td-modal-btn:hover { opacity: 0.85; }
+.td-modal-btn-cancel {
+  background: transparent;
+  color: #737373;
+  border: 1px solid rgba(14,19,24,0.14);
+}
+.td-modal-btn-primary {
+  background: #8b3dff;
+  color: #fff;
+}
+.td-modal-template-list {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.td-modal-template-option {
+  display: flex;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 6px;
+  border: 2px solid rgba(14,19,24,0.1);
+  cursor: pointer;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  background: #fff;
+  color: #0e1318;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+}
+.td-modal-template-option:hover {
+  border-color: rgba(139,61,255,0.38);
+  background: rgba(139,61,255,0.04);
+}
+.td-modal-template-option.selected {
+  border-color: #8b3dff;
+  background: rgba(139,61,255,0.07);
+  color: #8b3dff;
+}
+
+/* ─── Transitions ───────────────────────────────────────────────────────────── */
+.tpl-floating-label,
+.tpl-selection-handle,
+#tpl-snap-guide {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}

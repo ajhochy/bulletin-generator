@@ -1,3 +1,5 @@
+let _fmtClipboard = null;
+
 // Builds two rows (Title / Body) of compact formatting controls for a single item.
 // Changes write into items[idx]._fmt and schedule a preview refresh.
 function buildItemFmtToolbar(item, idx) {
@@ -79,6 +81,36 @@ function buildItemFmtToolbar(item, idx) {
     });
   }
 
+  function mkFontSel(fmtKey) {
+    const fonts = (typeof _designerFonts !== 'undefined' && _designerFonts.length)
+      ? _designerFonts
+      : ['system-ui','Georgia','Inter','Montserrat','Open Sans','Playfair Display','Merriweather','Lora'];
+    const sel = document.createElement('select');
+    sel.className = 'fmt-size-sel fmt-font-sel';
+    sel.title = 'Font family';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = 'Font…';
+    sel.appendChild(blank);
+    fonts.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f;
+      opt.textContent = f;
+      opt.selected = (f === (fmt[fmtKey] || ''));
+      sel.appendChild(opt);
+    });
+    if (fmt[fmtKey]) sel.value = fmt[fmtKey];
+    sel.addEventListener('change', () => {
+      if (!items[idx]) return;
+      if (!items[idx]._fmt) items[idx]._fmt = {};
+      if (sel.value === '') { delete items[idx]._fmt[fmtKey]; }
+      else                  { items[idx]._fmt[fmtKey] = sel.value; }
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+    return sel;
+  }
+
   function mkSizeSelect(fmtKey, options) {
     const sel = document.createElement('select');
     sel.className = 'fmt-size-sel';
@@ -141,6 +173,7 @@ function buildItemFmtToolbar(item, idx) {
   mkAlignBtns('titleAlign', titleRow);
   titleRow.appendChild(mkSep());
   titleRow.appendChild(mkSizeSelect('titleSize', [['','Auto'],['sm','Small'],['lg','Large'],['xl','XL']]));
+  titleRow.appendChild(mkFontSel('titleFont'));
 
   wrapper.appendChild(titleRow);
 
@@ -177,8 +210,43 @@ function buildItemFmtToolbar(item, idx) {
   mkAlignBtns('bodyAlign', bodyRow);
   bodyRow.appendChild(mkSep());
   bodyRow.appendChild(mkSizeSelect('bodySize', [['','Auto'],['sm','Small'],['lg','Large']]));
+  bodyRow.appendChild(mkFontSel('bodyFont'));
 
   wrapper.appendChild(bodyRow);
+
+  // ── Copy / Paste row ───────────────────────────────────────────────────────
+  const cpRow = document.createElement('div');
+  cpRow.className = 'item-fmt-row item-fmt-cp-row';
+
+  const copyBtn = mkBtn('Copy Style', 'fmt-cp-btn', 'Copy this item\'s formatting', false);
+  copyBtn.addEventListener('click', () => {
+    _fmtClipboard = Object.assign({}, items[idx]?._fmt || {});
+    copyBtn.textContent = 'Copied ✓';
+    setTimeout(() => { copyBtn.textContent = 'Copy Style'; }, 1500);
+  });
+
+  const pasteBtn = mkBtn('Paste Style', 'fmt-cp-btn', 'Paste copied formatting onto this item', false);
+  pasteBtn.disabled = !_fmtClipboard;
+  pasteBtn.style.opacity = _fmtClipboard ? '1' : '0.4';
+  pasteBtn.addEventListener('click', () => {
+    if (!_fmtClipboard || !items[idx]) return;
+    items[idx]._fmt = Object.assign({}, _fmtClipboard);
+    schedulePreviewUpdate();
+    scheduleProjectPersist();
+    // Replace the toolbar in-place so button states reflect the pasted fmt
+    const parent = wrapper.parentNode;
+    if (parent) parent.replaceChild(buildItemFmtToolbar(items[idx], idx), wrapper);
+  });
+
+  cpRow.appendChild(copyBtn);
+  cpRow.appendChild(pasteBtn);
+  wrapper.appendChild(cpRow);
+
+  // Enable paste button whenever clipboard has content (catches clipboard set by another item)
+  wrapper.addEventListener('mouseenter', () => {
+    pasteBtn.disabled = !_fmtClipboard;
+    pasteBtn.style.opacity = _fmtClipboard ? '1' : '0.4';
+  });
 
   return wrapper;
 }
@@ -225,13 +293,15 @@ function applyTitleFmt(el, fmt) {
   if (fmt.titleItalic) el.style.fontStyle   = 'italic';
   if (fmt.titleColor)  el.style.color       = fmt.titleColor;
   if (fmt.titleAlign)  el.style.textAlign   = fmt.titleAlign;
+  if (fmt.titleFont)   el.style.fontFamily  = fmt.titleFont;
   if (fmt.titleSize && TITLE_SIZE_MAP[fmt.titleSize])
     el.style.fontSize = TITLE_SIZE_MAP[fmt.titleSize];
 }
 
 function applyBodyFmt(el, fmt) {
-  if (fmt.bodyColor) el.style.color     = fmt.bodyColor;
-  if (fmt.bodyAlign) el.style.textAlign = fmt.bodyAlign;
+  if (fmt.bodyColor) el.style.color      = fmt.bodyColor;
+  if (fmt.bodyAlign) el.style.textAlign  = fmt.bodyAlign;
+  if (fmt.bodyFont)  el.style.fontFamily = fmt.bodyFont;
   if (fmt.bodySize && BODY_SIZE_MAP[fmt.bodySize])
     el.style.fontSize = BODY_SIZE_MAP[fmt.bodySize];
 }
