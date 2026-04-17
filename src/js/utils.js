@@ -3,22 +3,22 @@ function setStatus(msg, type = '') {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
+  const alertClass = type === 'success' ? 'alert-success'
+                   : type === 'error'   ? 'alert-error'
+                   : type === 'info'    ? 'alert-info'
+                   : '';
+
   const toast = document.createElement('div');
-  const typeClass = type === 'success' ? 'toast-success'
-                  : type === 'error'   ? 'toast-error'
-                  : type === 'info'    ? 'toast-info'
-                  : '';
-  toast.className = 'toast' + (typeClass ? ' ' + typeClass : '');
+  toast.className = 'alert shadow-md text-sm py-2 px-4' + (alertClass ? ' ' + alertClass : '');
 
   const msgEl = document.createElement('span');
-  msgEl.className = 'toast-msg';
   msgEl.textContent = msg;
   toast.appendChild(msgEl);
 
   if (type === 'error') {
     // Errors stay until manually dismissed
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
+    closeBtn.className = 'btn btn-ghost btn-xs ml-2';
     closeBtn.textContent = '✕';
     closeBtn.addEventListener('click', () => dismissToast(toast));
     toast.appendChild(closeBtn);

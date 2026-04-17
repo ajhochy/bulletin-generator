@@ -721,6 +721,78 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
+<!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
+<dialog id="import-review-modal" class="modal">
+  <div class="modal-box max-w-2xl p-0 overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-4 border-b border-base-300 bg-base-200">
+      <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
+    </div>
+    <div class="p-5 max-h-[60vh] overflow-y-auto" id="irm-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="modal-action px-5 py-4 mt-0 border-t border-base-300 bg-base-200">
+      <button class="btn btn-ghost btn-sm" id="irm-cancel-btn">Skip All</button>
+      <button class="btn btn-primary btn-sm" id="irm-apply-btn">Apply &amp; Continue</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="pro-disclaimer-modal" class="modal">
+  <div class="modal-box max-w-md">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">ProPresenter Import (Beta)</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close">✕</button>
+    </div>
+    <div class="text-sm leading-relaxed space-y-2">
+      <p>This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
+      <p>You will be able to preview a sample of the results before anything is saved.</p>
+    </div>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-disclaimer-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-disclaimer-continue-btn">Continue</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="pro-import-modal" class="modal">
+  <div class="modal-box max-w-lg">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Import from ProPresenter</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close">✕</button>
+    </div>
+    <div class="py-2" id="pro-import-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="modal-action">
+      <button class="btn btn-ghost btn-sm" id="pro-import-cancel-btn">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="pro-import-confirm-btn">Import Songs</button>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+
+<dialog id="pro-preview-modal" class="modal">
+  <div class="modal-box max-w-xl">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="font-semibold text-base">Preview Import Results</h3>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close">✕</button>
+    </div>
+    <div class="py-2 max-h-[60vh] overflow-y-auto" id="pro-preview-body">
+      <!-- populated by JS -->
+    </div>
+    <div class="modal-action justify-between items-center">
+      <span class="text-xs text-base-content/50" id="pro-preview-hint">Scroll to review sample imports</span>
+      <div class="flex gap-2">
+        <button class="btn btn-ghost btn-sm" id="pro-preview-cancel-btn">Cancel Import</button>
+        <button class="btn btn-primary btn-sm" id="pro-preview-continue-btn">Looks Good — Continue</button>
+      </div>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
 <div id="toast-container" class="toast toast-top toast-end z-50"></div>
 
 
