@@ -1,0 +1,819 @@
+/* ─── CSS Custom Properties ─────────────────────────────────────────────────
+   preview.css and print.css reference these variables and were not updated
+   during the Tailwind migration. Do not remove without also updating those files.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: #172429;
+  --accent-light: #3b82f6;
+  --danger: #ef4444;
+  --danger-light: #fee2e2;
+  --radius: 5px;
+  --font-serif: 'Georgia', 'Times New Roman', serif;
+  --font-sans: system-ui, -apple-system, sans-serif;
+  --doc-page-w: 5.5in;
+  --doc-page-h: 8.5in;
+}
+
+/* ─── Top-level Layout ───────────────────────────────────────────────────────
+   Tailwind's base reset does not set height:100% or overflow:hidden on html/body.
+   These are required for the app's full-viewport, no-scroll layout.
+   ────────────────────────────────────────────────────────────────────────── */
+html {
+  font-size: 19px;
+  height: 100%;
+  overflow: hidden;
+}
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Editor 3-Column Grid ───────────────────────────────────────────────────
+   <main> contains: aside (sidebar) | #editor-resize-handle | #preview-pane.
+   No Tailwind classes were added to the <main> tag during migration.
+   min-height:0 is required so the flex child can shrink and the grid rows
+   are properly constrained (otherwise grid children grow to content height
+   and overflow-y scroll never activates on aside or #preview-pane).
+   ────────────────────────────────────────────────────────────────────────── */
+main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--editor-w, 690px) 4px 1fr;
+  overflow: hidden;
+}
+aside {
+  background: oklch(var(--b2));
+  border-right: 1px solid var(--border);
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: 64px;
+}
+#preview-pane {
+  min-height: 0;
+}
+#editor-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.15s;
+  flex-shrink: 0;
+  z-index: 10;
+}
+#editor-resize-handle:hover,
+#editor-resize-handle.dragging { background: var(--accent-light); }
+
+/* ─── Page Tab Visibility ────────────────────────────────────────────────────
+   JS in app.js toggles .active on .app-page elements to switch tabs.
+   Tailwind cannot generate these rules — they depend on runtime class toggling.
+   ────────────────────────────────────────────────────────────────────────── */
+.app-page { display: none; flex: 1; overflow: hidden; }
+.app-page.active { display: flex; }
+
+/* ─── Sidebar Panel Sections ─────────────────────────────────────────────────
+   Full panel-section layout + collapse behaviour from editor.css (deleted).
+   ────────────────────────────────────────────────────────────────────────── */
+.panel-section {
+  padding: 0.75rem;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.5rem;
+  background: oklch(var(--b1));
+  margin: 0 0.5rem 0.5rem;
+  box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+}
+.section-label {
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: oklch(var(--bc) / 0.58);
+  margin: -0.75rem -0.75rem 0.65rem;
+  padding: 0.75rem 0.75rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+.section-label:hover { background: oklch(var(--b2)); }
+.section-label-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.collapse-toggle {
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.section-preview {
+  font-size: 0.72rem;
+  color: oklch(var(--bc) / 0.55);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+.section-hint {
+  font-size: 0.75rem;
+  color: oklch(var(--bc) / 0.58);
+  margin-bottom: 0.6rem;
+  line-height: 1.4;
+}
+/* Hide preview text when panel is expanded */
+.panel-section:not(.collapsed) .section-preview { display: none; }
+/* Hide all panel content when collapsed, except the label and any banners */
+.panel-section.collapsed > :not(.section-label):not(#stale-banner):not(#conflict-banner) { display: none !important; }
+
+/* ─── Order of Worship Item Cards ────────────────────────────────────────────
+   Item card styles from editor.css (deleted). Tailwind added .btn/.btn-ghost
+   to some controls but the custom item card chrome was never migrated.
+   ────────────────────────────────────────────────────────────────────────── */
+#item-list { display: flex; flex-direction: column; gap: 0.45rem; margin-bottom: 0.7rem; }
+.item-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 0.5rem 0.6rem;
+}
+.item-card:focus-within { border-color: var(--accent-light); background: #fdfaf7; }
+.item-card.is-section-card { background: oklch(var(--b2)); border-color: oklch(var(--b3)); }
+.item-card.is-section-card:focus-within { border-color: var(--accent); }
+.item-card.is-linked { border-color: #b69b80; box-shadow: inset 0 0 0 1px #e2d1bf; }
+.item-card.is-break-card { background: transparent; border: 1.5px dashed #bbb; padding: 0.22rem 0.5rem; }
+.item-card.is-break-card .item-card-header { margin-bottom: 0; justify-content: center; }
+.break-card-label { flex: 1; text-align: center; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.12em; text-transform: uppercase; pointer-events: none; }
+#add-break-btn { width: 100%; margin-top: 0.35rem; font-size: 0.76rem; background: transparent; border: 1.5px dashed #bbb; color: var(--muted); padding: 0.25rem; border-radius: var(--radius); cursor: pointer; }
+#add-break-btn:hover { border-color: oklch(var(--p)); color: oklch(var(--p)); background: oklch(var(--b2)); }
+.item-insert-zone { display: flex; align-items: center; margin: 1px 0; }
+.item-insert-break-btn { width: 100%; padding: 0.04rem 0.5rem; font-size: 0.6rem; background: transparent; border: 1px dashed transparent; border-radius: 2px; color: transparent; cursor: pointer; transition: border-color 0.12s, color 0.12s, background 0.12s; text-align: center; line-height: 1.4; }
+.item-insert-zone:hover .item-insert-break-btn { border-color: #ccc; color: #aaa; }
+.item-insert-break-btn:hover { border-color: oklch(var(--p)) !important; color: oklch(var(--p)) !important; background: oklch(var(--b2)) !important; }
+.item-card-header { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem; }
+.item-card.item-collapsed .item-card-header { margin-bottom: 0; }
+.item-card.item-collapsed .item-type-select,
+.item-card.item-collapsed .hidden-type-badge,
+.item-card.item-collapsed .item-detail-input { display: none; }
+.item-collapse-btn { width: 20px; height: 20px; flex-shrink: 0; background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.68rem; padding: 0; display: flex; align-items: center; justify-content: center; transition: color 0.12s, transform 0.15s; }
+.item-collapse-btn:hover { color: var(--accent); }
+.item-card.item-collapsed .item-collapse-btn { transform: rotate(-90deg); }
+.item-type-select { width: 100%; box-sizing: border-box; padding: 0.28rem 0.4rem; font-size: 0.76rem; margin-bottom: 0.28rem; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; color: var(--accent); font-weight: 600; }
+.item-card.is-section-card .item-type-select { color: oklch(var(--bc)); background: oklch(var(--b1)); }
+.icon-btn { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 3px; background: #fff; color: var(--muted); font-size: 0.72rem; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background 0.1s, color 0.1s, border-color 0.1s; }
+.icon-btn:hover { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+.icon-btn.danger:hover { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+.sdb-insert-btn { width: auto; height: auto; padding: 0.2rem 0.5rem; font-size: 0.72rem; white-space: nowrap; }
+.sdb-insert-btn:hover { background: oklch(var(--p)) !important; color: oklch(var(--pc)) !important; border-color: oklch(var(--p)) !important; }
+.item-title-input { flex: 1; min-width: 0; padding: 0.28rem 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.82rem; background: #fff; color: var(--text); font-family: inherit; font-weight: 600; }
+.item-title-input:focus { outline: none; border-color: var(--accent-light); }
+.item-detail-input { width: 100%; padding: 0.28rem 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.78rem; background: #fff; color: var(--muted); font-family: var(--font-serif); resize: vertical; min-height: 44px; line-height: 1.5; overflow: auto; box-sizing: border-box; field-sizing: content; }
+.item-detail-input:focus { outline: none; border-color: var(--accent-light); }
+#add-item-btn { width: 100%; padding: 0.4rem; border: 1px dashed var(--border); border-radius: var(--radius); background: transparent; color: var(--muted); font-size: 0.8rem; cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s; }
+#add-item-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── Item Formatting Toolbar ────────────────────────────────────────────────
+   Per-item B/I/L/C/R alignment + size + color controls from editor.css.
+   ────────────────────────────────────────────────────────────────────────── */
+.item-fmt-toolbar { border-top: 1px solid var(--border); padding: 0.28rem 0 0.05rem; margin-top: 0.22rem; }
+.item-card.item-collapsed .item-fmt-toolbar { display: none; }
+.item-fmt-row { display: flex; align-items: center; gap: 0.16rem; margin-bottom: 0.18rem; flex-wrap: wrap; }
+.item-fmt-row:last-child { margin-bottom: 0; }
+.fmt-target-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); min-width: 2.1rem; margin-right: 0.08rem; font-family: var(--font-sans); }
+.fmt-sep { width: 1px; height: 1rem; background: var(--border); margin: 0 0.1rem; flex-shrink: 0; }
+.fmt-btn { padding: 0.08rem 0.38rem; font-size: 0.71rem; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; cursor: pointer; line-height: 1.6; font-family: var(--font-sans); color: var(--text); flex-shrink: 0; transition: background 0.1s, border-color 0.1s; }
+.fmt-btn:hover { background: #e8f0fe; border-color: #99b; }
+.fmt-btn.fmt-bold { font-weight: 700; }
+.fmt-btn.fmt-italic { font-style: italic; }
+.fmt-btn.fmt-active { background: #d4e3fc; border-color: #5080c8; color: #1a45a0; }
+.fmt-color-swatch { width: 1.1rem; height: 1.1rem; border-radius: 50%; border: 2px solid transparent; cursor: pointer; flex-shrink: 0; transition: border-color 0.1s; box-sizing: border-box; padding: 0; }
+.fmt-color-swatch:hover { border-color: #888; }
+.fmt-color-swatch.fmt-active { border-color: #1a45a0; box-shadow: 0 0 0 1px #1a45a0; }
+.fmt-swatch-default { background: #222; }
+.fmt-swatch-gray    { background: #888; }
+.fmt-swatch-light   { background: #aaa; }
+.fmt-swatch-brown   { background: #7a5c45; }
+.fmt-size-sel { font-size: 0.67rem; padding: 0.08rem 0.2rem; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; color: var(--text); cursor: pointer; font-family: var(--font-sans); flex-shrink: 0; }
+.ann-break-toggle { flex-shrink: 0; padding: 0.04rem 0.3rem; font-size: 0.6rem; background: transparent; border: 1px dashed #bbb; border-radius: 2px; color: var(--muted); cursor: pointer; line-height: 1.4; transition: all 0.12s; }
+.ann-break-toggle.active { background: #e8f0fe; border-color: #5080c8; border-style: solid; color: #1a45a0; }
+.ann-break-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.ann-url-row { display: flex; align-items: center; gap: 0.3rem; margin-top: 0.2rem; }
+.ann-url-label { font-size: 0.62rem; color: var(--muted); white-space: nowrap; font-family: var(--font-sans); }
+.ann-url-input { flex: 1; padding: 0.18rem 0.4rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.71rem; color: var(--muted); font-family: var(--font-sans); box-sizing: border-box; }
+.ann-url-input:focus { outline: none; border-color: var(--accent-light); }
+.ann-qr-wrap { float: right; margin-left: 5px; margin-bottom: 2px; line-height: 0; }
+.ann-qr-wrap img { width: 68px; height: 68px; display: block; }
+.welcome-item-row { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem; }
+.welcome-item-row .ann-title-input { flex: 1; min-width: 0; }
+
+/* ─── Paragraph Break Controls ───────────────────────────────────────────────
+   Generated for multi-paragraph liturgy/label items by editor.js.
+   ────────────────────────────────────────────────────────────────────────── */
+.para-break-zone { padding: 0.2rem 0.5rem 0.1rem; }
+.para-break-row { margin: 0.15rem 0; }
+.para-break-btn {
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: none;
+  border: 1px dashed var(--muted);
+  border-radius: 3px;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.para-break-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.para-break-btn.is-active {
+  color: var(--accent);
+  border-style: solid;
+  font-weight: 600;
+}
+
+/* ─── Preview: Staff Page ─────────────────────────────────────────────────────
+   Rendered into .booklet-page by preview.js. Was in pages.css (deleted).
+   ────────────────────────────────────────────────────────────────────────── */
+.staff-section-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.13em; font-weight: 700; color: #888; text-align: center; font-family: var(--font-sans); margin-bottom: 0.22rem; }
+.staff-top-rule { width: 1.5rem; height: 1.5px; background: #bbb; margin: 0 auto 0.7rem; }
+.staff-table { width: 100%; border-collapse: collapse; font-size: 0.58rem; font-family: var(--font-sans); }
+.staff-table tr { border-bottom: 0.5px solid #ebebeb; }
+.staff-table td { padding: 0.16rem 0.2rem 0.16rem 0; vertical-align: baseline; line-height: 1.4; }
+.staff-table .sname { font-weight: 700; color: #111; white-space: nowrap; padding-right: 0.4rem; width: 33%; }
+.staff-table .srole { color: #333; width: 37%; }
+.staff-table .semail { color: #888; font-size: 0.52rem; font-style: italic; text-align: right; white-space: nowrap; width: 30%; }
+.staff-page-content { flex: 0 0 auto; }
+.staff-flex-wrap { display: flex; flex-direction: column; overflow: visible; }
+.staff-give-flex { flex: 1; display: flex; align-items: center; justify-content: center; }
+.staff-give-online { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; }
+.staff-give-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-family: var(--font-sans); text-align: center; }
+.staff-give-qr img { width: 68px; height: 68px; display: block; }
+.staff-logo-section { flex: 0 0 auto; text-align: center; padding-bottom: 0.22in; padding-top: 0.08in; }
+.staff-logo-wrap { text-align: center; }
+.staff-logo-wrap img { display: block; max-width: 2.3in; max-height: 1.2in; margin: 0 auto; object-fit: contain; }
+
+/* ─── Preview: Serving Schedule Page ─────────────────────────────────────────
+   Was in pages.css (deleted).
+   ────────────────────────────────────────────────────────────────────────── */
+.serving-week-label { font-family: var(--font-sans); font-weight: 900; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1.5px solid #111; padding-bottom: 0.15rem; margin-bottom: 0.4rem; }
+.serving-week-label ~ .serving-week-label { margin-top: 0.65rem; }
+.serving-service-time { font-family: var(--font-sans); font-weight: 700; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em; color: #555; border-bottom: 0.75px solid #ccc; padding-bottom: 0.06rem; margin: 0.30rem 0 0.10rem; }
+.serving-service-time:first-of-type { margin-top: 0.05rem; }
+.serving-team-heading { font-family: var(--font-sans); font-style: italic; font-size: 0.68rem; color: #444; margin: 0.3rem 0 0.1rem; }
+.serving-row { font-family: var(--font-sans); font-size: 0.64rem; line-height: 1.6; }
+.serving-role { font-weight: 700; }
+.serving-empty { font-size: 0.65rem; color: #999; font-style: italic; margin-bottom: 0.4rem; }
+
+/* ─── Preview: Calendar Page ─────────────────────────────────────────────────
+   Was in pages.css (deleted).
+   ────────────────────────────────────────────────────────────────────────── */
+.cal-page-title { font-family: var(--font-sans); font-weight: 900; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 2px solid #111; padding-bottom: 0.2rem; margin-bottom: 0.5rem; }
+.cal-day-heading { font-family: var(--font-sans); font-weight: 700; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #ccc; padding-bottom: 0.1rem; margin: 0.5rem 0 0.25rem; }
+.cal-day-heading:first-of-type { margin-top: 0; }
+.cal-event-row { display: flex; gap: 0.4rem; align-items: baseline; margin-bottom: 0.15rem; }
+.cal-event-time { font-family: var(--font-sans); font-size: 0.6rem; color: #555; white-space: nowrap; min-width: 3rem; flex-shrink: 0; }
+.cal-event-info { flex: 1; }
+.cal-event-title { font-family: var(--font-sans); font-size: 0.64rem; font-weight: 600; line-height: 1.3; }
+.cal-event-loc { font-family: var(--font-sans); font-size: 0.59rem; color: #666; }
+.cal-empty { font-size: 0.65rem; color: #999; font-style: italic; }
+.cal-unavailable { font-size: 0.65rem; color: #c44; font-style: italic; }
+
+/* ─── Calendar & Staff Editor Panel Controls ─────────────────────────────────
+   Editor UI controls from pages.css (deleted).
+   ────────────────────────────────────────────────────────────────────────── */
+.cal-edit-daygroup { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.55rem 0 0.2rem; }
+.cal-edit-daygroup:first-child { margin-top: 0.1rem; }
+.cal-edit-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.35rem 0.45rem; background: #fff; margin-bottom: 0.25rem; }
+.cal-edit-row-hdr { display: flex; align-items: center; gap: 0.3rem; margin-bottom: 0.2rem; }
+.cal-edit-time-badge { font-size: 0.7rem; color: var(--muted); white-space: nowrap; min-width: 46px; flex-shrink: 0; }
+.cal-edit-title { flex: 1; font-size: 0.8rem; padding: 0.18rem 0.3rem; border: 1px solid var(--border); border-radius: 3px; font-family: inherit; min-width: 0; }
+.cal-edit-title:focus { outline: none; border-color: var(--accent-light); }
+.cal-edit-del { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.85rem; padding: 0 0.15rem; line-height: 1; flex-shrink: 0; }
+.cal-edit-del:hover { color: var(--danger); }
+.cal-edit-loc { width: 100%; font-size: 0.74rem; padding: 0.15rem 0.3rem; border: 1px solid var(--border); border-radius: 3px; font-family: inherit; color: var(--muted); }
+.cal-edit-loc:focus { outline: none; border-color: var(--accent-light); }
+.cal-add-form { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.55rem 0.6rem; margin-top: 0.4rem; }
+.cal-add-form label { font-size: 0.72rem; display: block; margin-bottom: 0.15rem; }
+.cal-add-form input[type="text"], .cal-add-form input[type="date"], .cal-add-form input[type="time"] { width: 100%; font-size: 0.8rem; padding: 0.18rem 0.3rem; border: 1px solid var(--border); border-radius: 3px; font-family: inherit; margin-bottom: 0.3rem; box-sizing: border-box; }
+.cal-add-form input:focus { outline: none; border-color: var(--accent-light); }
+.cal-add-form-row { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.3rem; }
+.cal-add-form-row input { margin-bottom: 0; }
+.staff-ed-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto auto; gap: 0.25rem; align-items: center; margin-bottom: 0.25rem; }
+.staff-ed-input { padding: 0.22rem 0.35rem; font-size: 0.76rem; border: 1px solid var(--border); border-radius: 3px; font-family: inherit; min-width: 0; color: var(--text); }
+.staff-ed-input:focus { outline: none; border-color: var(--accent-light); }
+.staff-ed-input::placeholder { color: #bbb; }
+.vol-week-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin: 0.6rem 0 0.3rem; padding-bottom: 0.2rem; border-bottom: 1px solid var(--border); }
+.vol-week-label:first-child { margin-top: 0; }
+.vol-team-name { font-size: 0.72rem; font-weight: 700; font-family: var(--font-sans); margin: 0.4rem 0 0.15rem; color: #333; }
+.vol-pos-row { display: flex; gap: 0.25rem; align-items: center; margin-bottom: 0.18rem; }
+.vol-role-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-sans);
+  text-transform: uppercase;
+  color: #666;
+  min-width: 4.5rem;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.vol-names-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.72rem;
+  padding: 0.18rem 0.32rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+}
+.vol-remove-btn {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.28rem;
+  color: #aaa;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.vol-remove-btn:hover { color: #c00; border-color: #d99; background: #fee; }
+.vol-add-link {
+  display: inline-block;
+  font-size: 0.68rem;
+  color: var(--accent);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin-top: 0.05rem;
+  margin-bottom: 0.3rem;
+}
+.vol-add-link:hover { text-decoration: underline; }
+.vol-week-footer { margin-top: 0.3rem; }
+.vol-page-break-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.3rem 0;
+  padding: 0.18rem 0.4rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border);
+}
+.vol-page-break-row span {
+  flex: 1;
+  text-align: center;
+  font-size: 0.63rem;
+  color: var(--muted);
+  font-style: italic;
+}
+.vol-week-header {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.6rem 0 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--border);
+}
+.vol-week-header:first-child { margin-top: 0; }
+.vol-week-header-text {
+  flex: 1;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+.vol-st-header {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.4rem;
+  margin-bottom: 0.15rem;
+}
+.vol-st-header-text {
+  flex: 1;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent-light);
+}
+.vol-week-body.collapsed,
+.vol-st-body.collapsed { display: none; }
+.vol-collapse-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.55rem;
+  color: var(--muted);
+  padding: 0;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.vol-collapse-toggle:hover { color: var(--text); }
+
+/* ─── Song Database Structural Controls ─────────────────────────────────────
+   Generated expansion/edit rows from songs.js. These are state/layout rules,
+   not visual redesign.
+   ────────────────────────────────────────────────────────────────────────── */
+.song-db-expand-panel {
+  display: none;
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 0.55rem;
+}
+.song-db-entry.is-expanded .song-db-expand-panel { display: block; }
+.song-db-preview-lyrics {
+  white-space: pre-wrap;
+  max-height: 4.5rem;
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 0.45rem;
+}
+.song-db-expand-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.sdb-inline-edit .field-row { margin-bottom: 0.4rem; }
+.sdb-inline-edit .field-row label {
+  display: block;
+  margin-bottom: 0.15rem;
+}
+.sdb-inline-edit input[type="text"],
+.sdb-inline-edit textarea {
+  width: 100%;
+  box-sizing: border-box;
+}
+.sdb-inline-edit textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+/* ─── Format Tab Grid ────────────────────────────────────────────────────────
+   .fmt-types-grid was in editor.css (deleted). The HTML element has no
+   Tailwind grid classes added during migration.
+   ────────────────────────────────────────────────────────────────────────── */
+.fmt-types-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 0.85rem;
+}
+.fmt-card-collapsed > *:not(.fmt-type-name) { display: none; }
+.fmt-card-collapsed .fmt-type-name { margin-bottom: 0; border-bottom-color: transparent; }
+
+/* ─── UI Refinement Layer ───────────────────────────────────────────────────
+   Scoped visual polish for generated controls that cannot be fully styled
+   with static Tailwind classes alone.
+   ────────────────────────────────────────────────────────────────────────── */
+.ann-card {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  box-shadow: 0 1px 2px rgba(17,24,39,0.05);
+}
+.ann-card-row1,
+.ann-card-toolbar,
+.ann-url-row {
+  display: flex;
+}
+.ann-title-input,
+.ann-body-input,
+.ann-url-input {
+  background: oklch(var(--b1));
+  color: oklch(var(--bc));
+  font-family: var(--font-sans);
+}
+.ann-body-input {
+  min-height: 5.5rem;
+  line-height: 1.5;
+}
+.ann-fmt-btn,
+.ann-icon-btn,
+.ann-break-toggle {
+  border-color: transparent;
+  background: transparent;
+  color: oklch(var(--bc) / 0.68);
+}
+.ann-fmt-btn:hover,
+.ann-icon-btn:hover,
+.ann-break-toggle:hover {
+  background: oklch(var(--b2));
+  color: oklch(var(--bc));
+}
+.ann-break-toggle.active {
+  background: oklch(var(--p));
+  border-color: oklch(var(--p));
+  color: oklch(var(--pc));
+}
+.ann-del-btn:hover {
+  background: oklch(var(--er) / 0.12);
+  color: oklch(var(--er));
+}
+.welcome-item-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.welcome-item-row .ann-title-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-card {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(17,24,39,0.04);
+  overflow: hidden;
+  padding: 0;
+}
+.item-card:focus-within {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--p) / 0.45);
+  box-shadow: 0 0 0 2px oklch(var(--p) / 0.12);
+}
+.item-card.is-linked {
+  border-color: oklch(var(--p) / 0.45);
+  box-shadow: inset 0 0 0 1px oklch(var(--p) / 0.25);
+}
+.item-card.is-section-card,
+.item-card.is-section-card:focus-within {
+  background: oklch(var(--b2));
+  border-color: oklch(var(--b3));
+}
+.item-card.is-break-card {
+  background: transparent;
+  border-color: oklch(var(--b3));
+}
+.item-title-input,
+.item-type-select,
+.item-detail-input {
+  color: oklch(var(--bc));
+  font-family: var(--font-sans);
+}
+.item-title-input {
+  background: transparent;
+}
+.item-detail-input {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  line-height: 1.5;
+}
+.item-card.item-collapsed .item-card-header {
+  margin-bottom: 0;
+}
+.item-fmt-toolbar {
+  border-top-color: oklch(var(--b3));
+  background: oklch(var(--b2));
+  padding: 0.45rem 0.55rem 0.35rem;
+  margin-top: 0;
+}
+.fmt-btn,
+.fmt-size-sel {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+  color: oklch(var(--bc));
+}
+.fmt-btn:hover {
+  background: oklch(var(--b2));
+  border-color: oklch(var(--bc) / 0.25);
+}
+.fmt-btn.fmt-active {
+  background: oklch(var(--p));
+  border-color: oklch(var(--p));
+  color: oklch(var(--pc));
+}
+.fmt-target-label,
+.break-card-label,
+.item-collapse-btn,
+.section-preview,
+.collapse-toggle {
+  color: oklch(var(--bc) / 0.55);
+}
+
+.cal-edit-row,
+.cal-add-form,
+.vol-page-break-row {
+  background: oklch(var(--b1));
+  border-color: oklch(var(--b3));
+}
+.cal-edit-daygroup,
+.vol-week-label,
+.vol-role-label,
+.vol-week-header-text,
+.vol-st-header-text {
+  color: oklch(var(--bc) / 0.58);
+}
+
+#logo-img-preview-wrap {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+#logo-img-label {
+  color: oklch(var(--bc) / 0.7);
+}
+#logo-img-thumb {
+  max-width: 220px;
+  max-height: 120px;
+  object-fit: contain;
+  border-radius: 0.375rem;
+  background: oklch(var(--b1));
+  padding: 0.5rem;
+}
+#logo-img-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  color: oklch(var(--bc) / 0.65);
+  font-size: 0.75rem;
+}
+
+#bulk-bar .dropdown {
+  position: relative;
+}
+#bulk-bar .dropdown-content {
+  width: 14rem;
+  right: 0;
+  left: auto;
+}
+#bulk-bar .menu button {
+  width: 100%;
+  text-align: left;
+}
+
+#import-review-modal .modal-box {
+  padding: 0;
+  overflow: hidden;
+}
+#import-review-modal .modal-box > div:first-child {
+  padding-left: 1.25rem;
+  padding-right: 1.25rem;
+}
+#import-review-modal #irm-body {
+  padding: 1.25rem;
+}
+#import-review-modal .modal-action {
+  margin-top: 0;
+  padding: 1rem 1.25rem;
+}
+
+#irm-body {
+  color: oklch(var(--bc));
+}
+#irm-body .irm-section-label {
+  margin: 1rem 0 0.4rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid oklch(var(--b3));
+  color: oklch(var(--bc) / 0.62);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+#irm-body .irm-section-label:first-child {
+  margin-top: 0;
+}
+#irm-body .irm-desc {
+  margin: 0 0 0.65rem;
+  color: oklch(var(--bc) / 0.65);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+#irm-body .irm-song-card {
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.5rem;
+  background: oklch(var(--b1));
+  padding: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+#irm-body .irm-song-title {
+  font-weight: 700;
+  margin-bottom: 0.45rem;
+}
+#irm-body .irm-radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.28rem 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+#irm-body .irm-radio-row input {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+#irm-body .irm-radio-label {
+  flex: 1;
+  min-width: 0;
+}
+#irm-body .irm-preview-text,
+#irm-body .irm-lyrics-input {
+  width: 100%;
+  max-height: 11rem;
+  overflow: auto;
+  border: 1px solid oklch(var(--b3));
+  border-radius: 0.375rem;
+  background: oklch(var(--b2));
+  color: oklch(var(--bc) / 0.8);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 0.55rem;
+  white-space: pre-wrap;
+}
+#irm-body .irm-lyrics-input {
+  min-height: 8rem;
+  resize: vertical;
+}
+
+.sdb-list-col {
+  width: clamp(26rem, 42vw, 34rem);
+}
+.sdb-page-header,
+.sdb-page-cols {
+  width: min(100%, 76rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+.sdb-page-cols {
+  border-left: 1px solid oklch(var(--b3));
+  border-right: 1px solid oklch(var(--b3));
+}
+.sdb-panel-actions {
+  justify-content: center;
+}
+.song-db-entry-title {
+  color: oklch(var(--bc));
+  font-weight: 650;
+}
+.song-db-entry-author {
+  color: oklch(var(--bc) / 0.62);
+}
+.song-db-entry-copy,
+.song-db-entry-meta {
+  color: oklch(var(--bc) / 0.42);
+}
+.song-db-entry .icon-btn {
+  width: auto;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-color: transparent;
+  background: transparent;
+  color: oklch(var(--bc) / 0.58);
+}
+.song-db-entry .icon-btn:hover {
+  background: oklch(var(--b2));
+  border-color: transparent;
+  color: oklch(var(--bc));
+}
+.song-db-entry .icon-btn.danger:hover {
+  background: oklch(var(--er) / 0.12);
+  color: oklch(var(--er));
+}
+.song-db-entry {
+  transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.song-db-entry.is-expanded {
+  border-color: oklch(var(--p) / 0.35);
+  box-shadow: 0 1px 3px rgba(17,24,39,0.08);
+}
+.song-db-expand-panel {
+  background: oklch(var(--b1));
+  border-top-color: oklch(var(--b3));
+}
+.song-db-preview-lyrics {
+  border-radius: 0.375rem;
+  background: oklch(var(--b2));
+  color: oklch(var(--bc) / 0.72);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 0.55rem;
+}
+.sdb-inline-edit {
+  border-radius: 0.5rem;
+  background: oklch(var(--b2));
+  padding: 0.75rem;
+}
+.sdb-inline-edit .field-row {
+  margin-bottom: 0.6rem;
+}
+.sdb-inline-edit input[type="text"],
+.sdb-inline-edit textarea {
+  background: oklch(var(--b1));
+}

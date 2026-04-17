@@ -136,7 +136,7 @@ function _pollForRestart(oldVersion) {
   if (bar) bar.style.display = '';
 
   function updateProgress(pct, text) {
-    if (barFill) barFill.style.width = pct + '%';
+    if (barFill) barFill.value = pct;
     if (barText) barText.textContent = text;
     if (status) { status.textContent = text; status.className = 'pco-msg'; }
   }

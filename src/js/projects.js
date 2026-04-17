@@ -642,10 +642,10 @@ function renderFilesList() {
 
   if (sorted.length === 0) {
     list.innerHTML = `
-      <div class="files-empty">
-        <div class="files-empty-title">No saved projects yet.</div>
-        <div class="files-empty-sub">Use the Booklet Editor to build a bulletin, then save it as a project.</div>
-        <button class="btn-sm btn-sm-primary files-empty-goto">→ Go to Booklet Editor</button>
+      <div class="files-empty flex flex-col items-center justify-center py-16 text-center">
+        <div class="files-empty-title text-lg font-semibold mb-2">No saved projects yet.</div>
+        <div class="files-empty-sub text-sm text-base-content/60 mb-4">Use the Booklet Editor to build a bulletin, then save it as a project.</div>
+        <button class="btn btn-sm btn-primary files-empty-goto">→ Go to Booklet Editor</button>
       </div>`;
     list.querySelector('.files-empty-goto').addEventListener('click', () => {
       document.querySelector('.tab-btn[data-tab="page-editor"]').click();
@@ -668,28 +668,30 @@ function renderFilesList() {
 
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
-    card.className = 'file-card' + (isActive ? ' file-card-active' : '') + (isSel ? ' bulk-selected' : '');
+    card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
+      + (isActive ? ' file-card-active ring-2 ring-primary' : '')
+      + (isSel ? ' bulk-selected bg-base-200' : '');
     card.innerHTML = `
-      <div class="file-card-icon">☰</div>
-      <div class="file-card-info">
-        <div class="file-card-name">
+      <div class="file-card-icon text-base-content/30 text-lg">☰</div>
+      <div class="file-card-info flex-1 min-w-0">
+        <div class="file-card-name font-medium text-sm truncate">
           ${esc(project.name)}
-          ${isActive ? '<span class="file-active-badge">active</span>' : ''}
+          ${isActive ? '<span class="file-active-badge badge badge-sm badge-primary ml-1">active</span>' : ''}
         </div>
-        <div class="file-card-meta">${esc(metaParts.join(' · '))}</div>
+        <div class="file-card-meta text-xs text-base-content/50 truncate">${esc(metaParts.join(' · '))}</div>
       </div>
-      <div class="file-card-actions">
-        <button class="btn-sm btn-sm-primary" data-fm="load"        data-id="${escAttr(project.id)}">Load</button>
-        <button class="btn-sm"               data-fm="download-pdf" data-id="${escAttr(project.id)}">↓ PDF</button>
-        <button class="btn-sm"               data-fm="download-json" data-id="${escAttr(project.id)}">↓ JSON</button>
-        <button class="btn-sm"               data-fm="rename"       data-id="${escAttr(project.id)}">Rename</button>
-        <button class="btn-sm btn-sm-danger" data-fm="delete"       data-id="${escAttr(project.id)}">Delete</button>
+      <div class="file-card-actions flex gap-1 shrink-0">
+        <button class="btn btn-xs btn-primary" data-fm="load"         data-id="${escAttr(project.id)}">Load</button>
+        <button class="btn btn-xs btn-ghost"   data-fm="download-pdf" data-id="${escAttr(project.id)}">↓ PDF</button>
+        <button class="btn btn-xs btn-ghost"   data-fm="download-json" data-id="${escAttr(project.id)}">↓ JSON</button>
+        <button class="btn btn-xs btn-ghost"   data-fm="rename"       data-id="${escAttr(project.id)}">Rename</button>
+        <button class="btn btn-xs btn-error"   data-fm="delete"       data-id="${escAttr(project.id)}">Delete</button>
       </div>`;
 
     // Prepend checkbox for bulk selection
     const cb = document.createElement('input');
     cb.type = 'checkbox';
-    cb.className = 'file-card-cb';
+    cb.className = 'file-card-cb checkbox checkbox-xs checkbox-primary mr-1';
     cb.checked = isSel;
     cb.addEventListener('change', e => {
       e.stopPropagation();
@@ -1200,4 +1202,9 @@ function initProjects() {
   document.getElementById('project-browse-btn').addEventListener('click', handleProjectBrowse);
   document.getElementById('bulk-drive-json').addEventListener('click', handleBulkDriveJson);
   document.getElementById('bulk-drive-pdf').addEventListener('click', handleBulkDrivePdf);
+  document.getElementById('bulk-bar')?.addEventListener('click', e => {
+    if (e.target instanceof Element && e.target.closest('.bulk-bar-btn')) {
+      e.currentTarget.querySelector('details')?.removeAttribute('open');
+    }
+  });
 }
