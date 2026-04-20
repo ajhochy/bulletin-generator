@@ -11,6 +11,10 @@ let _designerRenderTimer = null;
 let _designerDrag = null;
 let _designerFonts = [];
 let _installedFonts = [];
+let _templateFmtClipboard = null;
+let _designerRovingIndex = 0;
+let _designerControlSeq = 0;
+const _templateThumbCache = new Map();
 
 const TEMPLATE_BINDINGS = ['cover', 'announcements', 'pco_items', 'calendar', 'serving_schedule', 'staff'];
 const PCO_TYPES = ['song', 'liturgy', 'section', 'label'];
@@ -179,6 +183,7 @@ function _withDesignerSampleData(fn) {
 // Returns Promise → { [name]: value } on confirm, null on cancel.
 function tdShowModal(config) {
   return new Promise(resolve => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const backdrop = document.createElement('div');
     backdrop.className = 'td-modal-backdrop';
 
@@ -186,16 +191,20 @@ function tdShowModal(config) {
     modal.className = 'td-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    modal.tabIndex = -1;
 
     const titleEl = document.createElement('div');
     titleEl.className = 'td-modal-title';
+    titleEl.id = `td-modal-title-${Date.now().toString(36)}`;
     titleEl.textContent = config.title || '';
+    modal.setAttribute('aria-labelledby', titleEl.id);
     modal.appendChild(titleEl);
 
     const fieldEls = {};
     (config.fields || []).forEach(field => {
       const lbl = document.createElement('label');
       lbl.className = 'td-modal-field-label';
+      lbl.id = `td-modal-field-${++_designerControlSeq}`;
       lbl.textContent = field.label;
       modal.appendChild(lbl);
 
@@ -203,15 +212,23 @@ function tdShowModal(config) {
       if (field.type === 'template-list') {
         el = document.createElement('div');
         el.className = 'td-modal-template-list';
+        el.setAttribute('role', 'listbox');
+        el.setAttribute('aria-labelledby', lbl.id);
         let selectedIdx = field.value != null ? field.value : 0;
         (field.options || []).forEach((opt, i) => {
           const btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'td-modal-template-option' + (i === selectedIdx ? ' selected' : '');
+          btn.setAttribute('role', 'option');
+          btn.setAttribute('aria-selected', String(i === selectedIdx));
           btn.textContent = typeof opt === 'object' ? opt.label : opt;
           btn.addEventListener('click', () => {
-            el.querySelectorAll('.td-modal-template-option').forEach(b => b.classList.remove('selected'));
+            el.querySelectorAll('.td-modal-template-option').forEach(b => {
+              b.classList.remove('selected');
+              b.setAttribute('aria-selected', 'false');
+            });
             btn.classList.add('selected');
+            btn.setAttribute('aria-selected', 'true');
             selectedIdx = i;
           });
           btn.addEventListener('dblclick', () => { selectedIdx = i; finish(true); });
@@ -221,6 +238,8 @@ function tdShowModal(config) {
       } else if (field.type === 'select') {
         el = document.createElement('select');
         el.className = 'td-modal-select';
+        el.id = `${lbl.id}-control`;
+        lbl.htmlFor = el.id;
         (field.options || []).forEach(opt => {
           const o = document.createElement('option');
           o.value = typeof opt === 'object' ? opt.value : opt;
@@ -231,6 +250,8 @@ function tdShowModal(config) {
       } else {
         el = document.createElement('input');
         el.className = 'td-modal-input';
+        el.id = `${lbl.id}-control`;
+        lbl.htmlFor = el.id;
         el.type = field.type || 'text';
         el.value = field.value != null ? field.value : '';
         el.placeholder = field.placeholder || '';
@@ -258,12 +279,38 @@ function tdShowModal(config) {
     backdrop.appendChild(modal);
     document.body.appendChild(backdrop);
 
-    const firstInput = modal.querySelector('input, select');
+    const firstInput = modal.querySelector('input, select, button');
     if (firstInput) setTimeout(() => { firstInput.focus(); firstInput.select?.(); }, 40);
+    else setTimeout(() => modal.focus(), 40);
+
+    function focusables() {
+      return Array.from(modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+        .filter(el => !el.disabled && el.offsetParent !== null);
+    }
 
     const onKey = e => {
-      if (e.key === 'Escape') finish(false);
-      else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SELECT') finish(true);
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(false);
+      } else if (e.key === 'Tab') {
+        const nodes = focusables();
+        if (!nodes.length) {
+          e.preventDefault();
+          modal.focus();
+          return;
+        }
+        const first = nodes[0];
+        const last = nodes[nodes.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      } else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'SELECT') {
+        finish(true);
+      }
     };
     document.addEventListener('keydown', onKey);
     backdrop.addEventListener('click', e => { if (e.target === backdrop) finish(false); });
@@ -271,6 +318,7 @@ function tdShowModal(config) {
     function finish(confirmed) {
       document.removeEventListener('keydown', onKey);
       backdrop.remove();
+      opener?.focus?.();
       if (!confirmed) { resolve(null); return; }
       const values = {};
       Object.entries(fieldEls).forEach(([name, el]) => {
@@ -463,10 +511,10 @@ function showFontsModal() {
 
   const backdrop = document.createElement('div');
   backdrop.id = 'tpl-fonts-modal';
-  backdrop.style.cssText = 'position:fixed;inset:0;z-index:600;background:rgba(14,19,24,0.45);display:flex;align-items:center;justify-content:center;';
+  backdrop.style.cssText = 'position:fixed;inset:0;z-index:600;background:color-mix(in oklch, var(--td-ink,#201b14) 45%, transparent);display:flex;align-items:center;justify-content:center;';
 
   const modal = document.createElement('div');
-  modal.style.cssText = 'background:#fff;border-radius:10px;padding:20px;width:420px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 40px rgba(0,0,0,0.18);';
+  modal.style.cssText = 'background:var(--td-bg,var(--ui-surface,#fff));border-radius:10px;padding:20px;width:420px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 40px rgba(32,27,20,0.18);';
 
   const header = document.createElement('div');
   header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
@@ -477,13 +525,14 @@ function showFontsModal() {
   closeBtn.type = 'button';
   closeBtn.className = 'btn btn-ghost btn-xs';
   closeBtn.textContent = '✕';
+  closeBtn.setAttribute('aria-label', 'Close font manager');
   closeBtn.addEventListener('click', () => backdrop.remove());
   header.appendChild(title);
   header.appendChild(closeBtn);
   modal.appendChild(header);
 
   const sub = document.createElement('div');
-  sub.style.cssText = 'font-size:12px;color:#737373;';
+  sub.style.cssText = 'font-size:12px;color:var(--td-muted,#737373);';
   sub.textContent = 'Upload licensed TTF, OTF, WOFF, or WOFF2 files to use in template font pickers.';
   modal.appendChild(sub);
 
@@ -492,13 +541,13 @@ function showFontsModal() {
   const userFonts = _installedFonts.filter(f => f.source === 'user');
   if (!userFonts.length) {
     const empty = document.createElement('div');
-    empty.style.cssText = 'font-size:12px;color:#9ca3af;padding:8px 0;';
+    empty.style.cssText = 'font-size:12px;color:var(--td-muted,#737373);padding:8px 0;';
     empty.textContent = 'No uploaded fonts yet.';
     list.appendChild(empty);
   } else {
     userFonts.forEach(font => {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px;';
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--td-border,#e5e7eb);border-radius:6px;padding:6px 10px;';
       const name = document.createElement('span');
       name.style.cssText = `font-size:14px;font-family:${font.family},sans-serif;`;
       name.textContent = font.family;
@@ -640,6 +689,14 @@ function _fillGalleryThumbs(thumbMap) {
   if (!thumbMap.length) return;
   const previousTemplate = cloneTemplate(activeDocTemplate);
   thumbMap.forEach(({ wrap, template }) => {
+    const cacheKey = templateSnapshot(template);
+    const cached = _templateThumbCache.get(cacheKey);
+    if (cached) {
+      wrap.style.cssText = cached.wrapStyle;
+      wrap.innerHTML = cached.html;
+      return;
+    }
+
     setActiveDocTemplate(template);
     applyDocTemplate();
     _withDesignerSampleData(() => renderPreview());
@@ -666,6 +723,10 @@ function _fillGalleryThumbs(thumbMap) {
 
     wrap.style.cssText = `width:100%; height:${thumbH}px; overflow:hidden; background:var(--base-200,#f3f4f6);`;
     wrap.appendChild(scaler);
+    _templateThumbCache.set(cacheKey, {
+      wrapStyle: wrap.style.cssText,
+      html: wrap.innerHTML,
+    });
   });
   setActiveDocTemplate(previousTemplate);
   applyDocTemplate();
@@ -762,23 +823,20 @@ function ensureDesignerShell() {
 
   if (!document.getElementById('tpl-designer-workspace')) {
     canvas.innerHTML = '';
-    canvas.style.cssText = 'flex:1; overflow:hidden; background:#d7dde5; display:grid; grid-template-columns:260px minmax(0,1fr) 300px;';
+    canvas.classList.add('tpl-designer-shell');
+    canvas.style.cssText = '';
 
     const left = document.createElement('aside');
     left.id = 'tpl-zone-panel';
-    left.style.cssText = 'overflow:auto; background:var(--base-100,#fff); border-right:1px solid var(--base-300,#d1d5db); padding:0.75rem;';
 
     const center = document.createElement('main');
     center.id = 'tpl-designer-workspace';
-    center.style.cssText = 'position:relative; overflow:auto; padding:1.5rem; display:flex; justify-content:center;';
     const live = document.createElement('div');
     live.id = 'tpl-live-canvas';
-    live.style.cssText = 'position:relative;';
     center.appendChild(live);
 
     const right = document.createElement('aside');
     right.id = 'tpl-match-panel';
-    right.style.cssText = 'overflow:auto; background:var(--base-100,#fff); border-left:1px solid var(--base-300,#d1d5db); padding:0.75rem;';
 
     canvas.appendChild(left);
     canvas.appendChild(center);
@@ -786,14 +844,14 @@ function ensureDesignerShell() {
 
     const guide = document.createElement('div');
     guide.id = 'tpl-snap-guide';
-    guide.style.cssText = 'display:none; position:absolute; z-index:50; pointer-events:none; border-left:2px solid #8b3dff; border-top:2px solid #8b3dff;';
     center.appendChild(guide);
 
     // Zoom controls
     if (!document.getElementById('tpl-zoom-controls')) {
       const zoomBar = document.createElement('div');
       zoomBar.id = 'tpl-zoom-controls';
-      zoomBar.style.cssText = 'position:absolute; bottom:12px; right:12px; z-index:20; display:flex; align-items:center; gap:2px; background:var(--base-100,#fff); border:1px solid rgba(14,19,24,0.14); border-radius:8px; padding:3px 5px; box-shadow:0 2px 8px rgba(0,0,0,0.10);';
+      zoomBar.setAttribute('role', 'group');
+      zoomBar.setAttribute('aria-label', 'Canvas zoom controls');
       let _zoom = 1;
       function applyZoom() {
         const live2 = document.getElementById('tpl-live-canvas');
@@ -806,21 +864,24 @@ function ensureDesignerShell() {
       zoomOut.className = 'tpl-toolbar-btn';
       zoomOut.textContent = '−';
       zoomOut.title = 'Zoom out';
+      zoomOut.setAttribute('aria-label', 'Zoom out');
       zoomOut.addEventListener('click', () => { _zoom = Math.max(0.25, _zoom - 0.1); applyZoom(); });
       const zoomLabel = document.createElement('span');
-      zoomLabel.style.cssText = 'font-size:11px; color:var(--td-muted,#737373); min-width:32px; text-align:center;';
+      zoomLabel.id = 'tpl-zoom-level';
       zoomLabel.textContent = '100%';
       const zoomIn = document.createElement('button');
       zoomIn.type = 'button';
       zoomIn.className = 'tpl-toolbar-btn';
       zoomIn.textContent = '+';
       zoomIn.title = 'Zoom in';
+      zoomIn.setAttribute('aria-label', 'Zoom in');
       zoomIn.addEventListener('click', () => { _zoom = Math.min(3, _zoom + 0.1); applyZoom(); });
       const fitBtn = document.createElement('button');
       fitBtn.type = 'button';
       fitBtn.className = 'tpl-toolbar-btn';
       fitBtn.textContent = 'Fit';
       fitBtn.title = 'Fit to window';
+      fitBtn.setAttribute('aria-label', 'Fit preview to window');
       fitBtn.addEventListener('click', () => {
         const ws = document.getElementById('tpl-designer-workspace');
         const live2 = document.getElementById('tpl-live-canvas');
@@ -834,7 +895,7 @@ function ensureDesignerShell() {
       zoomBar.appendChild(zoomLabel);
       zoomBar.appendChild(zoomIn);
       zoomBar.appendChild(fitBtn);
-      center.appendChild(zoomBar);
+      canvas.appendChild(zoomBar);
     }
   }
   initDesignerCanvasEvents();
@@ -962,6 +1023,31 @@ function itemByTitle(title) {
   return items.find(item => (item.title || '').trim() === title) || null;
 }
 
+const TPL_SELECTABLE_SELECTOR = [
+  '.cover-church',
+  '.cover-title',
+  '.cover-date',
+  '.ann-item-heading',
+  '.ann-body',
+  '.ann-qr-wrap',
+  '.section-heading',
+  '.item-heading',
+  '.item-body',
+  '.song-copyright',
+  '.cal-day-heading',
+  '.cal-event-title',
+  '.cal-event-time',
+  '.cal-event-loc',
+  '.serving-week-label',
+  '.serving-service-time',
+  '.serving-team-name',
+  '.serving-role',
+  '.serving-row span:not(.serving-role)',
+  '.sname',
+  '.srole',
+  '.semail'
+].join(',');
+
 function decorateDesignerCanvas() {
   const live = document.getElementById('tpl-live-canvas');
   if (!live) return;
@@ -969,10 +1055,35 @@ function decorateDesignerCanvas() {
   // Remove stale decorations
   live.querySelectorAll('.tpl-floating-label, .tpl-selection-handle').forEach(el => el.remove());
 
-  live.querySelectorAll('*').forEach(el => {
-    const info = inferCanvasElement(el);
-    if (!info) return;
+  live.querySelectorAll('.tpl-selectable-element').forEach(el => {
+    el.classList.remove('tpl-selectable-element');
+    el.style.cursor = '';
+    el.style.outlineOffset = '';
+    el.style.outline = '';
+    el.removeAttribute('role');
+    el.removeAttribute('tabindex');
+    el.removeAttribute('aria-label');
+    delete el.dataset.tplRovingIndex;
+  });
+
+  const selectable = Array.from(live.querySelectorAll(TPL_SELECTABLE_SELECTOR))
+    .map(el => ({ el, info: inferCanvasElement(el) }))
+    .filter(entry => entry.info);
+
+  const selectedIndex = selectable.findIndex(({ info }) => _selectedElement &&
+    info.binding === _selectedElement.binding &&
+    info.itemType === _selectedElement.itemType &&
+    info.elementKey === _selectedElement.elementKey);
+
+  if (selectedIndex >= 0) _designerRovingIndex = selectedIndex;
+  else _designerRovingIndex = Math.min(Math.max(_designerRovingIndex, 0), Math.max(selectable.length - 1, 0));
+
+  selectable.forEach(({ el, info }, idx) => {
     el.classList.add('tpl-selectable-element');
+    el.setAttribute('role', 'button');
+    el.dataset.tplRovingIndex = String(idx);
+    el.tabIndex = idx === _designerRovingIndex ? 0 : -1;
+    el.setAttribute('aria-label', `Edit ${designerElementLabel(info)}`);
     el.style.cursor = 'pointer';
     el.style.outlineOffset = '2px';
 
@@ -982,7 +1093,7 @@ function decorateDesignerCanvas() {
         info.elementKey === _selectedElement.elementKey;
 
     if (isSelected) {
-      el.style.outline = '2px solid #8b3dff';
+      el.style.outline = '2px solid var(--td-accent,#6f5b3e)';
       el.style.position = el.style.position || 'relative';
 
       // Corner handles (4 corners)
@@ -1004,6 +1115,12 @@ function decorateDesignerCanvas() {
       el.style.top = (fmt.layout.y || 0) + 'px';
     }
   });
+}
+
+function designerElementLabel(info) {
+  const element = (info.elementKey || 'element').replace(/([A-Z])/g, ' $1').toLowerCase();
+  const context = [info.itemType, info.title].filter(Boolean).join(' ');
+  return context ? `${context} ${element}` : element;
 }
 
 function getElementFmtForInfo(info) {
@@ -1077,9 +1194,11 @@ function renderZoneTree() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.checked = zone.enabled !== false;
+    cb.setAttribute('aria-label', `${zone.enabled === false ? 'Enable' : 'Disable'} ${zoneLabel(zone)} style rule`);
     cb.addEventListener('change', e => {
       zone.enabled = e.target.checked;
       markDesignerDirty();
+      cb.setAttribute('aria-label', `${zone.enabled === false ? 'Enable' : 'Disable'} ${zoneLabel(zone)} style rule`);
     });
     row.appendChild(cb);
 
@@ -1131,7 +1250,7 @@ function renderZoneTree() {
         child.type = 'button';
         child.textContent = elDesc.label;
         const elSelected = _selectedZoneId === zone.id && _selectedElement?.elementKey === elDesc.key;
-        child.style.cssText = `font-size:0.75rem; text-align:left; padding:0.18rem 0.35rem; border-radius:4px; background:${elSelected ? 'rgba(139,61,255,0.12)' : 'transparent'}; color:${elSelected ? '#8b3dff' : 'inherit'}; font-weight:${elSelected ? '600' : 'normal'};`;
+        child.style.cssText = `font-size:0.75rem; text-align:left; padding:0.18rem 0.35rem; border-radius:4px; background:${elSelected ? 'var(--td-accent-soft,rgba(111,91,62,0.12))' : 'transparent'}; color:${elSelected ? 'var(--td-accent,#6f5b3e)' : 'inherit'}; font-weight:${elSelected ? '600' : 'normal'};`;
         child.addEventListener('click', () => {
           _selectedZoneId = zone.id;
           _selectedElement = { binding: zone.binding, itemType: zone.match?.type || '', title: zone.match?.title || zone.match?.titleContains || '', elementKey: elDesc.key };
@@ -1329,6 +1448,9 @@ function addField(parent, labelText, control) {
   const label = document.createElement('label');
   label.className = 'text-xs font-medium block mt-2 mb-1';
   label.textContent = labelText;
+  const id = control.id || `tpl-designer-control-${++_designerControlSeq}`;
+  control.id = id;
+  label.htmlFor = id;
   parent.appendChild(label);
   parent.appendChild(control);
 }
@@ -1362,7 +1484,7 @@ function renderDesignerToolbar() {
 
   if (!_selectedElement) {
     // Page cluster
-    const pageSelect = makeToolbarSelect(Object.keys(PAGE_SIZE_PRESETS), _editingTemplate.pageSize || '5.5x8.5');
+    const pageSelect = makeToolbarSelect(Object.keys(PAGE_SIZE_PRESETS), _editingTemplate.pageSize || '5.5x8.5', 'Page size');
     pageSelect.addEventListener('change', () => {
       _editingTemplate.pageSize = pageSelect.value;
       markDesignerDirty();
@@ -1422,9 +1544,9 @@ function renderDesignerToolbar() {
   const alignC   = toolbarIconBtn('⬤C', fmt.align==='center', () => updateSelectedFmt('align', fmt.align==='center' ? '' : 'center'));
   const alignR   = toolbarIconBtn('⬤R', fmt.align==='right',  () => updateSelectedFmt('align', fmt.align==='right'  ? '' : 'right'));
   // Use SVG-free unicode that's readable
-  alignL.textContent = '←'; alignL.title = 'Align left';
-  alignC.textContent = '↔'; alignC.title = 'Align center';
-  alignR.textContent = '→'; alignR.title = 'Align right';
+  alignL.textContent = '←'; alignL.title = 'Align left'; alignL.setAttribute('aria-label', 'Align left');
+  alignC.textContent = '↔'; alignC.title = 'Align center'; alignC.setAttribute('aria-label', 'Align center');
+  alignR.textContent = '→'; alignR.title = 'Align right'; alignR.setAttribute('aria-label', 'Align right');
   toolbar.appendChild(toolbarCluster('Text', [boldBtn, italBtn, undlBtn, alignL, alignC, alignR]));
 
   toolbar.appendChild(toolbarSep());
@@ -1434,9 +1556,22 @@ function renderDesignerToolbar() {
   toolbar.appendChild(toolbarCluster('Color', [colorSwatch]));
 
   // Layout cluster
-  const layoutSelect = makeToolbarSelect(['', 'left', 'center', 'right', 'space-between'], fmt.layout?.align || '');
+  const layoutSelect = makeToolbarSelect(['', 'left', 'center', 'right', 'space-between'], fmt.layout?.align || '', 'Layout alignment');
   layoutSelect.addEventListener('change', () => updateSelectedLayout({ align: layoutSelect.value }));
   toolbar.appendChild(toolbarCluster('Layout', [layoutSelect]));
+
+  toolbar.appendChild(toolbarSep());
+
+  // Style copy / paste cluster
+  const copyStyle = toolbarIconBtn('Copy', false, copySelectedElementFmt);
+  copyStyle.title = 'Copy this element formatting';
+  copyStyle.setAttribute('aria-label', 'Copy this element formatting');
+  const pasteStyle = toolbarIconBtn('Paste', false, pasteSelectedElementFmt);
+  pasteStyle.title = 'Paste copied formatting onto this element';
+  pasteStyle.setAttribute('aria-label', 'Paste copied formatting onto this element');
+  pasteStyle.disabled = _templateFmtClipboard === null;
+  pasteStyle.style.opacity = _templateFmtClipboard === null ? '0.42' : '1';
+  toolbar.appendChild(toolbarCluster('Style', [copyStyle, pasteStyle]));
 
   toolbar.appendChild(toolbarSep());
 
@@ -1445,6 +1580,7 @@ function renderDesignerToolbar() {
   reset.type = 'button';
   reset.className = 'tpl-toolbar-btn';
   reset.textContent = 'Reset';
+  reset.setAttribute('aria-label', 'Reset selected element formatting');
   reset.style.color = 'var(--td-muted,#737373)';
   reset.addEventListener('click', resetSelectedFmt);
   toolbar.appendChild(reset);
@@ -1467,9 +1603,10 @@ function toolbarSep() {
   return sep;
 }
 
-function makeToolbarSelect(options, value) {
+function makeToolbarSelect(options, value, ariaLabel = '') {
   const sel = document.createElement('select');
   sel.className = 'tpl-toolbar-select';
+  if (ariaLabel) sel.setAttribute('aria-label', ariaLabel);
   options.forEach(opt => {
     const o = document.createElement('option');
     o.value = opt;
@@ -1492,11 +1629,13 @@ function makeSizePicker(value, onChange) {
   dec.type = 'button';
   dec.className = 'tpl-toolbar-btn';
   dec.textContent = '−';
+  dec.setAttribute('aria-label', 'Decrease font size');
   dec.style.cssText = 'width:22px;height:28px;padding:0;font-size:15px;flex-shrink:0;';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'tpl-toolbar-select';
+  input.setAttribute('aria-label', 'Font size');
   input.style.cssText = 'width:46px;text-align:center;padding:0 2px;font-family:inherit;';
   input.value = value ? value : '—';
 
@@ -1504,6 +1643,7 @@ function makeSizePicker(value, onChange) {
   inc.type = 'button';
   inc.className = 'tpl-toolbar-btn';
   inc.textContent = '+';
+  inc.setAttribute('aria-label', 'Increase font size');
   inc.style.cssText = 'width:22px;height:28px;padding:0;font-size:15px;flex-shrink:0;';
 
   function setPt(pt) {
@@ -1550,12 +1690,20 @@ function makeSizePicker(value, onChange) {
 
 function _closeFontPickers() {
   document.querySelectorAll('.tpl-font-picker-panel').forEach(p => { p.style.display = 'none'; });
+  document.querySelectorAll('.tpl-font-picker-btn[aria-expanded="true"]').forEach(btn => {
+    btn.setAttribute('aria-expanded', 'false');
+  });
 }
+
+let _fontPickerSeq = 0;
 
 function makeFontSelect(options, value, onChange) {
   const normalized = options.map(o => typeof o === 'string' ? { value: o, label: o } : o);
-  const current = normalized.find(o => o.value === value);
+  const initialIndex = normalized.findIndex(o => o.value === value);
+  let selectedIndex = Math.max(0, initialIndex);
+  const current = initialIndex >= 0 ? normalized[initialIndex] : null;
   const displayLabel = current?.label || value || '(default)';
+  const pickerId = `tpl-font-picker-${++_fontPickerSeq}`;
 
   const wrap = document.createElement('div');
   wrap.className = 'tpl-font-picker';
@@ -1568,46 +1716,112 @@ function makeFontSelect(options, value, onChange) {
   btn.style.textAlign = 'left';
   btn.style.cursor = 'pointer';
   btn.textContent = displayLabel;
+  btn.id = `${pickerId}-button`;
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-controls', `${pickerId}-list`);
   wrap.appendChild(btn);
 
   const panel = document.createElement('div');
   panel.className = 'tpl-font-picker-panel';
-  panel.style.cssText = 'display:none;position:absolute;z-index:950;background:#fff;border:1px solid #e5e7eb;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.14);max-height:240px;overflow-y:auto;min-width:180px;padding:4px 0;';
+  panel.id = `${pickerId}-list`;
+  panel.setAttribute('role', 'listbox');
+  panel.setAttribute('aria-labelledby', btn.id);
+  panel.tabIndex = -1;
+  panel.style.cssText = 'display:none;position:absolute;z-index:950;';
   wrap.appendChild(panel);
 
-  normalized.forEach(opt => {
-    const item = document.createElement('div');
-    item.className = 'tpl-font-picker-item' + (opt.value === value ? ' active' : '');
-    item.style.cssText = `padding:6px 14px;cursor:pointer;font-size:13px;white-space:nowrap;font-family:${opt.value ? `"${opt.value}",sans-serif` : 'inherit'};`;
-    item.textContent = opt.label || opt.value || '(default)';
-    item.addEventListener('mouseenter', () => { item.style.background = '#f3f4f6'; });
-    item.addEventListener('mouseleave', () => { item.style.background = opt.value === value ? '#eef2ff' : ''; });
-    if (opt.value === value) item.style.background = '#eef2ff';
-    item.addEventListener('mousedown', e => {
-      e.preventDefault();
-      btn.textContent = item.textContent;
-      btn.style.fontFamily = opt.value ? `"${opt.value}",sans-serif` : 'inherit';
-      panel.style.display = 'none';
-      onChange(opt.value);
+  const items = [];
+
+  function syncSelected(nextIndex) {
+    selectedIndex = nextIndex;
+    items.forEach((item, idx) => {
+      const selected = idx === selectedIndex;
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-selected', String(selected));
     });
+  }
+
+  function openPanel(focusIndex = selectedIndex) {
+    _closeFontPickers();
+    panel.style.display = 'block';
+    btn.setAttribute('aria-expanded', 'true');
+    const rect = wrap.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    if (spaceBelow < 250 && rect.top > 250) {
+      panel.style.top = 'auto';
+      panel.style.bottom = '100%';
+    } else {
+      panel.style.top = '100%';
+      panel.style.bottom = 'auto';
+    }
+    requestAnimationFrame(() => items[focusIndex]?.focus());
+  }
+
+  function closePanel(returnFocus = false) {
+    panel.style.display = 'none';
+    btn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) btn.focus();
+  }
+
+  function choose(index) {
+    const opt = normalized[index];
+    const item = items[index];
+    if (!opt || !item) return;
+    btn.textContent = item.textContent;
+    btn.style.fontFamily = opt.value ? `"${opt.value}",sans-serif` : 'inherit';
+    syncSelected(index);
+    closePanel(true);
+    onChange(opt.value);
+  }
+
+  function moveFocus(delta) {
+    const activeIndex = Math.max(0, items.indexOf(document.activeElement));
+    const nextIndex = (activeIndex + delta + items.length) % items.length;
+    items[nextIndex]?.focus();
+  }
+
+  normalized.forEach((opt, idx) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'tpl-font-picker-item' + (idx === selectedIndex ? ' active' : '');
+    item.style.fontFamily = opt.value ? `"${opt.value}",sans-serif` : 'inherit';
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(idx === selectedIndex));
+    item.tabIndex = -1;
+    item.textContent = opt.label || opt.value || '(default)';
+    item.addEventListener('click', e => {
+      e.stopPropagation();
+      choose(idx);
+    });
+    item.addEventListener('mousedown', e => e.preventDefault());
+    item.addEventListener('keydown', e => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveFocus(1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); moveFocus(-1); }
+      if (e.key === 'Home') { e.preventDefault(); items[0]?.focus(); }
+      if (e.key === 'End') { e.preventDefault(); items[items.length - 1]?.focus(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(idx); }
+      if (e.key === 'Escape') { e.preventDefault(); closePanel(true); }
+    });
+    items.push(item);
     panel.appendChild(item);
   });
 
   btn.addEventListener('click', e => {
     e.stopPropagation();
     const open = panel.style.display !== 'none';
-    _closeFontPickers();
-    if (!open) {
-      panel.style.display = 'block';
-      const rect = wrap.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      if (spaceBelow < 250 && rect.top > 250) {
-        panel.style.top = 'auto';
-        panel.style.bottom = '100%';
-      } else {
-        panel.style.top = '100%';
-        panel.style.bottom = 'auto';
-      }
+    if (open) closePanel();
+    else openPanel();
+  });
+
+  btn.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      openPanel(selectedIndex);
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      openPanel(Math.max(0, selectedIndex - 1));
     }
   });
 
@@ -1622,6 +1836,7 @@ function toolbarIconBtn(text, active, onClick, style) {
   if (style === 'bold')      btn.style.fontWeight = '700';
   if (style === 'italic')    btn.style.fontStyle  = 'italic';
   if (style === 'underline') btn.style.textDecoration = 'underline';
+  if (style) btn.setAttribute('aria-label', style);
   btn.addEventListener('click', onClick);
   return btn;
 }
@@ -1639,6 +1854,7 @@ function colorSwatchBtn(label, value, onChange) {
   const input = document.createElement('input');
   input.type = 'color';
   input.value = value;
+  input.setAttribute('aria-label', `${label} color`);
   input.addEventListener('input', () => {
     preview.style.background = input.value;
     onChange(input.value);
@@ -1687,6 +1903,24 @@ function updateSelectedLayout(partial) {
   const fmt = getZoneElementFmt(zone, _selectedElement.elementKey);
   fmt.layout = Object.assign({}, fmt.layout || {}, partial);
   markDesignerDirty();
+}
+
+function copySelectedElementFmt() {
+  const zone = getZoneById(_selectedZoneId);
+  if (!zone || !_selectedElement) return;
+  _templateFmtClipboard = cloneTemplate(readZoneElementFmt(zone, _selectedElement.elementKey));
+  renderDesignerToolbar();
+  setStatus('Copied template element formatting.', 'success');
+}
+
+function pasteSelectedElementFmt() {
+  if (_templateFmtClipboard === null) return;
+  const zone = getZoneById(_selectedZoneId);
+  if (!zone || !_selectedElement) return;
+  if (!zone.elements || typeof zone.elements !== 'object') zone.elements = {};
+  zone.elements[_selectedElement.elementKey] = cloneTemplate(_templateFmtClipboard);
+  markDesignerDirty();
+  setStatus('Pasted template element formatting.', 'success');
 }
 
 function resetSelectedFmt() {
@@ -1824,18 +2058,38 @@ function initDesignerCanvasEvents() {
       return;
     }
     e.preventDefault();
+    syncDesignerRovingFromElement(info.el);
     selectCanvasElement(info);
+  });
+
+  workspace.addEventListener('keydown', e => {
+    const target = e.target.closest?.('.tpl-selectable-element');
+    if (!target) return;
+    const keys = ['Enter', ' ', 'ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(e.key)) return;
+    e.preventDefault();
+    if (e.key === 'Enter' || e.key === ' ') {
+      const info = inferCanvasElement(target);
+      if (!info) return;
+      syncDesignerRovingFromElement(info.el);
+      selectCanvasElement(info);
+      return;
+    }
+    moveDesignerRovingFocus(e.key);
   });
 
   workspace.addEventListener('pointerdown', e => {
     const info = inferCanvasElement(e.target);
     if (!info) return;
+    syncDesignerRovingFromElement(info.el);
     selectCanvasElement(info);
     const page = info.el.closest('.booklet-page');
     const pageRect = page?.getBoundingClientRect();
     const elRect = info.el.getBoundingClientRect();
     const startLeft = parseFloat(info.el.style.left || '0') || 0;
     const startTop = parseFloat(info.el.style.top || '0') || 0;
+    const guide = document.getElementById('tpl-snap-guide');
+    const guideParentRect = guide?.parentElement?.getBoundingClientRect();
     _designerDrag = {
       info,
       startX: e.clientX,
@@ -1846,38 +2100,104 @@ function initDesignerCanvasEvents() {
       height: elRect.height,
       originPageLeft: pageRect ? elRect.left - pageRect.left - startLeft : 0,
       originPageTop: pageRect ? elRect.top - pageRect.top - startTop : 0,
+      pageBox: pageRect ? {
+        left: pageRect.left,
+        top: pageRect.top,
+        width: pageRect.width,
+        height: pageRect.height,
+      } : null,
+      guideParentBox: guideParentRect ? {
+        left: guideParentRect.left,
+        top: guideParentRect.top,
+      } : null,
+      snapBoxes: buildSnapBoxes(info.el, pageRect),
+      frame: 0,
+      pendingDx: 0,
+      pendingDy: 0,
+      currentX: startLeft,
+      currentY: startTop,
     };
+    info.el.style.willChange = 'transform';
     info.el.setPointerCapture?.(e.pointerId);
   });
 
   workspace.addEventListener('pointermove', e => {
     if (!_designerDrag) return;
-    const dx = e.clientX - _designerDrag.startX;
-    const dy = e.clientY - _designerDrag.startY;
-    const snapped = snapDrag(_designerDrag.startLeft + dx, _designerDrag.startTop + dy, _designerDrag.info.el);
-    _designerDrag.info.el.style.position = 'relative';
-    _designerDrag.info.el.style.left = snapped.x + 'px';
-    _designerDrag.info.el.style.top = snapped.y + 'px';
+    _designerDrag.pendingDx = e.clientX - _designerDrag.startX;
+    _designerDrag.pendingDy = e.clientY - _designerDrag.startY;
+    if (!_designerDrag.frame) _designerDrag.frame = requestAnimationFrame(applyDesignerDragFrame);
   });
 
   workspace.addEventListener('pointerup', () => finishDesignerDrag());
   workspace.addEventListener('pointercancel', () => finishDesignerDrag());
 }
 
+function syncDesignerRovingFromElement(el) {
+  const idx = Number(el?.dataset?.tplRovingIndex);
+  if (Number.isFinite(idx)) _designerRovingIndex = idx;
+}
+
+function moveDesignerRovingFocus(key) {
+  const live = document.getElementById('tpl-live-canvas');
+  const elements = Array.from(live?.querySelectorAll('.tpl-selectable-element') || []);
+  if (!elements.length) return;
+
+  const active = document.activeElement;
+  const activeIndex = elements.indexOf(active);
+  let nextIndex = activeIndex >= 0 ? activeIndex : _designerRovingIndex;
+  if (key === 'ArrowRight' || key === 'ArrowDown') nextIndex += 1;
+  if (key === 'ArrowLeft' || key === 'ArrowUp') nextIndex -= 1;
+  if (key === 'Home') nextIndex = 0;
+  if (key === 'End') nextIndex = elements.length - 1;
+  nextIndex = Math.max(0, Math.min(elements.length - 1, nextIndex));
+
+  elements.forEach((el, idx) => { el.tabIndex = idx === nextIndex ? 0 : -1; });
+  _designerRovingIndex = nextIndex;
+  elements[nextIndex].focus({ preventScroll: false });
+  const info = inferCanvasElement(elements[nextIndex]);
+  if (info) selectCanvasElement(info);
+}
+
+function buildSnapBoxes(el, pageRect) {
+  const page = el.closest('.booklet-page');
+  if (!page || !pageRect) return [];
+  return Array.from(page.querySelectorAll('.tpl-selectable-element')).filter(other => other !== el).map(other => {
+    const rect = other.getBoundingClientRect();
+    return {
+      left: rect.left - pageRect.left,
+      right: rect.right - pageRect.left,
+      top: rect.top - pageRect.top,
+      bottom: rect.bottom - pageRect.top,
+      midX: rect.left - pageRect.left + rect.width / 2,
+      midY: rect.top - pageRect.top + rect.height / 2,
+    };
+  });
+}
+
+function applyDesignerDragFrame() {
+  const drag = _designerDrag;
+  if (!drag) return;
+  drag.frame = 0;
+  const snapped = snapDrag(drag.startLeft + drag.pendingDx, drag.startTop + drag.pendingDy, drag.info.el);
+  drag.info.el.style.position = 'relative';
+  drag.info.el.style.transform = `translate(${snapped.x - drag.startLeft}px, ${snapped.y - drag.startTop}px)`;
+  drag.currentX = snapped.x;
+  drag.currentY = snapped.y;
+}
+
 function snapDrag(x, y, el) {
   const threshold = 8;
-  const page = el.closest('.booklet-page');
   const guide = document.getElementById('tpl-snap-guide');
   let snappedX = x;
   let snappedY = y;
   let showGuide = false;
-  if (page) {
-    const pageRect = page.getBoundingClientRect();
-    const drag = _designerDrag || {};
+  const drag = _designerDrag || {};
+  if (drag.pageBox) {
+    const pageBox = drag.pageBox;
     const originLeft = drag.originPageLeft || 0;
     const originTop = drag.originPageTop || 0;
-    const width = drag.width || el.getBoundingClientRect().width;
-    const height = drag.height || el.getBoundingClientRect().height;
+    const width = drag.width || 0;
+    const height = drag.height || 0;
     const target = {
       left: originLeft + x,
       right: originLeft + x + width,
@@ -1889,24 +2209,14 @@ function snapDrag(x, y, el) {
 
     const candidates = [
       { axis: 'x', value: -originLeft, delta: Math.abs(target.left) },
-      { axis: 'x', value: pageRect.width - originLeft - width, delta: Math.abs(target.right - pageRect.width) },
-      { axis: 'x', value: pageRect.width / 2 - originLeft - width / 2, delta: Math.abs(target.midX - pageRect.width / 2) },
+      { axis: 'x', value: pageBox.width - originLeft - width, delta: Math.abs(target.right - pageBox.width) },
+      { axis: 'x', value: pageBox.width / 2 - originLeft - width / 2, delta: Math.abs(target.midX - pageBox.width / 2) },
       { axis: 'y', value: -originTop, delta: Math.abs(target.top) },
-      { axis: 'y', value: pageRect.height - originTop - height, delta: Math.abs(target.bottom - pageRect.height) },
-      { axis: 'y', value: pageRect.height / 2 - originTop - height / 2, delta: Math.abs(target.midY - pageRect.height / 2) },
+      { axis: 'y', value: pageBox.height - originTop - height, delta: Math.abs(target.bottom - pageBox.height) },
+      { axis: 'y', value: pageBox.height / 2 - originTop - height / 2, delta: Math.abs(target.midY - pageBox.height / 2) },
     ];
 
-    page.querySelectorAll('.tpl-selectable-element').forEach(other => {
-      if (other === el) return;
-      const rect = other.getBoundingClientRect();
-      const otherBox = {
-        left: rect.left - pageRect.left,
-        right: rect.right - pageRect.left,
-        top: rect.top - pageRect.top,
-        bottom: rect.bottom - pageRect.top,
-        midX: rect.left - pageRect.left + rect.width / 2,
-        midY: rect.top - pageRect.top + rect.height / 2,
-      };
+    (drag.snapBoxes || []).forEach(otherBox => {
       candidates.push(
         { axis: 'x', value: otherBox.left - originLeft, delta: Math.abs(target.left - otherBox.left) },
         { axis: 'x', value: otherBox.right - originLeft - width, delta: Math.abs(target.right - otherBox.right) },
@@ -1921,12 +2231,11 @@ function snapDrag(x, y, el) {
     const bestY = candidates.filter(c => c.axis === 'y' && c.delta < threshold).sort((a, b) => a.delta - b.delta)[0];
     if (bestX) { snappedX = bestX.value; showGuide = true; }
     if (bestY) { snappedY = bestY.value; showGuide = true; }
-    if (guide && showGuide) {
-      const parentRect = guide.parentElement.getBoundingClientRect();
-      guide.style.left = (pageRect.left - parentRect.left + originLeft + snappedX) + 'px';
-      guide.style.top = (pageRect.top - parentRect.top + originTop + snappedY) + 'px';
-      guide.style.width = bestY ? pageRect.width + 'px' : '0';
-      guide.style.height = bestX ? pageRect.height + 'px' : '0';
+    if (guide && showGuide && drag.guideParentBox) {
+      guide.style.left = (pageBox.left - drag.guideParentBox.left + originLeft + snappedX) + 'px';
+      guide.style.top = (pageBox.top - drag.guideParentBox.top + originTop + snappedY) + 'px';
+      guide.style.width = bestY ? pageBox.width + 'px' : '0';
+      guide.style.height = bestX ? pageBox.height + 'px' : '0';
       guide.style.borderLeftWidth = bestX ? '2px' : '0';
       guide.style.borderTopWidth = bestY ? '2px' : '0';
     }
@@ -1937,8 +2246,15 @@ function snapDrag(x, y, el) {
 
 function finishDesignerDrag() {
   if (!_designerDrag) return;
-  const left = parseFloat(_designerDrag.info.el.style.left || '0') || 0;
-  const top = parseFloat(_designerDrag.info.el.style.top || '0') || 0;
+  if (_designerDrag.frame) cancelAnimationFrame(_designerDrag.frame);
+  applyDesignerDragFrame();
+  const left = Number.isFinite(_designerDrag.currentX) ? _designerDrag.currentX : _designerDrag.startLeft;
+  const top = Number.isFinite(_designerDrag.currentY) ? _designerDrag.currentY : _designerDrag.startTop;
+  _designerDrag.info.el.style.transform = '';
+  _designerDrag.info.el.style.willChange = '';
+  _designerDrag.info.el.style.position = 'relative';
+  _designerDrag.info.el.style.left = left + 'px';
+  _designerDrag.info.el.style.top = top + 'px';
   const zone = getZoneById(_selectedZoneId);
   if (zone && _selectedElement) {
     const fmt = getZoneElementFmt(zone, _selectedElement.elementKey);

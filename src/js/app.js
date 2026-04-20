@@ -19,11 +19,23 @@ function handleSettingsAnchorClick(e) {
   if (target) target.scrollIntoView({ behavior: 'smooth' });
 }
 
+function syncTabState(activeBtn) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    const isActive = btn === activeBtn;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', String(isActive));
+    btn.tabIndex = isActive ? 0 : -1;
+  });
+
+  document.querySelectorAll('.app-page').forEach(panel => {
+    const isActive = panel.id === activeBtn?.dataset.tab;
+    panel.classList.toggle('active', isActive);
+    panel.hidden = !isActive;
+  });
+}
+
 function handleTabClick(btn) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.app-page').forEach(p => p.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById(btn.dataset.tab).classList.add('active');
+  syncTabState(btn);
   if (btn.dataset.tab === 'page-format') {
     renderFormatPage();
   } else if (btn.dataset.tab === 'page-templates') {
@@ -37,6 +49,44 @@ function handleTabClick(btn) {
 function openTabById(tabId) {
   const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
   if (btn) handleTabClick(btn);
+}
+
+function initTabSemantics() {
+  const tabBar = document.querySelector('.tab-bar');
+  const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+  if (!tabBar || tabs.length === 0) return;
+
+  tabBar.setAttribute('role', 'tablist');
+  tabBar.setAttribute('aria-label', 'Application sections');
+
+  tabs.forEach((btn, idx) => {
+    const panel = document.getElementById(btn.dataset.tab);
+    const tabId = btn.id || `app-tab-${idx}`;
+    btn.id = tabId;
+    btn.type = 'button';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('aria-controls', btn.dataset.tab);
+
+    if (panel) {
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', tabId);
+      panel.tabIndex = 0;
+    }
+
+    btn.addEventListener('keydown', e => {
+      let nextIdx = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') nextIdx = (idx + 1) % tabs.length;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') nextIdx = (idx - 1 + tabs.length) % tabs.length;
+      if (e.key === 'Home') nextIdx = 0;
+      if (e.key === 'End') nextIdx = tabs.length - 1;
+      if (nextIdx < 0) return;
+      e.preventDefault();
+      tabs[nextIdx].focus();
+      handleTabClick(tabs[nextIdx]);
+    });
+  });
+
+  syncTabState(document.querySelector('.tab-btn.active') || tabs[0]);
 }
 
 function handleCalSettingsSave() {
@@ -221,6 +271,7 @@ function initAppShell() {
   document.getElementById('doc-page-size-sel').addEventListener('change', handlePageSizeChange);
   document.getElementById('fmt-filter').addEventListener('input', handleFmtFilterInput);
   document.querySelector('.stg-anchor-nav').addEventListener('click', handleSettingsAnchorClick);
+  initTabSemantics();
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => handleTabClick(btn));
   });

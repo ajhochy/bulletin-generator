@@ -601,9 +601,9 @@
 <!-- ═══ PAGE: Templates ══════════════════════════════════════════════════════ -->
 <div class="app-page" id="page-templates" style="overflow-y:auto;">
   <div class="max-w-5xl mx-auto px-4 py-6">
-    <div class="flex items-center justify-between mb-2">
+    <div class="tpl-page-header flex items-center justify-between mb-2">
       <h2 class="text-lg font-bold">Templates</h2>
-      <div class="flex gap-2">
+      <div class="tpl-page-actions flex gap-2">
         <button class="btn btn-ghost btn-sm" id="tpl-fonts-btn">Fonts…</button>
         <button class="btn btn-ghost btn-sm" id="tpl-import-btn">Import…</button>
         <button class="btn btn-primary btn-sm" id="tpl-new-btn">+ New Template</button>
@@ -621,7 +621,7 @@
   <div id="tpl-designer-overlay" style="display:none; position:fixed; inset:0; z-index:200; background:var(--base-100,#fff); flex-direction:column;">
     <div class="flex items-center gap-3 px-4 py-2 border-b bg-base-200" style="flex-shrink:0;">
       <button class="btn btn-ghost btn-sm" id="tpl-designer-back">← Back</button>
-      <input class="input input-bordered input-sm flex-1 max-w-xs font-medium" id="tpl-designer-name" type="text" placeholder="Template name…">
+      <input class="input input-bordered input-sm flex-1 max-w-xs font-medium" id="tpl-designer-name" type="text" placeholder="Template name…" aria-label="Template name">
       <div class="flex gap-2 ml-auto">
         <button class="btn btn-ghost btn-sm" id="tpl-designer-export">Export</button>
         <button class="btn btn-ghost btn-sm" id="tpl-designer-save-as">Save As…</button>
@@ -637,7 +637,7 @@
   </div>
 
   <!-- Apply-to-project dialog (modal) -->
-  <div id="tpl-apply-dialog" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
+  <div id="tpl-apply-dialog" role="dialog" aria-modal="true" aria-labelledby="tpl-apply-dialog-msg" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
     <div class="bg-base-100 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
       <div class="text-base font-medium mb-4" id="tpl-apply-dialog-msg">Apply this template to the current project?</div>
       <div class="flex gap-2 justify-end">
@@ -653,7 +653,7 @@
   <div class="modal-box max-w-2xl p-0 overflow-hidden">
     <div class="flex items-center justify-between px-5 py-4 border-b border-base-300 bg-base-200">
       <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
+      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close" aria-label="Close dialog">✕</button>
     </div>
     <div class="p-5 max-h-[60vh] overflow-y-auto" id="irm-body">
       <!-- populated by JS -->
@@ -670,7 +670,7 @@
   <div class="modal-box max-w-md">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-base">ProPresenter Import (Beta)</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close">✕</button>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close" aria-label="Close dialog">✕</button>
     </div>
     <div class="text-sm leading-relaxed space-y-2">
       <p>This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
@@ -688,7 +688,7 @@
   <div class="modal-box max-w-lg">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-base">Import from ProPresenter</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close">✕</button>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close" aria-label="Close dialog">✕</button>
     </div>
     <div class="py-2" id="pro-import-body">
       <!-- populated by JS -->
@@ -705,7 +705,7 @@
   <div class="modal-box max-w-xl">
     <div class="flex items-center justify-between mb-3">
       <h3 class="font-semibold text-base">Preview Import Results</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close">✕</button>
+      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close" aria-label="Close dialog">✕</button>
     </div>
     <div class="py-2 max-h-[60vh] overflow-y-auto" id="pro-preview-body">
       <!-- populated by JS -->
@@ -721,78 +721,6 @@
   <form method="dialog" class="modal-backdrop"><button>close</button></form>
 </dialog>
 
-<!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
-<dialog id="import-review-modal" class="modal">
-  <div class="modal-box max-w-2xl p-0 overflow-hidden">
-    <div class="flex items-center justify-between px-5 py-4 border-b border-base-300 bg-base-200">
-      <h3 class="font-semibold text-base" id="irm-title">Review Imported Songs</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="irm-close-btn" title="Close">✕</button>
-    </div>
-    <div class="p-5 max-h-[60vh] overflow-y-auto" id="irm-body">
-      <!-- populated by JS -->
-    </div>
-    <div class="modal-action px-5 py-4 mt-0 border-t border-base-300 bg-base-200">
-      <button class="btn btn-ghost btn-sm" id="irm-cancel-btn">Skip All</button>
-      <button class="btn btn-primary btn-sm" id="irm-apply-btn">Apply &amp; Continue</button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<dialog id="pro-disclaimer-modal" class="modal">
-  <div class="modal-box max-w-md">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="font-semibold text-base">ProPresenter Import (Beta)</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-disclaimer-close-btn" title="Close">✕</button>
-    </div>
-    <div class="text-sm leading-relaxed space-y-2">
-      <p>This feature is still in development. Import results may vary&nbsp;&mdash; some songs may have incomplete lyrics or missing section headings.</p>
-      <p>You will be able to preview a sample of the results before anything is saved.</p>
-    </div>
-    <div class="modal-action">
-      <button class="btn btn-ghost btn-sm" id="pro-disclaimer-cancel-btn">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="pro-disclaimer-continue-btn">Continue</button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<dialog id="pro-import-modal" class="modal">
-  <div class="modal-box max-w-lg">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="font-semibold text-base">Import from ProPresenter</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-import-close-btn" title="Close">✕</button>
-    </div>
-    <div class="py-2" id="pro-import-body">
-      <!-- populated by JS -->
-    </div>
-    <div class="modal-action">
-      <button class="btn btn-ghost btn-sm" id="pro-import-cancel-btn">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="pro-import-confirm-btn">Import Songs</button>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
-
-<dialog id="pro-preview-modal" class="modal">
-  <div class="modal-box max-w-xl">
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="font-semibold text-base">Preview Import Results</h3>
-      <button class="btn btn-ghost btn-sm btn-square" id="pro-preview-close-btn" title="Close">✕</button>
-    </div>
-    <div class="py-2 max-h-[60vh] overflow-y-auto" id="pro-preview-body">
-      <!-- populated by JS -->
-    </div>
-    <div class="modal-action justify-between items-center">
-      <span class="text-xs text-base-content/50" id="pro-preview-hint">Scroll to review sample imports</span>
-      <div class="flex gap-2">
-        <button class="btn btn-ghost btn-sm" id="pro-preview-cancel-btn">Cancel Import</button>
-        <button class="btn btn-primary btn-sm" id="pro-preview-continue-btn">Looks Good — Continue</button>
-      </div>
-    </div>
-  </div>
-  <form method="dialog" class="modal-backdrop"><button>close</button></form>
-</dialog>
 <div id="toast-container" class="toast toast-top toast-end z-50"></div>
 
 

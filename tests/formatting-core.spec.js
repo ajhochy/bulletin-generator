@@ -24,9 +24,11 @@ describe('formatting core', () => {
       titleAlign: 'center',
       titleSize: '',
       titleColor: '',
+      titleFont: '',
       bodyAlign: '',
       bodySize: 'lg',
       bodyColor: '#333',
+      bodyFont: '',
     });
   });
 
@@ -63,9 +65,11 @@ describe('formatting core', () => {
       titleAlign: 'right',
       titleSize: '',
       titleColor: '#123456',
+      titleFont: '',
       bodyAlign: '',
       bodySize: 'sm',
       bodyColor: '',
+      bodyFont: '',
     });
 
     expect(getEffectiveFmt(typeFormats, item, template, 'stanzaText')).toMatchObject({
