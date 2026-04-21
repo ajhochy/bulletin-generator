@@ -1,7 +1,7 @@
 FROM node:20-slim AS frontend-build
 
 WORKDIR /frontend
-COPY package.json package-lock.json vite.config.js vitest.setup.js ./
+COPY package.json package-lock.json vite.config.js vitest.setup.js tailwind.config.js ./
 COPY index.html ./
 COPY src ./src
 RUN npm ci && npm run css:build && npm run build
