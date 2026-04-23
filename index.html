@@ -35,12 +35,47 @@
 
 <!-- ═══ PAGE: Booklet Editor ════════════════════════════════════════════════ -->
 <div class="app-page active" id="page-editor" style="flex-direction:column; height:calc(100vh - 88px);">
-<main>
-  <aside>
 
-    <!-- Import from Planning Center -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="pco-section">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Import from Planning Center</div>
+<!-- ═══ Editor Toolbar ══════════════════════════════════════════════════════ -->
+<div id="editor-toolbar" class="flex items-center gap-1 px-2 border-b border-base-300 bg-base-100 flex-shrink-0" style="min-height:38px;">
+
+  <!-- File dropdown -->
+  <details class="dropdown" id="editor-toolbar-file">
+    <summary class="btn btn-ghost btn-sm gap-1 font-medium">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.777.416L8 13.101l-5.223 2.815A.5.5 0 0 1 2 15.5V2zm2-1a1 1 0 0 0-1 1v12.566l4.723-2.482a.5.5 0 0 1 .554 0L13 14.566V2a1 1 0 0 0-1-1H4z"/></svg>
+      File
+      <span id="editor-file-dirty-dot" class="w-1.5 h-1.5 rounded-full bg-warning" style="display:none;" title="Unsaved changes or conflict"></span>
+    </summary>
+    <div id="editor-file-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-2 w-64">
+      <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
+      <div class="field-row form-control mb-1">
+        <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
+        <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
+      </div>
+      <div class="projects-actions grid grid-cols-2 gap-1 mt-2">
+        <button class="btn btn-xs btn-primary" id="project-save-btn" type="button">Save</button>
+        <button class="btn btn-xs btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
+        <button class="btn btn-xs btn-ghost" id="project-new-btn" type="button">New</button>
+        <button class="btn btn-xs btn-error" id="project-delete-btn" type="button">Delete</button>
+      </div>
+      <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
+      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
+      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
+      <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
+      <select id="project-select" style="display:none;">
+        <option value="__draft__">Unsaved Draft</option>
+      </select>
+    </div>
+  </details>
+
+  <!-- Sync dropdown -->
+  <details class="dropdown" id="editor-toolbar-sync">
+    <summary class="btn btn-ghost btn-sm gap-1 font-medium">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/></svg>
+      Sync
+    </summary>
+    <div id="editor-sync-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-3 w-80 max-h-[520px] overflow-y-auto">
+      <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Planning Center Sync</div>
 
       <!-- Credentials view -->
       <div id="pco-creds-view">
@@ -91,76 +126,70 @@
         </div>
       </div>
     </div>
+  </details>
 
-    <!-- File (project management) -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
+  <!-- Document dropdown -->
+  <details class="dropdown" id="editor-toolbar-document">
+    <summary class="btn btn-ghost btn-sm gap-1 font-medium">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2L9.5 1.5z"/></svg>
+      Document
+    </summary>
+    <div id="editor-document-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-3 w-80 max-h-[580px] overflow-y-auto">
+      <!-- Service Details -->
+      <div class="mb-3 pb-3 border-b border-base-300">
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Service Details</div>
+        <div class="field-row form-control mb-1">
+          <label class="label py-0.5" for="svc-title"><span class="label-text text-xs">Service Title</span></label>
+          <input type="text" class="input input-bordered input-sm w-full" id="svc-title" placeholder="e.g. Morning Worship" />
+        </div>
+        <div class="field-row form-control mb-1">
+          <label class="label py-0.5" for="svc-date"><span class="label-text text-xs">Date</span></label>
+          <input type="text" class="input input-bordered input-sm w-full" id="svc-date" placeholder="e.g. January 5, 2025" />
+        </div>
       </div>
-      <div class="projects-actions flex flex-wrap gap-1 mt-2">
-        <button class="btn btn-sm btn-primary" id="project-save-btn" type="button">Save</button>
-        <button class="btn btn-sm btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
-        <button class="btn btn-sm btn-ghost" id="project-new-btn" type="button">New</button>
-        <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
-      </div>
-      <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
-      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
-      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
-      <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
-      <!-- Hidden select kept for internal JS state tracking -->
-      <select id="project-select" style="display:none;">
-        <option value="__draft__">Unsaved Draft</option>
-      </select>
-    </div>
 
-    <!-- Service Details -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Service Details</div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="svc-title"><span class="label-text text-xs">Service Title</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="svc-title" placeholder="e.g. Morning Worship" />
+      <!-- Cover Image -->
+      <div class="mb-3 pb-3 border-b border-base-300">
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
+        <div class="img-zone border-2 border-dashed border-base-300 rounded-lg bg-base-200 p-3 text-center cursor-pointer text-sm text-base-content/60" id="cover-img-zone" role="button" tabindex="0">
+          <input type="file" id="cover-img-input" accept="image/*" class="hidden" />
+          <div id="cover-img-label">Click to select an image</div>
+        </div>
+        <div class="img-preview-wrap mt-2 flex flex-col items-start gap-1 rounded-lg border border-base-300 bg-base-200 p-2" id="cover-img-preview-wrap" style="display:none;">
+          <img class="img-preview-thumb max-h-20 max-w-full object-contain rounded" id="cover-img-thumb" src="" alt="" />
+          <span class="img-preview-name text-xs text-base-content/60 w-full truncate" id="cover-img-name"></span>
+          <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
+        </div>
       </div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="svc-date"><span class="label-text text-xs">Date</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="svc-date" placeholder="e.g. January 5, 2025" />
-      </div>
-    </div>
 
-    <!-- Cover Image -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
-      <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
-      <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
-        <input type="file" id="cover-img-input" accept="image/*" />
-        <div id="cover-img-label">Click to select an image</div>
-      </div>
-      <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
-        <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
-        <span class="img-preview-name" id="cover-img-name"></span>
-        <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
-      </div>
-    </div>
-
-    <!-- Options -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Options</div>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cover" checked /> Include cover page</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-footer" /> Include page footer</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-announcements" checked /> Include announcements</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cal" checked /> Include "This Week" calendar page</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-staff" checked /> Include staff &amp; contact page</label>
-      <div class="form-control mt-2">
-        <label class="label py-0.5"><span class="label-text text-xs">Booklet size target</span></label>
-        <select class="select select-bordered select-sm w-full" id="opt-booklet-size">
-          <option value="auto">Auto (no target)</option>
-          <option value="8">8 pages</option>
-          <option value="12">12 pages</option>
-        </select>
+      <!-- Options -->
+      <div>
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Options</div>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cover" checked /> Include cover page</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-footer" /> Include page footer</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-announcements" checked /> Include announcements</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cal" checked /> Include "This Week" calendar page</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-staff" checked /> Include staff &amp; contact page</label>
+        <div class="form-control mt-2">
+          <label class="label py-0.5"><span class="label-text text-xs">Booklet size target</span></label>
+          <select class="select select-bordered select-sm w-full" id="opt-booklet-size">
+            <option value="auto">Auto (no target)</option>
+            <option value="8">8 pages</option>
+            <option value="12">12 pages</option>
+          </select>
+        </div>
       </div>
     </div>
+  </details>
+
+  <div class="flex-1"></div>
+</div>
+<!-- ════════════════════════════════════════════════════════════════════════ -->
+
+<main>
+  <aside>
 
     <!-- Welcome -->
     <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-welcome">

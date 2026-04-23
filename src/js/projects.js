@@ -1,3 +1,14 @@
+// ─── File dirty-dot helper ────────────────────────────────────────────────────
+function _updateFileDirtyDot() {
+  const dot = document.getElementById('editor-file-dirty-dot');
+  if (!dot) return;
+  const stale = document.getElementById('stale-banner');
+  const conflict = document.getElementById('conflict-banner');
+  const active = (stale && stale.style.display !== 'none' && stale.textContent.trim()) ||
+                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim());
+  dot.style.display = active ? 'inline-block' : 'none';
+}
+
 // ─── Sync diff helper ─────────────────────────────────────────────────────────
 // Builds a human-readable diff message for confirm() before overwriting local data.
 function buildSyncDiffMessage(incomingProject) {
@@ -175,6 +186,7 @@ async function saveProjectToServer(project) {
     if (stored && saveState.storedRevision !== null) stored.revision = saveState.storedRevision;
     if (saveState.hideStaleBanner) document.getElementById('stale-banner').style.display = 'none';
     if (saveState.hideConflictBanner) document.getElementById('conflict-banner').style.display = 'none';
+    _updateFileDirtyDot();
   } catch (err) {
     const failure = deriveProjectSaveFailureCore({
       errorStatus: err.status,
@@ -203,6 +215,7 @@ async function saveProjectToServer(project) {
         }).catch(() => loadProjectById(project.id));
       });
       banner.appendChild(reloadLink);
+      _updateFileDirtyDot();
     } else {
       setStatus(failure.message, 'error');
     }
@@ -439,6 +452,7 @@ function loadProjectById(id) {
   _loadedRevision = typeof project.revision === 'number' ? project.revision : null;
   document.getElementById('stale-banner').style.display = 'none';
   document.getElementById('conflict-banner').style.display = 'none';
+  _updateFileDirtyDot();
   applyProjectState(project.state || {});
   bulletinTitleInput.value = project.name;
   updateSectionPreviews();
@@ -460,6 +474,7 @@ function startStaleCheck() {
       const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
       if (!serverProject) {
         staleBanner.style.display = 'none';
+        _updateFileDirtyDot();
         return;
       }
       // Update local copy with latest metadata
@@ -485,8 +500,10 @@ function startStaleCheck() {
           }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
         staleBanner.style.display = '';
+        _updateFileDirtyDot();
       } else {
         staleBanner.style.display = 'none';
+        _updateFileDirtyDot();
       }
     } catch (e) { /* ignore poll errors */ }
   }, 30000);
@@ -790,6 +807,7 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const pdfMuted = cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted;
   const pdfAccent = cssVars.accent || DEFAULT_TEMPLATE_CSS_VARS.accent;
   const pdfBorder = cssVars.border || DEFAULT_TEMPLATE_CSS_VARS.border;
+  const pdfBg = cssVars.background || '#ffffff';
   return `<!DOCTYPE html>
 <html lang="en" style="--doc-page-w:${w}in;--doc-page-h:${h}in;"><head>
 <meta charset="UTF-8">
@@ -804,6 +822,14 @@ ${css}
   --muted: ${pdfMuted};
   --accent: ${pdfAccent};
   --border: ${pdfBorder};
+  --ui-font: ${pdfFontSans};
+  --ui-ink: ${pdfPrimary};
+  --ui-muted: ${pdfMuted};
+  --ui-accent: ${pdfAccent};
+  --ui-border: ${pdfBorder};
+  --ui-bg: ${pdfBg};
+  --ui-surface: ${pdfBg};
+  --ui-surface-2: ${pdfBg};
 }
 @page { size: ${w}in ${h}in; margin: 0; }
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
@@ -893,12 +919,21 @@ async function buildProjectPdfBlob(id) {
   const prevState = collectCurrentProjectState();
   const prevStaffLogoUrl = staffLogoUrl;
   let pagesHtml = '';
+  let html = '';
+  let pageDims = null;
+  let filename = '';
   applyingProjectState = true;
   try {
     applyProjectStateForExport(project.state || {});
     renderPreview();
     const pageEls = [...previewPane.querySelectorAll('.booklet-page')];
     pagesHtml = pageEls.map(el => el.outerHTML).join('\n');
+    if (pagesHtml) {
+      pageDims = getPageDims();
+      const sizeTag = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
+      filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
+      html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+    }
   } finally {
     applyProjectStateForExport(prevState);
     staffLogoUrl = prevStaffLogoUrl;
@@ -911,15 +946,12 @@ async function buildProjectPdfBlob(id) {
     return null;
   }
 
-  const sizeTag  = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
-  const filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
-  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
   const resp = await fetch('/api/pdf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
+    body: JSON.stringify({ html, filename, pageWidth: pageDims.w, pageHeight: pageDims.h }),
   });
 
   if (!resp.ok) {

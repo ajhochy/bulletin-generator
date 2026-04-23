@@ -89,6 +89,34 @@ function initTabSemantics() {
   syncTabState(document.querySelector('.tab-btn.active') || tabs[0]);
 }
 
+function initEditorToolbarMenus() {
+  const toolbarMenus = Array.from(document.querySelectorAll('#editor-toolbar > details.dropdown'));
+  if (toolbarMenus.length === 0) return;
+
+  toolbarMenus.forEach(menu => {
+    menu.addEventListener('toggle', () => {
+      if (!menu.open) return;
+      toolbarMenus.forEach(otherMenu => {
+        if (otherMenu !== menu) otherMenu.open = false;
+      });
+    });
+  });
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('#editor-toolbar > details.dropdown')) return;
+    toolbarMenus.forEach(menu => {
+      menu.open = false;
+    });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    toolbarMenus.forEach(menu => {
+      menu.open = false;
+    });
+  });
+}
+
 function handleCalSettingsSave() {
   const urlsRaw = document.getElementById('cal-urls-input').value.trim();
   const urls = urlsRaw.split('\n').map(s => s.trim()).filter(Boolean);
@@ -275,6 +303,7 @@ function initAppShell() {
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => handleTabClick(btn));
   });
+  initEditorToolbarMenus();
 
   document.getElementById('cal-refresh-btn').addEventListener('click', () => calFetchAll(true));
   document.getElementById('cal-settings-save-btn').addEventListener('click', handleCalSettingsSave);

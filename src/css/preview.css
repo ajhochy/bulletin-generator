@@ -128,12 +128,16 @@
     }
     .tpl-inline-row .item-heading.has-rule {
       flex: 1 1 auto;
+      min-width: 0;
       margin-bottom: 0;
     }
     .tpl-inline-row .song-copyright {
-      flex: 0 0 auto;
+      flex: 0 1 auto;
+      min-width: 0;
       margin-top: 0;
-      white-space: nowrap;
+      text-align: right;
+      overflow-wrap: anywhere;
+      white-space: normal;
     }
     #tpl-live-canvas .tpl-selectable-element {
       position: relative;
