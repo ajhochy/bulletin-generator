@@ -136,14 +136,41 @@ body {
 /* ─── Editor Toolbar ─────────────────────────────────────────────────────────
    Horizontal dropdown toolbar inside #page-editor. Auto-hides with the tab.
    ────────────────────────────────────────────────────────────────────────── */
+#editor-toolbar {
+  overflow: visible;
+  position: relative;
+  z-index: 60;
+}
 #editor-toolbar .dropdown-content {
-  z-index: 50;
+  z-index: 70;
+}
+#editor-file-panel {
+  width: 16rem;
+}
+#editor-file-panel .projects-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+}
+#editor-file-panel .projects-actions .btn {
+  min-height: 1.55rem;
+  height: 1.55rem;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  font-size: 0.64rem;
+  line-height: 1;
+  white-space: nowrap;
 }
 #editor-toolbar details > summary {
   list-style: none;
 }
 #editor-toolbar details > summary::-webkit-details-marker {
   display: none;
+}
+/* Allow dropdown panels to escape the app-page overflow:hidden clip boundary.
+   main's own overflow:hidden still clips the editor/preview area correctly. */
+#page-editor {
+  overflow: visible;
 }
 .tab-btn.active {
   color: var(--ui-accent) !important;

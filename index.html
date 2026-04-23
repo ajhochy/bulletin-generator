@@ -46,17 +46,17 @@
       File
       <span id="editor-file-dirty-dot" class="w-1.5 h-1.5 rounded-full bg-warning" style="display:none;" title="Unsaved changes or conflict"></span>
     </summary>
-    <div id="editor-file-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-3 w-80">
+    <div id="editor-file-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-2 w-64">
       <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
       <div class="field-row form-control mb-1">
         <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
         <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
       </div>
-      <div class="projects-actions flex flex-wrap gap-1 mt-2">
-        <button class="btn btn-sm btn-primary" id="project-save-btn" type="button">Save</button>
-        <button class="btn btn-sm btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
-        <button class="btn btn-sm btn-ghost" id="project-new-btn" type="button">New</button>
-        <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
+      <div class="projects-actions grid grid-cols-2 gap-1 mt-2">
+        <button class="btn btn-xs btn-primary" id="project-save-btn" type="button">Save</button>
+        <button class="btn btn-xs btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
+        <button class="btn btn-xs btn-ghost" id="project-new-btn" type="button">New</button>
+        <button class="btn btn-xs btn-error" id="project-delete-btn" type="button">Delete</button>
       </div>
       <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
       <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
@@ -152,13 +152,13 @@
       <div class="mb-3 pb-3 border-b border-base-300">
         <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
         <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
-        <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
-          <input type="file" id="cover-img-input" accept="image/*" />
+        <div class="img-zone border-2 border-dashed border-base-300 rounded-lg bg-base-200 p-3 text-center cursor-pointer text-sm text-base-content/60" id="cover-img-zone" role="button" tabindex="0">
+          <input type="file" id="cover-img-input" accept="image/*" class="hidden" />
           <div id="cover-img-label">Click to select an image</div>
         </div>
-        <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
-          <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
-          <span class="img-preview-name" id="cover-img-name"></span>
+        <div class="img-preview-wrap mt-2 flex items-center gap-2 rounded-lg border border-base-300 bg-base-200 p-2" id="cover-img-preview-wrap" style="display:none;">
+          <img class="img-preview-thumb max-h-12 max-w-full object-contain rounded" id="cover-img-thumb" src="" alt="" />
+          <span class="img-preview-name text-xs text-base-content/60 flex-1 truncate" id="cover-img-name"></span>
           <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
         </div>
       </div>
