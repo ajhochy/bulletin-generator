@@ -1710,6 +1710,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "--disable-dev-shm-usage",    # avoids /dev/shm size issues in containers
                     "--run-all-compositor-stages-before-draw",
                     f"--print-to-pdf={pdf_path}",
+                    "--no-pdf-header-footer",
                     "--print-to-pdf-no-header",
                     f"--paper-width={page_w}",
                     f"--paper-height={page_h}",

@@ -807,6 +807,7 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const pdfMuted = cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted;
   const pdfAccent = cssVars.accent || DEFAULT_TEMPLATE_CSS_VARS.accent;
   const pdfBorder = cssVars.border || DEFAULT_TEMPLATE_CSS_VARS.border;
+  const pdfBg = cssVars.background || '#ffffff';
   return `<!DOCTYPE html>
 <html lang="en" style="--doc-page-w:${w}in;--doc-page-h:${h}in;"><head>
 <meta charset="UTF-8">
@@ -821,6 +822,14 @@ ${css}
   --muted: ${pdfMuted};
   --accent: ${pdfAccent};
   --border: ${pdfBorder};
+  --ui-font: ${pdfFontSans};
+  --ui-ink: ${pdfPrimary};
+  --ui-muted: ${pdfMuted};
+  --ui-accent: ${pdfAccent};
+  --ui-border: ${pdfBorder};
+  --ui-bg: ${pdfBg};
+  --ui-surface: ${pdfBg};
+  --ui-surface-2: ${pdfBg};
 }
 @page { size: ${w}in ${h}in; margin: 0; }
 body { margin: 0; padding: 0; background: white !important; display: block !important; }
@@ -910,12 +919,21 @@ async function buildProjectPdfBlob(id) {
   const prevState = collectCurrentProjectState();
   const prevStaffLogoUrl = staffLogoUrl;
   let pagesHtml = '';
+  let html = '';
+  let pageDims = null;
+  let filename = '';
   applyingProjectState = true;
   try {
     applyProjectStateForExport(project.state || {});
     renderPreview();
     const pageEls = [...previewPane.querySelectorAll('.booklet-page')];
     pagesHtml = pageEls.map(el => el.outerHTML).join('\n');
+    if (pagesHtml) {
+      pageDims = getPageDims();
+      const sizeTag = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
+      filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
+      html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+    }
   } finally {
     applyProjectStateForExport(prevState);
     staffLogoUrl = prevStaffLogoUrl;
@@ -928,15 +946,12 @@ async function buildProjectPdfBlob(id) {
     return null;
   }
 
-  const sizeTag  = (activeDocTemplate.pageSize || '5.5x8.5').replace('x', 'x');
-  const filename = (project.name || 'Bulletin') + ' - ' + sizeTag + '.pdf';
-  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
   const resp = await fetch('/api/pdf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
+    body: JSON.stringify({ html, filename, pageWidth: pageDims.w, pageHeight: pageDims.h }),
   });
 
   if (!resp.ok) {
