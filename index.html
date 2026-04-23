@@ -47,7 +47,24 @@
       <span id="editor-file-dirty-dot" class="w-1.5 h-1.5 rounded-full bg-warning" style="display:none;" title="Unsaved changes or conflict"></span>
     </summary>
     <div id="editor-file-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-3 w-80">
-      <!-- populated in issue #185 -->
+      <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
+      <div class="field-row form-control mb-1">
+        <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
+        <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
+      </div>
+      <div class="projects-actions flex flex-wrap gap-1 mt-2">
+        <button class="btn btn-sm btn-primary" id="project-save-btn" type="button">Save</button>
+        <button class="btn btn-sm btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
+        <button class="btn btn-sm btn-ghost" id="project-new-btn" type="button">New</button>
+        <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
+      </div>
+      <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
+      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
+      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
+      <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
+      <select id="project-select" style="display:none;">
+        <option value="__draft__">Unsaved Draft</option>
+      </select>
     </div>
   </details>
 
@@ -132,29 +149,6 @@
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- File (project management) -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">File</div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="bulletin-title"><span class="label-text text-xs">Bulletin Title</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="bulletin-title" placeholder="e.g. March 22, 2026 Bulletin" />
-      </div>
-      <div class="projects-actions flex flex-wrap gap-1 mt-2">
-        <button class="btn btn-sm btn-primary" id="project-save-btn" type="button">Save</button>
-        <button class="btn btn-sm btn-ghost" id="project-save-as-btn" type="button">Save New Version</button>
-        <button class="btn btn-sm btn-ghost" id="project-new-btn" type="button">New</button>
-        <button class="btn btn-sm btn-error" id="project-delete-btn" type="button">Delete</button>
-      </div>
-      <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
-      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
-      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
-      <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
-      <!-- Hidden select kept for internal JS state tracking -->
-      <select id="project-select" style="display:none;">
-        <option value="__draft__">Unsaved Draft</option>
-      </select>
     </div>
 
     <!-- Service Details -->

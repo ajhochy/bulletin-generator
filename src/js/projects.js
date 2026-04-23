@@ -1,3 +1,14 @@
+// ─── File dirty-dot helper ────────────────────────────────────────────────────
+function _updateFileDirtyDot() {
+  const dot = document.getElementById('editor-file-dirty-dot');
+  if (!dot) return;
+  const stale = document.getElementById('stale-banner');
+  const conflict = document.getElementById('conflict-banner');
+  const active = (stale && stale.style.display !== 'none' && stale.textContent.trim()) ||
+                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim());
+  dot.style.display = active ? 'inline-block' : 'none';
+}
+
 // ─── Sync diff helper ─────────────────────────────────────────────────────────
 // Builds a human-readable diff message for confirm() before overwriting local data.
 function buildSyncDiffMessage(incomingProject) {
@@ -175,6 +186,7 @@ async function saveProjectToServer(project) {
     if (stored && saveState.storedRevision !== null) stored.revision = saveState.storedRevision;
     if (saveState.hideStaleBanner) document.getElementById('stale-banner').style.display = 'none';
     if (saveState.hideConflictBanner) document.getElementById('conflict-banner').style.display = 'none';
+    _updateFileDirtyDot();
   } catch (err) {
     const failure = deriveProjectSaveFailureCore({
       errorStatus: err.status,
@@ -203,6 +215,7 @@ async function saveProjectToServer(project) {
         }).catch(() => loadProjectById(project.id));
       });
       banner.appendChild(reloadLink);
+      _updateFileDirtyDot();
     } else {
       setStatus(failure.message, 'error');
     }
@@ -439,6 +452,7 @@ function loadProjectById(id) {
   _loadedRevision = typeof project.revision === 'number' ? project.revision : null;
   document.getElementById('stale-banner').style.display = 'none';
   document.getElementById('conflict-banner').style.display = 'none';
+  _updateFileDirtyDot();
   applyProjectState(project.state || {});
   bulletinTitleInput.value = project.name;
   updateSectionPreviews();
@@ -460,6 +474,7 @@ function startStaleCheck() {
       const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
       if (!serverProject) {
         staleBanner.style.display = 'none';
+        _updateFileDirtyDot();
         return;
       }
       // Update local copy with latest metadata
@@ -485,8 +500,10 @@ function startStaleCheck() {
           }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
         staleBanner.style.display = '';
+        _updateFileDirtyDot();
       } else {
         staleBanner.style.display = 'none';
+        _updateFileDirtyDot();
       }
     } catch (e) { /* ignore poll errors */ }
   }, 30000);
