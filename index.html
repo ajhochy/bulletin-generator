@@ -135,7 +135,52 @@
       Document
     </summary>
     <div id="editor-document-panel" class="dropdown-content z-50 bg-base-100 border border-base-300 rounded-lg shadow-lg mt-1 p-3 w-80 max-h-[580px] overflow-y-auto">
-      <!-- populated in issue #187 -->
+      <!-- Service Details -->
+      <div class="mb-3 pb-3 border-b border-base-300">
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Service Details</div>
+        <div class="field-row form-control mb-1">
+          <label class="label py-0.5" for="svc-title"><span class="label-text text-xs">Service Title</span></label>
+          <input type="text" class="input input-bordered input-sm w-full" id="svc-title" placeholder="e.g. Morning Worship" />
+        </div>
+        <div class="field-row form-control mb-1">
+          <label class="label py-0.5" for="svc-date"><span class="label-text text-xs">Date</span></label>
+          <input type="text" class="input input-bordered input-sm w-full" id="svc-date" placeholder="e.g. January 5, 2025" />
+        </div>
+      </div>
+
+      <!-- Cover Image -->
+      <div class="mb-3 pb-3 border-b border-base-300">
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
+        <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
+        <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
+          <input type="file" id="cover-img-input" accept="image/*" />
+          <div id="cover-img-label">Click to select an image</div>
+        </div>
+        <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
+          <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
+          <span class="img-preview-name" id="cover-img-name"></span>
+          <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div>
+        <div class="text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Options</div>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cover" checked /> Include cover page</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-footer" /> Include page footer</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-announcements" checked /> Include announcements</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cal" checked /> Include "This Week" calendar page</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
+        <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-staff" checked /> Include staff &amp; contact page</label>
+        <div class="form-control mt-2">
+          <label class="label py-0.5"><span class="label-text text-xs">Booklet size target</span></label>
+          <select class="select select-bordered select-sm w-full" id="opt-booklet-size">
+            <option value="auto">Auto (no target)</option>
+            <option value="8">8 pages</option>
+            <option value="12">12 pages</option>
+          </select>
+        </div>
+      </div>
     </div>
   </details>
 
@@ -145,53 +190,6 @@
 
 <main>
   <aside>
-
-    <!-- Service Details -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Service Details</div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="svc-title"><span class="label-text text-xs">Service Title</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="svc-title" placeholder="e.g. Morning Worship" />
-      </div>
-      <div class="field-row form-control mb-1">
-        <label class="label py-0.5" for="svc-date"><span class="label-text text-xs">Date</span></label>
-        <input type="text" class="input input-bordered input-sm w-full" id="svc-date" placeholder="e.g. January 5, 2025" />
-      </div>
-    </div>
-
-    <!-- Cover Image -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Cover Image</div>
-      <p class="section-hint text-xs text-base-content/60 mb-2">Displayed on the cover page in place of the cross symbol.</p>
-      <div class="img-zone" id="cover-img-zone" role="button" tabindex="0">
-        <input type="file" id="cover-img-input" accept="image/*" />
-        <div id="cover-img-label">Click to select an image</div>
-      </div>
-      <div class="img-preview-wrap" id="cover-img-preview-wrap" style="display:none;">
-        <img class="img-preview-thumb" id="cover-img-thumb" src="" alt="" />
-        <span class="img-preview-name" id="cover-img-name"></span>
-        <button class="img-clear-btn btn btn-ghost btn-xs" id="cover-img-clear">Remove</button>
-      </div>
-    </div>
-
-    <!-- Options -->
-    <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3">
-      <div class="section-label text-xs font-bold uppercase tracking-widest text-base-content/50 mb-2">Options</div>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cover" checked /> Include cover page</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-footer" /> Include page footer</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-announcements" checked /> Include announcements</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-cal" checked /> Include "This Week" calendar page</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-volunteers" checked /> Include volunteers / serving schedule</label>
-      <label class="opt-row flex items-center gap-1.5 text-sm mb-1 cursor-pointer"><input type="checkbox" class="checkbox checkbox-xs checkbox-primary" id="opt-staff" checked /> Include staff &amp; contact page</label>
-      <div class="form-control mt-2">
-        <label class="label py-0.5"><span class="label-text text-xs">Booklet size target</span></label>
-        <select class="select select-bordered select-sm w-full" id="opt-booklet-size">
-          <option value="auto">Auto (no target)</option>
-          <option value="8">8 pages</option>
-          <option value="12">12 pages</option>
-        </select>
-      </div>
-    </div>
 
     <!-- Welcome -->
     <div class="panel-section rounded-lg border border-base-300 bg-base-100 mb-2 p-3" id="panel-section-welcome">
