@@ -133,6 +133,18 @@ body {
 .tab-bar-right {
   flex: 0 0 auto;
 }
+/* ─── Editor Toolbar ─────────────────────────────────────────────────────────
+   Horizontal dropdown toolbar inside #page-editor. Auto-hides with the tab.
+   ────────────────────────────────────────────────────────────────────────── */
+#editor-toolbar .dropdown-content {
+  z-index: 50;
+}
+#editor-toolbar details > summary {
+  list-style: none;
+}
+#editor-toolbar details > summary::-webkit-details-marker {
+  display: none;
+}
 .tab-btn.active {
   color: var(--ui-accent) !important;
   border-color: var(--ui-accent) !important;
