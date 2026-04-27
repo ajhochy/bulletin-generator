@@ -180,13 +180,18 @@ Relevant env values:
 
 - [server.py](server.py): local backend, API routes, PDF generation, integration proxying
 - [launcher.py](launcher.py): macOS menu bar app — single-instance management, server lifecycle
-- [worship-booklet.html](worship-booklet.html): main frontend entry point
-- [src/js/](src/js/): frontend JavaScript modules
+- [index.html](index.html): single-page app shell
+- [src/js/main.js](src/js/main.js): JS entry point (module loader, bootstrap)
+- [src/js/app.js](src/js/app.js): tab switching, initialization, event wiring
+- [src/js/templates.js](src/js/templates.js): template designer — built-in templates and CSS variable system
+- [src/js/template-registry.js](src/js/template-registry.js): template registry — apply/manage templates
+- [src/js/modules/](src/js/modules/): extracted testable core modules (calendar, preview, projects, formatting, PCO, text)
+- [src/js/](src/js/): remaining frontend JavaScript modules
 - [src/css/](src/css/): frontend stylesheets
 - [bulletin-generator.spec](bulletin-generator.spec): PyInstaller build config for macOS desktop app
 - [Dockerfile](Dockerfile): container build
 - [docker-compose.yml](docker-compose.yml): local/shared Docker run setup
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): design notes, deployment modes, issue labels
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): deployment mode design notes
 - `data/*.example.json`: safe starter data committed to Git
 - [.env.example](.env.example): starter environment configuration
 
