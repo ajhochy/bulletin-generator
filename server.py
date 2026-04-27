@@ -225,7 +225,7 @@ def _backfill_project_doc_templates():
     return changed
 
 # ── App version and update config ──────────────────────────────────────────────
-APP_VERSION    = os.environ.get("APP_VERSION", "1.12.4").lstrip("v")
+APP_VERSION    = os.environ.get("APP_VERSION", "1.12.5").lstrip("v")
 GITHUB_REPO    = "ajhochy/bulletin-generator"
 # Watchtower HTTP API — internal Docker network only, never exposed externally.
 # Token is a shared default between the app and the Watchtower sidecar in
