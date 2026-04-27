@@ -44,6 +44,10 @@ Typical workflow:
 - song database management
 - PDF generation through headless Chrome/Chromium
 - in-app update system (desktop launcher + Docker Watchtower)
+- template designer with CSS variable-based formatting
+- Tailwind CSS + DaisyUI UI
+- JS test suite (vitest) and Python test suite (pytest)
+- CI pipeline (GitHub Actions) with automated Docker + macOS releases on tag push
 
 ## Deployment modes
 
@@ -76,7 +80,7 @@ cp .env.example .env
 python3 server.py
 ```
 
-Optional frontend verification:
+Install frontend dependencies and run tests:
 
 ```bash
 npm install
@@ -153,6 +157,13 @@ Committed example files are included as safe templates:
 - `data/settings.example.json`
 
 In packaged desktop mode, the server stores writable data in the application support directory on macOS (`~/Library/Application Support/BulletinGenerator/`).
+
+## CI and releases
+
+GitHub Actions runs two workflows:
+
+- **CI** (`ci.yml`): runs on every push and pull request — JS tests (`npm test`), JS build (`npm run build`), and Python tests (`pytest`)
+- **Release** (`release.yml`): triggered by a version tag (`v*`) — builds and pushes a Docker image to GHCR, and builds a signed and notarized macOS `.app` bundle attached to the GitHub Release
 
 ## Integrations
 
