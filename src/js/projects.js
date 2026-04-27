@@ -795,12 +795,29 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const fetched   = await Promise.allSettled(
     linkEls.map(el => fetch(el.href).then(r => r.ok ? r.text() : '').catch(() => ''))
   );
-  // Rewrite absolute-path font URLs (e.g. url(/fonts/cache/...)) to full HTTP URLs so
-  // headless Chrome can fetch them when loading the PDF HTML as file://. Without this,
-  // Chrome resolves /fonts/... as file:///fonts/... which doesn't exist on disk.
-  const origin = window.location.origin;
-  const linkedCss = fetched.map(r => r.status === 'fulfilled' ? r.value : '').join('\n')
-    .replace(/url\((['"]?)\/fonts\//g, `url($1${origin}/fonts/`);
+  const rawLinkedCss = fetched.map(r => r.status === 'fulfilled' ? r.value : '').join('\n');
+
+  // Embed font files as base64 data URIs so headless Chrome (running as file://) needs
+  // no network access for fonts. Absolute-path URLs like /fonts/cache/... resolve to
+  // file:///fonts/... in a file:// context, which doesn't exist on disk.
+  const fontUrlRe = /url\((['"]?)(\/fonts\/[^)'"\s]+)\1\)/g;
+  const fontUrls = [...new Set([...rawLinkedCss.matchAll(fontUrlRe)].map(m => m[2]))];
+  const fontDataMap = {};
+  await Promise.allSettled(fontUrls.map(async path => {
+    try {
+      const resp = await fetch(path);
+      if (!resp.ok) return;
+      const buf  = await resp.arrayBuffer();
+      const b64  = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      const ext  = path.split('.').pop().toLowerCase();
+      const mime = ext === 'woff2' ? 'font/woff2' : ext === 'woff' ? 'font/woff'
+                 : ext === 'ttf'   ? 'font/truetype' : 'font/opentype';
+      fontDataMap[path] = `data:${mime};base64,${b64}`;
+    } catch {}
+  }));
+  const linkedCss = rawLinkedCss.replace(fontUrlRe, (_, q, path) =>
+    fontDataMap[path] ? `url(${q}${fontDataMap[path]}${q})` : `url(${q}${path}${q})`
+  );
   const inlineCss = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n');
   const css       = linkedCss + '\n' + inlineCss;
 
