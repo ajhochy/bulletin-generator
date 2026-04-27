@@ -99,7 +99,7 @@ const PAGE_SIZE_PRESETS = {
 };
 
 const DEFAULT_TEMPLATE_CSS_VARS = {
-  fontFamily: 'system-ui, -apple-system, sans-serif',
+  fontFamily: 'Arial, Helvetica, sans-serif',
   primary: '#111827',
   muted: '#6b7280',
   accent: '#172429',
