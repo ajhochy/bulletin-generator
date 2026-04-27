@@ -1494,7 +1494,7 @@ function renderDesignerToolbar() {
     toolbar.appendChild(toolbarSep());
 
     // Font cluster
-    const fontPicker = makeFontSelect(designerFontOptions(), _editingTemplate.cssVars?.fontFamily || 'system-ui', val => {
+    const fontPicker = makeFontSelect(designerFontOptions(), _editingTemplate.cssVars?.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily, val => {
       _editingTemplate.cssVars = _editingTemplate.cssVars || {};
       _editingTemplate.cssVars.fontFamily = val;
       markDesignerDirty();
@@ -1530,7 +1530,8 @@ function renderDesignerToolbar() {
   toolbar.appendChild(toolbarSep());
 
   // Font cluster
-  const fontPicker = makeFontSelect([{ value: '', label: '(default)' }].concat(designerFontOptions()), fmt.fontFamily || '', val => updateSelectedFmt('fontFamily', val));
+  const docFont = (_editingTemplate.cssVars?.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily).split(',')[0].trim();
+  const fontPicker = makeFontSelect([{ value: '', label: `(default: ${docFont})` }].concat(designerFontOptions()), fmt.fontFamily || '', val => updateSelectedFmt('fontFamily', val));
   const sizePicker = makeSizePicker(fmt.size || '', val => updateSelectedFmt('size', val));
   toolbar.appendChild(toolbarCluster('Font', [fontPicker, sizePicker]));
 
