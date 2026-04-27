@@ -579,21 +579,35 @@ def parse_ical_events(text):
     return events
 
 
-def get_week_window():
-    """Return (start, end) as date objects for the upcoming Sunday–Saturday window."""
-    today = datetime.now().date()
-    dow = today.weekday()  # Monday=0, Sunday=6
-    days_until_sunday = (6 - dow) % 7  # 0 if today is Sunday
-    start = today + timedelta(days=days_until_sunday)
-    end   = start + timedelta(days=8)
+def get_week_window(svc_date_str=None):
+    """Return (start, end) as date objects for the Sunday–following-Sunday window.
+
+    If svc_date_str is provided and parseable, start is that Sunday (the service date).
+    Otherwise falls back to the next upcoming Sunday from today.
+    end is always start + 7 days (inclusive through the following Sunday).
+    """
+    start = None
+    if svc_date_str:
+        for fmt in ('%Y-%m-%d', '%B %d, %Y', '%b %d, %Y'):
+            try:
+                start = datetime.strptime(svc_date_str.strip(), fmt).date()
+                break
+            except ValueError:
+                pass
+    if start is None:
+        today = datetime.now().date()
+        dow = today.weekday()          # Monday=0, Sunday=6
+        days_until_sunday = (6 - dow) % 7  # 0 if today is Sunday
+        start = today + timedelta(days=days_until_sunday)
+    end = start + timedelta(days=7)    # through the following Sunday (inclusive)
     return start, end
 
 
-def fetch_and_parse_calendars(urls, exclude_titles):
+def fetch_and_parse_calendars(urls, exclude_titles, svc_date_str=None):
     """Fetch all iCal URLs, parse, filter, deduplicate. Returns sorted event list."""
     if not urls:
         return []
-    start_date, end_date = get_week_window()
+    start_date, end_date = get_week_window(svc_date_str)
     exclude_lower = {t.strip().lower() for t in exclude_titles}
     all_events = []
     any_success = False
@@ -671,13 +685,13 @@ def fetch_and_parse_calendars(urls, exclude_titles):
     return deduped
 
 
-def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles):
+def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles, svc_date_str=None):
     """Fetch this week's events from Google Calendar API for given calendar IDs.
     Returns None if any calendar returns 401/403 (signals auth failure to caller).
     Returns [] if auth succeeds but there are no events in the window.
     Returns a list of events otherwise.
     """
-    start_date, end_date = get_week_window()
+    start_date, end_date = get_week_window(svc_date_str)
     time_min = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     time_max = datetime.combine(end_date,   datetime.max.time().replace(microsecond=0)).replace(tzinfo=timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
     exclude_lower = {t.strip().lower() for t in exclude_titles}
@@ -2158,20 +2172,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 except Exception:
                     pass
 
+            svc_date_str = params.get('date', [None])[0]
+
             # Prefer Google Calendar API if the user is connected and has selected calendars
             google_cal_ids = _read_json(SETTINGS_FILE, {}).get('googleCalendarIds', [])
             google_auth = _google_auth_header()
             if google_auth and google_cal_ids:
-                result = fetch_google_cal_events(google_auth, google_cal_ids, exclude)
+                result = fetch_google_cal_events(google_auth, google_cal_ids, exclude, svc_date_str)
                 if result is None:
                     # None means auth failure (401/403) — refresh token and retry once
                     new_auth = _refresh_google_token()
                     if new_auth:
-                        result = fetch_google_cal_events(new_auth, google_cal_ids, exclude)
+                        result = fetch_google_cal_events(new_auth, google_cal_ids, exclude, svc_date_str)
                     else:
                         result = []
             else:
-                result = fetch_and_parse_calendars(urls, exclude)
+                result = fetch_and_parse_calendars(urls, exclude, svc_date_str)
 
             if result is None:
                 payload = {'ok': False, 'events': [], 'error': 'All calendar fetches failed.'}
