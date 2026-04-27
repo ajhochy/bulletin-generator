@@ -575,6 +575,7 @@ async function calFetchAll(force) {
   const params = new URLSearchParams({
     urls: JSON.stringify(urls),
     exclude: JSON.stringify(excl),
+    date: svcDate.value.trim(),
   });
 
   try {
@@ -804,9 +805,26 @@ function buildCalendarSegments(church) {
     return singleSegment('cal-empty', 'No events scheduled this week.');
   }
 
+  // Derive the window start from the service date so that multi-day events originating
+  // before that Sunday are excluded even if they span into the week.
+  let windowStart = null;
+  if (svcDate && svcDate.value) {
+    const raw = svcDate.value.trim();
+    // Force local-date parsing: ISO "YYYY-MM-DD" must use explicit constructor to
+    // avoid UTC-midnight shift; other formats (e.g. "April 27, 2026") are local by default.
+    const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const d = iso ? new Date(+iso[1], +iso[2] - 1, +iso[3]) : new Date(raw);
+    if (d && !isNaN(d.getTime())) {
+      windowStart = d.getFullYear() + '-' +
+        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+        String(d.getDate()).padStart(2, '0');
+    }
+  }
+
   const byDay = new Map();
   for (const ev of calEvents) {
     const dayKey = ev.start.iso.slice(0, 10);
+    if (windowStart && dayKey < windowStart) continue; // skip events starting before service Sunday
     if (!byDay.has(dayKey)) byDay.set(dayKey, []);
     byDay.get(dayKey).push(ev);
   }
@@ -920,33 +938,33 @@ function renderServingWeek(container, weekData, labelText, weekIdx) {
     return;
   }
 
-  // Group teams by service time, preserving the order they first appear
-  const timeGroups = {};
-  const timeOrder  = [];
+  // Group teams by service time. Teams with no service time are distributed to all named groups.
+  const namedGroups = {};
+  const namedOrder  = [];
+  const allTimesTeams = [];
   visibleTeams.forEach(team => {
     const key = team.serviceTime || '';
-    if (!timeGroups[key]) { timeGroups[key] = []; timeOrder.push(key); }
-    timeGroups[key].push(team);
+    if (!key) { allTimesTeams.push(team); return; }
+    if (!namedGroups[key]) { namedGroups[key] = []; namedOrder.push(key); }
+    namedGroups[key].push(team);
   });
 
-  timeOrder.forEach((svcTime, groupIdx) => {
+  namedOrder.forEach((svcTime, groupIdx) => {
+    const groupTeams = [...namedGroups[svcTime], ...allTimesTeams];
     if (groupIdx > 0) {
-      const firstTeam = timeGroups[svcTime][0];
-      const insertBeforeIdx = (weekData.teams || []).indexOf(firstTeam);
+      const insertBeforeIdx = (weekData.teams || []).indexOf(namedGroups[svcTime][0]);
       container.appendChild(makeSplitCtrlEl(makeBreakSrc('serving-split', {
         weekIdx, boundary: 'team', insertBeforeIdx,
       })));
     }
-    if (svcTime) {
-      const stLabel = document.createElement('div');
-      stLabel.className = 'serving-service-time preview-linkable';
-      stLabel.dataset.previewVolWeekIdx = weekIdx;
-      stLabel.dataset.previewVolSt      = svcTime;
-      stLabel.textContent = svcTime;
-      applyElementFmt(stLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', svcTime, 'serviceTime'));
-      container.appendChild(stLabel);
-    }
-    timeGroups[svcTime].forEach(team => {
+    const stLabel = document.createElement('div');
+    stLabel.className = 'serving-service-time preview-linkable';
+    stLabel.dataset.previewVolWeekIdx = weekIdx;
+    stLabel.dataset.previewVolSt      = svcTime;
+    stLabel.textContent = svcTime;
+    applyElementFmt(stLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', svcTime, 'serviceTime'));
+    container.appendChild(stLabel);
+    groupTeams.forEach(team => {
       const teamIdx = (weekData.teams || []).indexOf(team);
       renderServingTeam(container, team, weekIdx, teamIdx);
     });

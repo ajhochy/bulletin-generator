@@ -646,36 +646,38 @@
     </div>
   </div>
 
-  <!-- Full-screen designer overlay (hidden until launched) -->
-  <div id="tpl-designer-overlay" style="display:none; position:fixed; inset:0; z-index:200; background:var(--base-100,#fff); flex-direction:column;">
-    <div class="flex items-center gap-3 px-4 py-2 border-b bg-base-200" style="flex-shrink:0;">
-      <button class="btn btn-ghost btn-sm" id="tpl-designer-back">← Back</button>
-      <input class="input input-bordered input-sm flex-1 max-w-xs font-medium" id="tpl-designer-name" type="text" placeholder="Template name…" aria-label="Template name">
-      <div class="flex gap-2 ml-auto">
-        <button class="btn btn-ghost btn-sm" id="tpl-designer-export">Export</button>
-        <button class="btn btn-ghost btn-sm" id="tpl-designer-save-as">Save As…</button>
-        <button class="btn btn-primary btn-sm" id="tpl-designer-save">Save</button>
-      </div>
-    </div>
-    <div class="flex items-center gap-4 px-4 py-2 border-b bg-base-100 text-sm" id="tpl-designer-toolbar" style="flex-shrink:0; min-height:2.75rem;">
-      <span class="text-base-content/40 italic" id="tpl-toolbar-hint">Click any element in the preview to edit its formatting</span>
-    </div>
-    <div id="tpl-designer-canvas" style="flex:1; overflow-y:auto; background:#e5e7eb; display:flex; justify-content:center; padding:2rem;">
-      <!-- bulletin preview rendered here -->
-    </div>
-  </div>
 
-  <!-- Apply-to-project dialog (modal) -->
-  <div id="tpl-apply-dialog" role="dialog" aria-modal="true" aria-labelledby="tpl-apply-dialog-msg" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
-    <div class="bg-base-100 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
-      <div class="text-base font-medium mb-4" id="tpl-apply-dialog-msg">Apply this template to the current project?</div>
-      <div class="flex gap-2 justify-end">
-        <button class="btn btn-ghost btn-sm" id="tpl-apply-cancel">Not now</button>
-        <button class="btn btn-primary btn-sm" id="tpl-apply-confirm">Apply</button>
-      </div>
+</div><!-- #page-templates -->
+
+<!-- Full-screen designer overlay (hidden until launched) -->
+<div id="tpl-designer-overlay" style="display:none; position:fixed; inset:0; z-index:200; background:var(--base-100,#fff); flex-direction:column;">
+  <div class="flex items-center gap-3 px-4 py-2 border-b bg-base-200" style="flex-shrink:0;">
+    <button class="btn btn-ghost btn-sm" id="tpl-designer-back">← Back</button>
+    <input class="input input-bordered input-sm flex-1 max-w-xs font-medium" id="tpl-designer-name" type="text" placeholder="Template name…" aria-label="Template name">
+    <div class="flex gap-2 ml-auto">
+      <button class="btn btn-ghost btn-sm" id="tpl-designer-export">Export</button>
+      <button class="btn btn-ghost btn-sm" id="tpl-designer-save-as">Save As…</button>
+      <button class="btn btn-primary btn-sm" id="tpl-designer-save">Save</button>
     </div>
   </div>
-</div><!-- #page-templates -->
+  <div class="flex items-center gap-4 px-4 py-2 border-b bg-base-100 text-sm" id="tpl-designer-toolbar" style="flex-shrink:0; min-height:2.75rem;">
+    <span class="text-base-content/40 italic" id="tpl-toolbar-hint">Click any element in the preview to edit its formatting</span>
+  </div>
+  <div id="tpl-designer-canvas" style="flex:1; overflow-y:auto; background:#e5e7eb; display:flex; justify-content:center; padding:2rem;">
+    <!-- bulletin preview rendered here -->
+  </div>
+</div>
+
+<!-- Apply-to-project dialog (modal) -->
+<div id="tpl-apply-dialog" role="dialog" aria-modal="true" aria-labelledby="tpl-apply-dialog-msg" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
+  <div class="bg-base-100 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">
+    <div class="text-base font-medium mb-4" id="tpl-apply-dialog-msg">Apply this template to the current project?</div>
+    <div class="flex gap-2 justify-end">
+      <button class="btn btn-ghost btn-sm" id="tpl-apply-cancel">Not now</button>
+      <button class="btn btn-primary btn-sm" id="tpl-apply-confirm">Apply</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═══ Import Review Modal ════════════════════════════════════════════════ -->
 <dialog id="import-review-modal" class="modal">

@@ -164,11 +164,27 @@ function applyDocTemplate() {
   syncTemplateFontLinks(activeDocTemplate);
   document.documentElement.style.setProperty('--doc-page-w', w + 'in');
   document.documentElement.style.setProperty('--doc-page-h', h + 'in');
-  document.documentElement.style.setProperty('--font-sans', cssVars.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily);
-  document.documentElement.style.setProperty('--text', cssVars.primary || cssVars.text || DEFAULT_TEMPLATE_CSS_VARS.primary);
-  document.documentElement.style.setProperty('--muted', cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted);
-  document.documentElement.style.setProperty('--accent', cssVars.accent || DEFAULT_TEMPLATE_CSS_VARS.accent);
-  document.documentElement.style.setProperty('--border', cssVars.border || DEFAULT_TEMPLATE_CSS_VARS.border);
+  const fontSans = cssVars.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily;
+  const primary  = cssVars.primary || cssVars.text || DEFAULT_TEMPLATE_CSS_VARS.primary;
+  const muted    = cssVars.muted   || DEFAULT_TEMPLATE_CSS_VARS.muted;
+  const accent   = cssVars.accent  || DEFAULT_TEMPLATE_CSS_VARS.accent;
+  const border   = cssVars.border  || DEFAULT_TEMPLATE_CSS_VARS.border;
+  const bg       = cssVars.background || '#ffffff';
+  // Old variable names — used by preview.css, print.css, and compat.css legacy selectors
+  document.documentElement.style.setProperty('--font-sans', fontSans);
+  document.documentElement.style.setProperty('--text',      primary);
+  document.documentElement.style.setProperty('--muted',     muted);
+  document.documentElement.style.setProperty('--accent',    accent);
+  document.documentElement.style.setProperty('--border',    border);
+  // New --ui-* variable names — used by compat.css body/chrome styles (post-Tailwind migration)
+  document.documentElement.style.setProperty('--ui-font',     fontSans);
+  document.documentElement.style.setProperty('--ui-ink',      primary);
+  document.documentElement.style.setProperty('--ui-muted',    muted);
+  document.documentElement.style.setProperty('--ui-accent',   accent);
+  document.documentElement.style.setProperty('--ui-border',   border);
+  document.documentElement.style.setProperty('--ui-bg',       bg);
+  document.documentElement.style.setProperty('--ui-surface',  bg);
+  document.documentElement.style.setProperty('--ui-surface-2', bg);
   // Inject @page size — CSS variables cannot be used inside @page size
   let pageStyle = document.getElementById('doc-page-style');
   if (!pageStyle) {

@@ -450,7 +450,7 @@ function applyPreviewLinkMeta(el, chunk) {
 // A `---` line inside song lyrics creates a forced-break sentinel between sections.
 function buildChunks(item, idx) {
   const plan = deriveChunkPlanCore(item, idx);
-  const titleKey = item.type === 'song' ? 'songTitle' : 'title';
+  const titleKey = item.type === 'section' ? 'heading' : item.type === 'song' ? 'songTitle' : 'title';
   const bodyKey = item.type === 'song' ? 'stanzaText'
     : item.type === 'liturgy' ? 'bodyParagraph'
     : 'body';
@@ -526,19 +526,30 @@ function buildChunks(item, idx) {
       });
     }
 
+    const isSectionItem = item.type === 'section';
     const wrap = document.createElement('div');
-    wrap.className = 'order-item' + (part.isFirstParagraph ? ' preview-linkable' : '');
+    wrap.className = (isSectionItem ? 'liturgy-section' : 'order-item') +
+                     (part.isFirstParagraph ? ' preview-linkable' : '');
     applyPreviewLinkMeta(wrap, { section: 'oow', itemIdx: idx, paragraphIdx: part.paragraphIdx });
     if (part.isFirstParagraph && part.title) {
       const h = document.createElement('div');
-      h.className = 'item-heading has-rule';
-      h.textContent = part.title;
-      applyElementFmt(h, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, 'title'));
-      applyTitleFmt(h, titleFmt);
+      if (isSectionItem) {
+        h.className = 'section-heading';
+        h.textContent = part.title;
+        applyElementFmt(h, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, 'heading'));
+        if (titleFmt.titleColor) h.style.color = titleFmt.titleColor;
+        if (titleFmt.titleAlign) h.style.textAlign = titleFmt.titleAlign;
+      } else {
+        h.className = 'item-heading has-rule';
+        h.textContent = part.title;
+        applyElementFmt(h, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, 'title'));
+        applyTitleFmt(h, titleFmt);
+      }
       wrap.appendChild(h);
     }
     const body = document.createElement('div');
     body.className = 'item-body';
+    if (isSectionItem) body.style.marginTop = '0.3rem';
     applyElementFmt(body, getTemplateElementFmt(activeDocTemplate, 'pco_items', item.type, item.title, bodyKey));
     applyBodyFmt(body, bodyFmt);
     renderBodyText(body, part.paragraph, true);
@@ -548,6 +559,7 @@ function buildChunks(item, idx) {
       sourceId: part.sourceId,
       els: [wrap],
       noBreakBefore: !!part.noBreakBefore,
+      stickyToNext: !!part.stickyToNext,
       itemIdx: part.itemIdx ?? null,
       paragraphIdx: part.paragraphIdx ?? null,
     });
@@ -1066,74 +1078,149 @@ function renderPreview() {
   function renderServingZone() {
     if (!(servingSchedule && optVolunteers.checked)) return;
 
+    const AVAIL_H = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
     const srvChunks = buildServingChunks(servingSchedule, servingTeamFilter, volTeamFilter);
+    if (srvChunks.length === 0) return;
 
-    // Pack chunks into pages[] using pre-resolved forceBreak flags.
-    // pageSources[i] explains why serving page (i+1) started.
-    const pages = [[]];
-    const pageSources = [];
-    srvChunks.forEach(chunk => {
-      if (chunk.forceBreak && pages[pages.length - 1].length > 0) {
-        const prevChunk = pages[pages.length - 1][pages[pages.length - 1].length - 1];
-        if (prevChunk && prevChunk.servingWeekIdx === chunk.servingWeekIdx) {
-          pageSources.push(makeBreakSrc('serving-team', {
-            weekIdx: chunk.servingWeekIdx,
-            teamBreakIdx: chunk.servingTeamBreakIdx,
-          }));
-        } else {
-          pageSources.push(makeBreakSrc('serving-week', { weekIdx: chunk.servingWeekIdx }));
-        }
-        pages.push([]);
+    let servingStarted = false;
+
+    function addServingPage(el, breakSrc) {
+      const contentH = measureBottomContent(el);
+      const pg = document.createElement('div');
+      pg.className = 'booklet-page';
+      pg.appendChild(el);
+      if (optFooter.checked) {
+        const footer = document.createElement('div');
+        footer.className = 'page-footer';
+        footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+        pg.appendChild(footer);
       }
-      pages[pages.length - 1].push(chunk);
-    });
-
-    pages.forEach((pageChunks, pi) => {
-      const servingContent = document.createElement('div');
-      servingContent.classList.add('preview-linkable');
-      applyPreviewLinkMeta(servingContent, { section: 'serving' });
-      pageChunks.forEach((chunk, itemIdx) => {
-        if (itemIdx > 0) {
-          const prevChunk = pageChunks[itemIdx - 1];
-          const isSameWeek = prevChunk.servingWeekIdx === chunk.servingWeekIdx;
-          const firstTeam = isSameWeek ? (chunk.servingSegTeams || []).find(t => t && t.type !== 'page-break') : null;
-          const insertBeforeIdx = firstTeam ? (chunk.servingWeek.teams || []).indexOf(firstTeam) : -1;
-          const ctrl = makeSplitCtrlEl(makeBreakSrc('serving-split', {
-            weekIdx: chunk.servingWeekIdx,
-            boundary: isSameWeek ? 'team' : 'week',
-            insertBeforeIdx: isSameWeek ? insertBeforeIdx : '',
-          }));
-          servingContent.appendChild(ctrl);
-        }
-        renderServingWeek(servingContent, { ...chunk.servingWeek, teams: chunk.servingSegTeams }, chunk.servingLabel, chunk.servingWeekIdx);
-        chunk.els = [servingContent];
-      });
-      if (pi === 0) {
-        appendBottomSection(servingContent, 'serving');
+      if (lastRenderedPageEl && breakSrc) {
+        const ctrl = makeBreakCtrlEl(breakSrc);
+        lastRenderedPageEl.after(ctrl);
+        ctrl.after(pg);
+      } else if (lastRenderedPageEl) {
+        lastRenderedPageEl.after(pg);
       } else {
-        // Continuation pages always get their own page (no merge toggle)
-        const contentH = measureBottomContent(servingContent);
-        const pg = document.createElement('div');
-        pg.className = 'booklet-page';
-        pg.appendChild(servingContent);
-        if (optFooter.checked) {
-          const footer = document.createElement('div');
-          footer.className = 'page-footer';
-          footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
-          pg.appendChild(footer);
-        }
-        if (lastRenderedPageEl) {
-          const src = pageSources[pi - 1] || makeBreakSrc('serving-team', {});
-          const ctrl = makeBreakCtrlEl(src);
-          lastRenderedPageEl.after(ctrl);
-          ctrl.after(pg);
-        } else previewPane.appendChild(pg);
-        lastRenderedPageEl = pg;
-        lastPageUsedH = contentH;
-        lastRenderedBinding = 'serving_schedule';
+        previewPane.appendChild(pg);
       }
+      lastRenderedPageEl = pg;
+      lastPageUsedH = contentH;
+      lastRenderedBinding = 'serving_schedule';
+    }
+
+    srvChunks.forEach(chunk => {
+      const weekIdx = chunk.servingWeekIdx;
+      const visibleTeams = (chunk.servingSegTeams || []).filter(
+        t => t.type !== 'page-break' &&
+             servingTeamFilter[t.name] !== false &&
+             volTeamFilter['w' + weekIdx + ':' + (t.serviceTime || '') + ':' + t.name] !== false
+      );
+      if (visibleTeams.length === 0) return;
+
+      const hasServiceTimes = visibleTeams.some(t => t.serviceTime);
+
+      if (!hasServiceTimes) {
+        // Flat-list (no service times): render whole chunk as one block with existing split controls
+        const servingContent = document.createElement('div');
+        servingContent.classList.add('preview-linkable');
+        applyPreviewLinkMeta(servingContent, { section: 'serving' });
+        renderServingWeek(servingContent, { ...chunk.servingWeek, teams: chunk.servingSegTeams }, chunk.servingLabel, weekIdx);
+
+        if (!servingStarted) {
+          chunk.forceBreak ? addServingPage(servingContent, null) : appendBottomSection(servingContent, 'serving');
+          servingStarted = true;
+        } else if (chunk.forceBreak) {
+          const src = chunk.servingTeamBreakIdx !== null
+            ? makeBreakSrc('serving-team', { weekIdx, teamBreakIdx: chunk.servingTeamBreakIdx })
+            : makeBreakSrc('serving-week', { weekIdx });
+          addServingPage(servingContent, src);
+        } else {
+          const contentH = measureBottomContent(servingContent);
+          const splitCtrl = makeSplitCtrlEl(makeBreakSrc('serving-split', { weekIdx, boundary: 'week', insertBeforeIdx: '' }));
+          if (lastRenderedPageEl !== null && lastPageUsedH + contentH <= AVAIL_H) {
+            lastRenderedPageEl.appendChild(splitCtrl);
+            lastRenderedPageEl.appendChild(servingContent);
+            lastPageUsedH += contentH;
+          } else {
+            addServingPage(servingContent, null);
+          }
+        }
+        return;
+      }
+
+      // Group by service time. Teams with no service time are distributed to all named groups.
+      const namedGroups = {};
+      const namedOrder  = [];
+      const allTimesTeams = [];
+      visibleTeams.forEach(team => {
+        const key = team.serviceTime || '';
+        if (!key) { allTimesTeams.push(team); return; }
+        if (!namedGroups[key]) { namedGroups[key] = []; namedOrder.push(key); }
+        namedGroups[key].push(team);
+      });
+
+      namedOrder.forEach((svcTime, groupIdx) => {
+        const isFirstGroup = groupIdx === 0;
+        const groupTeams = [...namedGroups[svcTime], ...allTimesTeams];
+
+        const groupEl = document.createElement('div');
+        groupEl.classList.add('preview-linkable');
+        applyPreviewLinkMeta(groupEl, { section: 'serving' });
+
+        if (isFirstGroup) {
+          const wLabel = document.createElement('div');
+          wLabel.className = 'serving-week-label';
+          wLabel.textContent = chunk.servingLabel;
+          applyElementFmt(wLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', chunk.servingLabel, 'weekHeading'));
+          groupEl.appendChild(wLabel);
+        }
+
+        if (svcTime) {
+          const stLabel = document.createElement('div');
+          stLabel.className = 'serving-service-time preview-linkable';
+          stLabel.dataset.previewVolWeekIdx = weekIdx;
+          stLabel.dataset.previewVolSt = svcTime;
+          stLabel.textContent = svcTime;
+          applyElementFmt(stLabel, getTemplateElementFmt(activeDocTemplate, 'serving_schedule', '', svcTime, 'serviceTime'));
+          groupEl.appendChild(stLabel);
+        }
+
+        groupTeams.forEach(team => {
+          const teamIdx = (chunk.servingWeek.teams || []).indexOf(team);
+          renderServingTeam(groupEl, team, weekIdx, teamIdx);
+        });
+
+        if (!servingStarted) {
+          chunk.forceBreak ? addServingPage(groupEl, null) : appendBottomSection(groupEl, 'serving');
+          servingStarted = true;
+        } else if (isFirstGroup && chunk.forceBreak) {
+          const src = chunk.servingTeamBreakIdx !== null
+            ? makeBreakSrc('serving-team', { weekIdx, teamBreakIdx: chunk.servingTeamBreakIdx })
+            : makeBreakSrc('serving-week', { weekIdx });
+          addServingPage(groupEl, src);
+        } else {
+          // Auto-break: fit on current page or overflow to new page
+          const contentH = measureBottomContent(groupEl);
+          const firstNamedTeam = namedGroups[svcTime][0];
+          const insertBeforeIdx = (chunk.servingWeek.teams || []).indexOf(firstNamedTeam);
+          const splitCtrl = makeSplitCtrlEl(makeBreakSrc('serving-split', {
+            weekIdx,
+            boundary: isFirstGroup ? 'week' : 'team',
+            insertBeforeIdx: isFirstGroup ? '' : insertBeforeIdx,
+          }));
+          if (lastRenderedPageEl !== null && lastPageUsedH + contentH <= AVAIL_H) {
+            lastRenderedPageEl.appendChild(splitCtrl);
+            lastRenderedPageEl.appendChild(groupEl);
+            lastPageUsedH += contentH;
+          } else {
+            addServingPage(groupEl, null);
+          }
+        }
+      });
     });
-    if (pages.some(pageChunks => pageChunks.length > 0)) lastRenderedBinding = 'serving_schedule';
+
+    if (servingStarted) lastRenderedBinding = 'serving_schedule';
   }
 
   function renderCalendarZone() {

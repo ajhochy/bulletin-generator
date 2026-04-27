@@ -7,7 +7,7 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 # Add project root so server.py can be imported without starting the server
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -206,6 +206,37 @@ class TestUnescapeIcal:
 
     def test_no_escapes_unchanged(self):
         assert server.unescape_ical("plain text") == "plain text"
+
+
+class TestGoogleCalendarFetch:
+    def test_filters_multiday_events_that_start_before_service_date(self):
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({
+            "items": [
+                {
+                    "summary": "GEMS Campout",
+                    "start": {"date": "2026-05-01"},
+                    "end": {"date": "2026-05-04"},
+                },
+                {
+                    "summary": "Single Morning Worship Service",
+                    "start": {"dateTime": "2026-05-03T09:30:00-07:00"},
+                    "end": {"dateTime": "2026-05-03T10:30:00-07:00"},
+                },
+            ]
+        }).encode()
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+
+        with patch("urllib.request.urlopen", return_value=resp):
+            events = server.fetch_google_cal_events(
+                "Bearer token",
+                ["primary"],
+                [],
+                "2026-05-03",
+            )
+
+        assert [event["title"] for event in events] == ["Single Morning Worship Service"]
 
 
 # ── _parse_list_env ───────────────────────────────────────────────────────────

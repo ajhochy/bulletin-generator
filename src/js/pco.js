@@ -574,10 +574,14 @@ function irmRadioRow(groupName, labelText, checked, onChange) {
 }
 
 function pcoMapItemType(attrs) {
-  if (attrs.item_type === 'header') return 'section';
-  if (attrs.item_type === 'song')   return 'song';
-  if (attrs.item_type === 'note')   return 'note';
-  if (attrs.item_type === 'media')  return 'media';
+  if (typeof mapPcoItemTypeCore === 'function') return mapPcoItemTypeCore(attrs);
+  if (attrs.item_type === 'header') {
+    const title = String(attrs.title || '').trim().replace(/\s+/g, ' ').toUpperCase();
+    return title === 'CHILDREN DISMISSED (AGES 3-K)' ? 'label' : 'section';
+  }
+  if (attrs.item_type === 'song') return 'song';
+  if (attrs.item_type === 'note') return 'note';
+  if (attrs.item_type === 'media') return 'media';
   // PCO 'item' type — default to label (title-only liturgical items)
   // enrichItemsFromDb will upgrade liturgical text items to 'liturgy'
   // if they match LITURGICAL_RE and need a DB lookup.
