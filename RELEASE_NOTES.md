@@ -1,5 +1,42 @@
 # Release Notes
 
+## v1.12.6 — Font Picker Default Label Fix
+
+- fixed font picker labels showing raw CSS variable names instead of human-readable font names
+- font picker now derives display labels from `DEFAULT_TEMPLATE_CSS_VARS` so the default entry always shows the correct font name
+
+## v1.12.5 — Explicit Default Font
+
+- changed default template font from `system-ui` to `Arial` so PDF output is consistent across platforms
+
+## v1.12.4 — PDF Font Embedding
+
+- fixed PDF generation embedding fonts as base64 data URIs so headless Chrome reliably renders custom fonts
+
+## v1.12.3 — PDF Font URL Fix
+
+- fixed font URLs in PDF HTML being rewritten to full HTTP so headless Chrome can resolve them
+
+## v1.12.2 — PDF and Calendar Fixes
+
+- fixed PDF CSS variable propagation
+- fixed calendar carryover filter incorrectly suppressing events
+- fixed serving schedule rendering edge cases
+- fixed "Children Dismissed" label display
+
+## v1.12.1 — Docker Build Fix
+
+- fixed Dockerfile missing `tailwind.config.js` in the frontend-build stage, causing Docker image builds to fail
+
+## v1.12.0 — Template Designer & Tailwind UI
+
+- added Canva-style template designer: built-in templates, CSS variable-based formatting, font and color controls, formatting copy/paste between items
+- added template gallery page for browsing and applying templates
+- migrated UI to Tailwind CSS + DaisyUI 4
+- refactored editor toolbar: moved document controls out of the sidebar
+- restored reliable PDF font fallback and synced `--ui-*` CSS variables
+- surfaced actionable Google Drive API errors instead of generic 502
+
 ## v1.11.0 — Unified Section Layout Model & Bug Fixes
 
 - completed Unified Section Layout Model (#117): all page-break and split controls now use a consistent factory pattern throughout the preview
