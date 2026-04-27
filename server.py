@@ -741,6 +741,12 @@ def fetch_google_cal_events(auth_header, calendar_ids, exclude_titles, svc_date_
                 iso_end   = end_raw.get('dateTime')  if end_raw else None
             if not iso_start:
                 continue
+            try:
+                event_start_date = datetime.strptime(iso_start[:10], '%Y-%m-%d').date()
+            except ValueError:
+                continue
+            if event_start_date < start_date:
+                continue
             all_events.append({
                 'title':       title,
                 'start':       {'iso': iso_start, 'allDay': all_day},
