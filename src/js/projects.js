@@ -795,7 +795,12 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const fetched   = await Promise.allSettled(
     linkEls.map(el => fetch(el.href).then(r => r.ok ? r.text() : '').catch(() => ''))
   );
-  const linkedCss = fetched.map(r => r.status === 'fulfilled' ? r.value : '').join('\n');
+  // Rewrite absolute-path font URLs (e.g. url(/fonts/cache/...)) to full HTTP URLs so
+  // headless Chrome can fetch them when loading the PDF HTML as file://. Without this,
+  // Chrome resolves /fonts/... as file:///fonts/... which doesn't exist on disk.
+  const origin = window.location.origin;
+  const linkedCss = fetched.map(r => r.status === 'fulfilled' ? r.value : '').join('\n')
+    .replace(/url\((['"]?)\/fonts\//g, `url($1${origin}/fonts/`);
   const inlineCss = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n');
   const css       = linkedCss + '\n' + inlineCss;
 
