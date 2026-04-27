@@ -27,6 +27,9 @@ import {
   deriveProjectSaveSuccess as deriveProjectSaveSuccessCore,
   deriveProjectSaveFailure as deriveProjectSaveFailureCore,
 } from './modules/projects-core.js';
+import {
+  mapPcoItemType as mapPcoItemTypeCore,
+} from './modules/pco-core.js';
 
 Object.assign(globalThis, {
   getEffectiveFmtCore,
@@ -51,6 +54,7 @@ Object.assign(globalThis, {
   buildProjectSaveRequestCore,
   deriveProjectSaveSuccessCore,
   deriveProjectSaveFailureCore,
+  mapPcoItemTypeCore,
 });
 
 export const LEGACY_SCRIPT_PATHS = [
