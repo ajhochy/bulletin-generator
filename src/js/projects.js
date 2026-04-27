@@ -824,10 +824,10 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const safeTitle = escAttr(title || 'Bulletin');
   const { w, h } = getPageDims();
   const cssVars = activeDocTemplate.cssVars || {};
-  // Use the template font family but always append a reliable cross-platform
-  // fallback stack — system-ui / custom Google Fonts may not resolve in
-  // headless Chrome's file:// context (especially on Linux/Docker).
   const templateFont = cssVars.fontFamily || DEFAULT_TEMPLATE_CSS_VARS.fontFamily;
+  // Append Arial fallback so custom Google Fonts have a reliable cross-platform fallback.
+  // When no custom font is set, templateFont is already 'Arial, Helvetica, sans-serif',
+  // making this redundant but harmless.
   const pdfFontSans  = `${templateFont}, Arial, Helvetica, sans-serif`;
   const pdfPrimary = cssVars.primary || cssVars.text || DEFAULT_TEMPLATE_CSS_VARS.primary;
   const pdfMuted = cssVars.muted || DEFAULT_TEMPLATE_CSS_VARS.muted;
