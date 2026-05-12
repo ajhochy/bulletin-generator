@@ -70,6 +70,7 @@ describe('preview chunk planner', () => {
       'announcements',
       'pco_items',
       'calendar',
+      'volunteer_roles',
       'serving_schedule',
       'staff',
     ]);
