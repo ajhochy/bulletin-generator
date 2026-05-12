@@ -60,21 +60,23 @@ else:
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-PROJECTS_FILE      = DATA_DIR / "projects.json"
-ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
-SETTINGS_FILE      = DATA_DIR / "settings.json"
-SONGS_FILE         = DATA_DIR / "song_database.json"
-MIGRATIONS_FILE    = DATA_DIR / "migrations.json"
-TEMPLATES_FILE     = DATA_DIR / "templates.json"
+PROJECTS_FILE          = DATA_DIR / "projects.json"
+ANNOUNCEMENTS_FILE     = DATA_DIR / "announcements.json"
+VOLUNTEER_ROLES_FILE   = DATA_DIR / "volunteer-roles.json"
+SETTINGS_FILE          = DATA_DIR / "settings.json"
+SONGS_FILE             = DATA_DIR / "song_database.json"
+MIGRATIONS_FILE        = DATA_DIR / "migrations.json"
+TEMPLATES_FILE         = DATA_DIR / "templates.json"
 FONTS_DIR          = DATA_DIR / "fonts"
 USER_FONTS_DIR     = FONTS_DIR / "user"
 FONT_CACHE_DIR     = FONTS_DIR / "cache"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
-PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
-ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
-SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
-TEMPLATES_EXAMPLE_FILE     = _EXAMPLE_DIR / "templates.example.json"
+PROJECTS_EXAMPLE_FILE           = _EXAMPLE_DIR / "projects.example.json"
+ANNOUNCEMENTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "announcements.example.json"
+VOLUNTEER_ROLES_EXAMPLE_FILE    = _EXAMPLE_DIR / "volunteer-roles.example.json"
+SETTINGS_EXAMPLE_FILE           = _EXAMPLE_DIR / "settings.example.json"
+TEMPLATES_EXAMPLE_FILE          = _EXAMPLE_DIR / "templates.example.json"
 
 ALLOWED_FONT_EXTS = {".ttf", ".otf", ".woff", ".woff2"}
 SYSTEM_FONT_FAMILIES = {"system-ui", "arial", "helvetica", "georgia", "times new roman", "trebuchet ms", "verdana"}
