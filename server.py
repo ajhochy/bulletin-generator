@@ -1084,6 +1084,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_get_announcements(self):
         self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
 
+    def _handle_get_volunteer_roles(self):
+        self._send_json(_read_json(VOLUNTEER_ROLES_FILE, []))
+
     def _handle_get_settings(self):
         self._send_json(_read_json(SETTINGS_FILE, {}))
 
@@ -1163,6 +1166,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         with _lock:
             _write_json(ANNOUNCEMENTS_FILE, anns)
+        self._send_json({"ok": True})
+
+    def _handle_post_volunteer_roles(self):
+        try:
+            roles = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(roles, list):
+            self._send_json({"error": "body must be an array"}, 400)
+            return
+        with _lock:
+            _write_json(VOLUNTEER_ROLES_FILE, roles)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
