@@ -133,6 +133,7 @@ function vrAdd() {
   vrData.push({ title: '', body: '', url: '', _breakBefore: false, _noBreakBefore: false });
   vrRender();
   saveVrGlobal();
+  schedulePreviewUpdate();
   const vrList = document.getElementById('vr-list');
   const inputs = vrList.querySelectorAll('.vr-title-input');
   if (inputs.length) inputs[inputs.length - 1].focus();
