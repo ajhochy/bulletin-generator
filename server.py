@@ -178,14 +178,19 @@ def _modern_template():
                 "eventTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
                 "eventDescription": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
             }},
-            {"id": "modern-serving", "binding": "serving_schedule", "order": 8, "enabled": True, "match": {}, "elements": {
+            {"id": "modern-volunteer-roles", "binding": "volunteer_roles", "order": 8, "enabled": True, "match": {}, "elements": {
+                "title": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "body": {"fontFamily": "Open Sans", "size": "sm", "color": "#1f2933"},
+                "url": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
+            }},
+            {"id": "modern-serving", "binding": "serving_schedule", "order": 9, "enabled": True, "match": {}, "elements": {
                 "weekHeading": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
                 "teamName": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
                 "serviceTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
                 "positionLabel": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
                 "volunteerName": {"fontFamily": "Open Sans", "color": "#1f2933"}
             }},
-            {"id": "modern-staff", "binding": "staff", "order": 9, "enabled": True, "match": {}, "elements": {
+            {"id": "modern-staff", "binding": "staff", "order": 10, "enabled": True, "match": {}, "elements": {
                 "staffName": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
                 "staffRole": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
                 "staffEmail": {"fontFamily": "Open Sans", "size": "sm", "color": "#2f5d62"}
