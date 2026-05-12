@@ -67,6 +67,7 @@ export const LEGACY_SCRIPT_PATHS = [
   '/src/js/staff.js',
   '/src/js/editor.js',
   '/src/js/announcements.js',
+  '/src/js/volunteer-roles.js',
   '/src/js/calendar.js',
   '/src/js/preview.js',
   '/src/js/songs.js',
