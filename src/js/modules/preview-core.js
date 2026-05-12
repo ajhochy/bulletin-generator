@@ -5,6 +5,7 @@ export const DEFAULT_PREVIEW_ZONE_ORDER = [
   'announcements',
   'pco_items',
   'calendar',
+  'volunteer_roles',
   'serving_schedule',
   'staff',
 ];
