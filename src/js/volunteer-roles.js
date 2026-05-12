@@ -42,7 +42,22 @@ function vrRender() {
     delBtn.textContent = '✕';
     delBtn.addEventListener('click', () => vrDelete(idx));
 
+    const breakToggle = document.createElement('button');
+    breakToggle.className = 'vr-break-toggle btn btn-ghost btn-xs btn-square' + (entry._breakBefore ? ' active' : '');
+    breakToggle.title = entry._breakBefore ? 'Remove forced page break before this card' : 'Insert page break before this card';
+    breakToggle.textContent = '⊞';
+    breakToggle.disabled = idx === 0;
+    breakToggle.addEventListener('click', () => {
+      vrData[idx]._breakBefore = !vrData[idx]._breakBefore;
+      vrData[idx]._noBreakBefore = false;
+      saveVrGlobal();
+      vrRender();
+      schedulePreviewUpdate();
+      scheduleProjectPersist();
+    });
+
     row1.appendChild(titleIn);
+    row1.appendChild(breakToggle);
     row1.appendChild(upBtn);
     row1.appendChild(downBtn);
     row1.appendChild(delBtn);
