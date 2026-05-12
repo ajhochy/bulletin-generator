@@ -14,6 +14,7 @@
 // They document the write boundary and can be extended with side-effects later.
 function setItems(arr)   { items   = Array.isArray(arr) ? arr : []; }
 function setAnnData(arr) { annData = Array.isArray(arr) ? arr : []; }
+function setVrData(arr)  { vrData  = Array.isArray(arr) ? arr : []; }
 function setProjects(arr) { projects = Array.isArray(arr) ? arr : []; }
 function setTypeFormatsMap(map) {
   typeFormats = (map && typeof map === 'object' && !Array.isArray(map)) ? map : {};
@@ -42,9 +43,10 @@ let items = [];
 let pcoIgnore = [];              // string[] — PCO item names to skip on import/resync  OWNER: pco.js
 let pcoLastImportedTitles = [];  // string[] — raw PCO item titles from last import/resync  OWNER: pco.js
 let annData = []; // [{ title, body, _breakBefore?, _noBreakBefore? }]
+let vrData  = []; // Volunteer roles: [{ title, body, url, _breakBefore?, _noBreakBefore? }]
 let welcomeItems = []; // populated from WELCOME_ITEMS after staff.js loads
 let welcomeHeading = ''; // custom heading; empty = auto "Welcome to {church}"
-let bottomMerge = { oow: false, serving: false, calendar: false, staff: false };
+let bottomMerge = { oow: false, serving: false, calendar: false, volunteerRoles: false, staff: false };
 let giveOnlineUrl = '';
 let breakBeforeCalendar = false;
 let breakBeforeStaff    = false;
@@ -255,6 +257,7 @@ const addItemBtn           = document.getElementById('add-item-btn');
 const addBreakBtn          = document.getElementById('add-break-btn');
 const annList              = document.getElementById('ann-list');
 const annAddBtn            = document.getElementById('ann-add-btn');
+const vrAddBtn             = document.getElementById('vr-add-btn');
 const welcomeList          = document.getElementById('welcome-list');
 const welcomeHeadingInput  = document.getElementById('welcome-heading-input');
 const welcomeAddBtn        = document.getElementById('welcome-add-btn');
