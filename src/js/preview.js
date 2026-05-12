@@ -1293,6 +1293,54 @@ function renderPreview() {
     if (calChunks.length > 0) lastRenderedBinding = 'calendar';
   }
 
+  function renderVolunteerRolesZone() {
+    if (!Array.isArray(vrData) || vrData.length === 0) return;
+
+    const contentEl = document.createElement('div');
+    contentEl.className = 'bottom-section volunteer-roles-section';
+
+    const heading = document.createElement('h2');
+    heading.className = 'section-heading';
+    heading.textContent = 'Volunteer Roles';
+    contentEl.appendChild(heading);
+
+    vrData.forEach((role, idx) => {
+      const card = document.createElement('div');
+      card.className = 'vr-entry';
+      card.dataset.vrIdx = idx;
+
+      if (role.url && role.url.trim()) {
+        const qrWrap = document.createElement('div');
+        qrWrap.className = 'vr-entry-url';
+        const qrImg = document.createElement('img');
+        qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=68x68&data=${encodeURIComponent(role.url.trim())}`;
+        qrImg.alt = 'QR Code';
+        qrImg.width = 68; qrImg.height = 68;
+        qrWrap.appendChild(qrImg);
+        card.appendChild(qrWrap);
+      }
+
+      if (role.title) {
+        const t = document.createElement('h3');
+        t.className = 'vr-entry-title';
+        t.textContent = role.title;
+        card.appendChild(t);
+      }
+
+      if (role.body) {
+        const b = document.createElement('div');
+        b.className = 'vr-entry-body';
+        renderBodyText(b, role.body, true);
+        card.appendChild(b);
+      }
+
+      contentEl.appendChild(card);
+    });
+
+    appendBottomSection(contentEl, 'volunteerRoles');
+    lastRenderedBinding = 'volunteer_roles';
+  }
+
   function renderStaffZone() {
     if (!optStaff.checked) return;
 
@@ -1421,6 +1469,7 @@ function renderPreview() {
     pco_items: renderOOWZone,
     serving_schedule: renderServingZone,
     calendar: renderCalendarZone,
+    volunteer_roles: renderVolunteerRolesZone,
     staff: renderStaffZone,
   };
 
