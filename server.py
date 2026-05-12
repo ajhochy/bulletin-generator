@@ -1267,7 +1267,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return "zone must be an object"
             if not isinstance(zone.get("id"), str) or not zone.get("id"):
                 return "zone must include an id"
-            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "serving_schedule", "staff"}:
+            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "volunteer_roles", "serving_schedule", "staff"}:
                 return "zone has invalid binding"
             if not isinstance(zone.get("elements", {}), dict):
                 return "zone elements must be an object"
