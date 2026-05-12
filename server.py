@@ -123,9 +123,10 @@ def _classic_template(page_size="5.5x8.5"):
             {"id": "z-oow-song",    "binding": "pco_items",    "order": 4, "enabled": True,  "match": {"type": "song"}, "elements": {"songTitle": {}, "stanzaText": {}, "copyright": {}}},
             {"id": "z-oow-liturgy", "binding": "pco_items",    "order": 5, "enabled": True,  "match": {"type": "liturgy"}, "elements": {"title": {}, "bodyParagraph": {}}},
             {"id": "z-oow-label",   "binding": "pco_items",    "order": 6, "enabled": True,  "match": {"type": "label"}, "elements": {"title": {}, "body": {}}},
-            {"id": "z-cal",     "binding": "calendar",         "order": 7, "enabled": True,  "match": {}, "elements": {"dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {}}},
-            {"id": "z-serving", "binding": "serving_schedule", "order": 8, "enabled": True,  "match": {}, "elements": {"weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {}}},
-            {"id": "z-staff",   "binding": "staff",            "order": 9, "enabled": True,  "match": {}, "elements": {"staffName": {}, "staffRole": {}, "staffEmail": {}}},
+            {"id": "z-cal",             "binding": "calendar",         "order": 7, "enabled": True,  "match": {}, "elements": {"dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {}}},
+            {"id": "z-volunteer-roles", "binding": "volunteer_roles",  "order": 8, "enabled": True,  "match": {}, "elements": {"title": {}, "body": {}, "url": {}}},
+            {"id": "z-serving",         "binding": "serving_schedule", "order": 9, "enabled": True,  "match": {}, "elements": {"weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {}}},
+            {"id": "z-staff",           "binding": "staff",            "order": 10, "enabled": True, "match": {}, "elements": {"staffName": {}, "staffRole": {}, "staffEmail": {}}},
         ],
     }
 
