@@ -987,6 +987,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/favicon.ico',              '_handle_favicon'),
         ('/api/projects',             '_handle_get_projects'),
         ('/api/announcements',        '_handle_get_announcements'),
+        ('/api/volunteer-roles',      '_handle_get_volunteer_roles'),
         ('/api/settings',             '_handle_get_settings'),
         ('/api/songs',                '_handle_get_songs'),
         ('/api/templates',            '_handle_get_templates'),
@@ -1009,6 +1010,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _POST_ROUTES = [
         ('/api/projects',             '_handle_post_projects'),
         ('/api/announcements',        '_handle_post_announcements'),
+        ('/api/volunteer-roles',      '_handle_post_volunteer_roles'),
         ('/api/settings',             '_handle_post_settings'),
         ('/api/songs',                '_handle_post_songs'),
         ('/api/templates',            '_handle_post_templates'),
