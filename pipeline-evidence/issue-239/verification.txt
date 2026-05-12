@@ -1,0 +1,15 @@
+Verification for issue #239 — Add migration M006_insert_volunteer_roles_zone in server.py
+
+Commands run:
+1. python3 -c "import ast; ast.parse(open('server.py').read()); print('AST parse: OK')"
+   Result: AST parse: OK
+
+2. grep -q 'M006_insert_volunteer_roles_zone' server.py && echo "PASS: M006 found in server.py"
+   Result: PASS: M006 found in server.py
+
+3. grep -n "_migration_006\|M006" server.py
+   Result:
+     861:def _migration_006_insert_volunteer_roles_zone():
+     902:    ("M006_insert_volunteer_roles_zone", _migration_006_insert_volunteer_roles_zone),
+
+Migration function defined at line 861 and registered in _MIGRATION_REGISTRY at line 902.

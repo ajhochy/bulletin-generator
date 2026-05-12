@@ -858,6 +858,40 @@ def _migration_005_builtin_template_presets():
     _sync_builtin_templates()
 
 
+def _migration_006_insert_volunteer_roles_zone():
+    """Insert volunteer_roles zone into every existing template that lacks it, between calendar (order 7) and serving_schedule (order 8). Idempotent."""
+    templates = _read_json(TEMPLATES_FILE, [])
+    if not isinstance(templates, list):
+        return
+    changed = False
+    for template in templates:
+        if not isinstance(template, dict):
+            continue
+        zones = template.get("zones")
+        if not isinstance(zones, list):
+            continue
+        if any(isinstance(z, dict) and z.get("binding") == "volunteer_roles" for z in zones):
+            continue
+        new_zone = {
+            "id": f"z-volunteer-roles-{template.get('id', 'tpl')}",
+            "binding": "volunteer_roles",
+            "order": 8,
+            "enabled": True,
+            "match": {},
+            "elements": {"title": {}, "body": {}, "url": {}},
+        }
+        # Bump existing orders >= 8 to make room
+        for z in zones:
+            if isinstance(z, dict):
+                o = z.get("order")
+                if isinstance(o, (int, float)) and o >= 8:
+                    z["order"] = o + 1
+        zones.append(new_zone)
+        changed = True
+    if changed:
+        _write_json(TEMPLATES_FILE, templates)
+
+
 # Registry: list of (id, callable). Order matters — append only, never reorder.
 _MIGRATION_REGISTRY = [
     ("M001_songdb_extraction",        _migration_001_songdb_extraction),
@@ -865,6 +899,7 @@ _MIGRATION_REGISTRY = [
     ("M003_project_template_backfill", _migration_003_project_template_backfill),
     ("M004_classic_staff_zone_enabled", _migration_004_classic_staff_zone_enabled),
     ("M005_builtin_template_presets", _migration_005_builtin_template_presets),
+    ("M006_insert_volunteer_roles_zone", _migration_006_insert_volunteer_roles_zone),
 ]
 
 
