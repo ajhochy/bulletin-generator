@@ -2232,6 +2232,7 @@ def run_server(port=8080):
     """Start the HTTP server. Called directly by launcher.py in desktop mode."""
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
+    _initialize_local_file(VOLUNTEER_ROLES_FILE, VOLUNTEER_ROLES_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()
