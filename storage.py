@@ -121,6 +121,23 @@ class StorageBackend(ABC):
         """Persist the full templates list.  Returns the saved list."""
         ...
 
+    # ── Fonts ──────────────────────────────────────────────────────────────────
+
+    @abstractmethod
+    def list_fonts(self) -> list:
+        """Return a list of font metadata dicts.
+
+        Each dict contains at minimum: slug, family, source, css_url, file_path.
+        In JSON mode the list is built by scanning the font directories on disk.
+        In Postgres mode the list is read from the ``fonts`` table.
+        """
+        ...
+
+    @abstractmethod
+    def get_font(self, slug: str) -> "dict | None":
+        """Return a single font metadata dict by slug, or None if not found."""
+        ...
+
 
 # ---------------------------------------------------------------------------
 # JSON implementation (desktop mode)
@@ -223,6 +240,55 @@ class JsonStorageBackend(StorageBackend):
         with self._lock:
             _write_json(self._templates_file, data)
         return data
+
+    # ── Fonts ──────────────────────────────────────────────────────────────────
+
+    def list_fonts(self) -> list:
+        """Scan the user fonts directory and return font metadata dicts.
+
+        Each subdir of ``data_dir/fonts/user/`` that contains at least one
+        font file (.woff, .woff2, .ttf, .otf) is returned as a font entry.
+        Missing or empty directory returns an empty list without error.
+        """
+        _ALLOWED = {".woff", ".woff2", ".ttf", ".otf"}
+        fonts_user_dir = self._data_dir / "fonts" / "user"
+        results = []
+        if not fonts_user_dir.exists():
+            return results
+        for family_dir in sorted(p for p in fonts_user_dir.iterdir() if p.is_dir()):
+            slug = family_dir.name
+            font_files = [
+                f for f in sorted(family_dir.iterdir())
+                if f.is_file() and f.suffix.lower() in _ALLOWED
+            ]
+            if not font_files:
+                continue
+            family = " ".join(part.capitalize() for part in slug.replace("-", " ").split())
+            css_url = f"/fonts/user/{slug}/font.css"
+            # Use the first font file as the representative file_path.
+            file_path = str(font_files[0])
+            # cached_at from file mtime (isoformat string).
+            import datetime as _dt
+            cached_at = _dt.datetime.fromtimestamp(
+                font_files[0].stat().st_mtime, tz=_dt.timezone.utc
+            ).isoformat()
+            results.append({
+                "slug": slug,
+                "family": family,
+                "source": "user",
+                "css_url": css_url,
+                "file_path": file_path,
+                "upload_metadata": {},
+                "cached_at": cached_at,
+            })
+        return results
+
+    def get_font(self, slug: str) -> "dict | None":
+        """Return a single font's metadata dict by slug, or None if not found."""
+        for font in self.list_fonts():
+            if font.get("slug") == slug:
+                return font
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -654,6 +720,43 @@ class PostgresStorageBackend(StorageBackend):
 
         return self.list_templates()
 
+    # ── Fonts ──────────────────────────────────────────────────────────────────
+
+    def list_fonts(self) -> list:
+        """Return all fonts ordered by family ASC."""
+        from db import transaction, from_jsonb  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, slug, family, source, css_url, file_path,
+                       upload_metadata, cached_at, created_at
+                FROM fonts
+                ORDER BY family ASC
+                """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [_pg_row_to_font(dict(zip(cols, row))) for row in rows]
+
+    def get_font(self, slug: str) -> "dict | None":
+        """Return a single font metadata dict by slug, or None if not found."""
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, slug, family, source, css_url, file_path,
+                       upload_metadata, cached_at, created_at
+                FROM fonts
+                WHERE slug = %s
+                """,
+                (slug,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+        return _pg_row_to_font(dict(zip(cols, row)))
+
 
 # ---------------------------------------------------------------------------
 # Postgres settings helper
@@ -746,6 +849,27 @@ def _pg_row_to_song(row: dict) -> dict:
         "source": row.get("source") or "",
         "dateAdded": row.get("date_added") or "",
         "createdAt": _ts(row.get("created_at")),
+    }
+
+
+def _pg_row_to_font(row: dict) -> dict:
+    """Convert a raw Postgres fonts row dict into a font metadata dict.
+
+    Returns snake_case keys that match the fonts table columns and the
+    dict shape used by ``scan_font_directory`` in ``migrations/import_fonts.py``.
+    """
+    from db import from_jsonb  # noqa: PLC0415
+
+    return {
+        "id": str(row["id"]),
+        "slug": row.get("slug") or "",
+        "family": row.get("family") or "",
+        "source": row.get("source") or "",
+        "css_url": row.get("css_url") or "",
+        "file_path": row.get("file_path") or "",
+        "upload_metadata": from_jsonb(row.get("upload_metadata")) or {},
+        "cached_at": _ts(row.get("cached_at")),
+        "created_at": _ts(row.get("created_at")),
     }
 
 
