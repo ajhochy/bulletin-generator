@@ -412,10 +412,79 @@ class PostgresStorageBackend(StorageBackend):
     # ── Announcements ─────────────────────────────────────────────────────────
 
     def list_announcements(self) -> list:
-        raise NotImplementedError("PostgresStorageBackend.list_announcements not yet implemented")
+        """Return all announcements ordered by ordering ASC."""
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, title, body, url, ordering
+                FROM announcements
+                ORDER BY ordering ASC
+                """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [dict(zip(cols, row)) for row in rows]
 
     def save_announcements(self, data: list) -> list:
-        raise NotImplementedError("PostgresStorageBackend.save_announcements not yet implemented")
+        """Replace all announcements: DELETE then INSERT in a single transaction.
+
+        Each item in *data* must be a dict with at least a ``title`` key.
+        An ``id`` (UUID string) is required; callers should ensure items
+        carry valid UUIDs before persisting.  ``url`` and ``ordering`` are
+        optional and default to ``''`` / list-index respectively.
+
+        Returns the saved list as read back from the database.
+        """
+        import json as _json  # noqa: PLC0415
+        import uuid as _uuid  # noqa: PLC0415
+        from db import transaction  # noqa: PLC0415
+
+        _ANN_NAMESPACE = _uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+
+        with transaction() as conn:
+            conn.execute("DELETE FROM announcements")
+            for idx, item in enumerate(data):
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title") or "")
+                body = str(item.get("body") or "")
+                url = str(item.get("url") or "")
+                ordering = int(
+                    item.get("ordering") if item.get("ordering") is not None else idx
+                )
+                # Resolve id → must be a valid UUID.
+                raw_id = item.get("id") or ""
+                if raw_id:
+                    try:
+                        ann_id = str(_uuid.UUID(str(raw_id)))
+                    except ValueError:
+                        ann_id = str(_uuid.uuid5(_ANN_NAMESPACE, str(raw_id)))
+                else:
+                    fingerprint = f"{title}\x00{body}"
+                    ann_id = str(_uuid.uuid5(_ANN_NAMESPACE, fingerprint))
+
+                conn.execute(
+                    """
+                    INSERT INTO announcements (id, title, body, url, ordering)
+                    VALUES (%(id)s::uuid, %(title)s, %(body)s, %(url)s, %(ordering)s)
+                    ON CONFLICT (id) DO UPDATE SET
+                        title    = EXCLUDED.title,
+                        body     = EXCLUDED.body,
+                        url      = EXCLUDED.url,
+                        ordering = EXCLUDED.ordering,
+                        updated_at = now()
+                    """,
+                    {
+                        "id": ann_id,
+                        "title": title,
+                        "body": body,
+                        "url": url,
+                        "ordering": ordering,
+                    },
+                )
+
+        return self.list_announcements()
 
     # ── Songs ─────────────────────────────────────────────────────────────────
 
