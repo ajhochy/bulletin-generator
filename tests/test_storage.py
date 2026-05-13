@@ -223,10 +223,13 @@ class TestJsonStorageBackendTemplates:
 # ── PostgresStorageBackend — unimplemented methods still raise ────────────────
 
 class TestPostgresStorageBackendNotImplemented:
-    """Non-project methods on PostgresStorageBackend must raise NotImplementedError.
+    """Non-project methods on PostgresStorageBackend must raise NotImplementedError
+    (or RuntimeError when the DB is unavailable in desktop mode).
 
     Project methods are implemented in #196 and tested in
     tests/test_import_projects.py (mocked DB).
+    Settings methods are implemented in #197 and tested in
+    tests/test_import_settings.py (mocked DB).
     """
 
     @pytest.fixture
@@ -234,11 +237,15 @@ class TestPostgresStorageBackendNotImplemented:
         return PostgresStorageBackend()
 
     def test_get_settings(self, pg):
-        with pytest.raises(NotImplementedError):
+        # Settings are now implemented (#197); in desktop mode the DB
+        # call raises RuntimeError (not NotImplementedError) because
+        # the transaction() helper detects APP_MODE=desktop.
+        with pytest.raises((NotImplementedError, RuntimeError)):
             pg.get_settings()
 
     def test_save_settings(self, pg):
-        with pytest.raises(NotImplementedError):
+        # Same rationale as test_get_settings.
+        with pytest.raises((NotImplementedError, RuntimeError)):
             pg.save_settings({})
 
     def test_list_announcements(self, pg):

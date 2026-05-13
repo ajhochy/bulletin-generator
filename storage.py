@@ -346,10 +346,68 @@ class PostgresStorageBackend(StorageBackend):
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def get_settings(self) -> dict:
-        raise NotImplementedError("PostgresStorageBackend.get_settings not yet implemented")
+        """Read all org_settings rows and reconstruct a flat settings dict.
+
+        OAuth tokens stored under the ``"oauth_tokens"`` key are unpacked back
+        into top-level keys (pcoAccessToken, pcoRefreshToken, etc.) so callers
+        receive the same flat shape as the legacy settings.json.
+
+        User-level keys (e.g. editorDisplayName) are not yet included because
+        the user_settings table requires a known user_id — those will be added
+        once per-user identity is wired in.
+        """
+        from db import transaction, from_jsonb  # noqa: PLC0415
+
+        with transaction() as conn:
+            cursor = conn.execute("SELECT key, value FROM org_settings")
+            rows = cursor.fetchall()
+
+        result: dict = {}
+        for key, value in rows:
+            parsed = from_jsonb(value)
+            if key == "oauth_tokens" and isinstance(parsed, dict):
+                # Unpack OAuth bundle back to top-level keys for backward compat.
+                result.update(parsed)
+            else:
+                result[key] = parsed
+
+        return result
 
     def save_settings(self, data: dict) -> dict:
-        raise NotImplementedError("PostgresStorageBackend.save_settings not yet implemented")
+        """Persist recognised settings keys into org_settings (and user_settings
+        for user-level keys in a future release).
+
+        Each org key is upserted individually.  OAuth tokens are re-bundled
+        under the ``"oauth_tokens"`` key.  Unknown keys are ignored.
+
+        Returns the full flat settings dict as reconstructed by get_settings().
+        """
+        from db import transaction  # noqa: PLC0415
+        from migrations.import_settings import ORG_KEYS, OAUTH_KEYS  # noqa: PLC0415
+
+        with transaction() as conn:
+            # Upsert individual org keys.
+            for key in ORG_KEYS:
+                if key in data:
+                    _pg_upsert_org_setting(conn, key, data[key])
+
+            # Bundle OAuth tokens under a single row.
+            oauth_bundle = {k: data[k] for k in OAUTH_KEYS if k in data}
+            if oauth_bundle:
+                # Merge with any existing oauth_tokens to preserve tokens not
+                # present in the incoming payload.
+                cursor = conn.execute(
+                    "SELECT value FROM org_settings WHERE key = 'oauth_tokens'"
+                )
+                row = cursor.fetchone()
+                from db import from_jsonb  # noqa: PLC0415
+                existing: dict = from_jsonb(row[0]) if row else {}
+                if not isinstance(existing, dict):
+                    existing = {}
+                existing.update(oauth_bundle)
+                _pg_upsert_org_setting(conn, "oauth_tokens", existing)
+
+        return self.get_settings()
 
     # ── Announcements ─────────────────────────────────────────────────────────
 
@@ -374,6 +432,26 @@ class PostgresStorageBackend(StorageBackend):
 
     def save_templates(self, data: list) -> list:
         raise NotImplementedError("PostgresStorageBackend.save_templates not yet implemented")
+
+
+# ---------------------------------------------------------------------------
+# Postgres settings helper
+# ---------------------------------------------------------------------------
+
+def _pg_upsert_org_setting(conn, key: str, value) -> None:
+    """Upsert a single org_settings row (INSERT ... ON CONFLICT DO UPDATE)."""
+    import json as _json  # noqa: PLC0415
+
+    conn.execute(
+        """
+        INSERT INTO org_settings (key, value, updated_at)
+        VALUES (%(key)s, %(value)s::jsonb, now())
+        ON CONFLICT (key) DO UPDATE SET
+            value      = EXCLUDED.value,
+            updated_at = now()
+        """,
+        {"key": key, "value": _json.dumps(value, ensure_ascii=False)},
+    )
 
 
 # ---------------------------------------------------------------------------
