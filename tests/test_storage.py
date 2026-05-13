@@ -261,11 +261,15 @@ class TestPostgresStorageBackendNotImplemented:
             pg.save_announcements([])
 
     def test_list_songs(self, pg):
-        with pytest.raises(NotImplementedError):
+        # Songs are now implemented (#199); in desktop mode the DB
+        # call raises RuntimeError (not NotImplementedError) because
+        # the transaction() helper detects APP_MODE=desktop.
+        with pytest.raises((NotImplementedError, RuntimeError)):
             pg.list_songs()
 
     def test_save_songs(self, pg):
-        with pytest.raises(NotImplementedError):
+        # Same rationale as test_list_songs.
+        with pytest.raises((NotImplementedError, RuntimeError)):
             pg.save_songs([])
 
     def test_list_templates(self, pg):

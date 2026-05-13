@@ -489,10 +489,88 @@ class PostgresStorageBackend(StorageBackend):
     # ── Songs ─────────────────────────────────────────────────────────────────
 
     def list_songs(self) -> list:
-        raise NotImplementedError("PostgresStorageBackend.list_songs not yet implemented")
+        """Return all songs ordered by title ASC."""
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, title, author, lyrics, copyright, source, date_added, created_at
+                FROM songs
+                ORDER BY title ASC
+                """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [_pg_row_to_song(dict(zip(cols, row))) for row in rows]
 
     def save_songs(self, data: list) -> list:
-        raise NotImplementedError("PostgresStorageBackend.save_songs not yet implemented")
+        """Upsert each song in *data* individually; never deletes existing rows.
+
+        Each item must be a dict.  An ``id`` is required; if the raw id is not a
+        valid UUID a stable UUID5 is generated from title+author+source.
+
+        Returns the full songs list as read back from the database (title ASC).
+        """
+        import uuid as _uuid  # noqa: PLC0415
+        from db import transaction  # noqa: PLC0415
+
+        _SONG_NAMESPACE = _uuid.UUID("c0ffee00-d400-4db0-0000-000000000000")
+
+        with transaction() as conn:
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                title = str(item.get("title") or "")
+                author = str(item.get("author") or "")
+                lyrics = str(item.get("lyrics") or "")
+                copyright_ = str(item.get("copyright") or "")
+                source = str(item.get("source") or "")
+                date_added = str(
+                    item.get("dateAdded") or item.get("date_added") or ""
+                )
+
+                # Resolve id → must be a valid UUID.
+                raw_id = item.get("id") or ""
+                if raw_id:
+                    try:
+                        song_id = str(_uuid.UUID(str(raw_id)))
+                    except ValueError:
+                        fingerprint = f"{title}\x00{author}\x00{source}"
+                        song_id = str(_uuid.uuid5(_SONG_NAMESPACE, fingerprint))
+                else:
+                    fingerprint = f"{title}\x00{author}\x00{source}"
+                    song_id = str(_uuid.uuid5(_SONG_NAMESPACE, fingerprint))
+
+                conn.execute(
+                    """
+                    INSERT INTO songs (
+                        id, title, author, lyrics, copyright, source, date_added
+                    ) VALUES (
+                        %(id)s::uuid, %(title)s, %(author)s, %(lyrics)s,
+                        %(copyright)s, %(source)s, %(date_added)s
+                    )
+                    ON CONFLICT (id) DO UPDATE SET
+                        title      = EXCLUDED.title,
+                        author     = EXCLUDED.author,
+                        lyrics     = EXCLUDED.lyrics,
+                        copyright  = EXCLUDED.copyright,
+                        source     = EXCLUDED.source,
+                        date_added = EXCLUDED.date_added,
+                        updated_at = now()
+                    """,
+                    {
+                        "id": song_id,
+                        "title": title,
+                        "author": author,
+                        "lyrics": lyrics,
+                        "copyright": copyright_,
+                        "source": source,
+                        "date_added": date_added,
+                    },
+                )
+
+        return self.list_songs()
 
     # ── Templates ─────────────────────────────────────────────────────────────
 
@@ -557,6 +635,23 @@ def _pg_row_to_project(row: dict) -> dict:
         state["updatedBy"] = row["updated_by_email"]
 
     return state
+
+
+def _pg_row_to_song(row: dict) -> dict:
+    """Convert a raw Postgres songs row dict into the shape expected by the frontend.
+
+    Returns camelCase keys that match the legacy song_database.json format.
+    """
+    return {
+        "id": str(row["id"]),
+        "title": row.get("title") or "",
+        "author": row.get("author") or "",
+        "lyrics": row.get("lyrics") or "",
+        "copyright": row.get("copyright") or "",
+        "source": row.get("source") or "",
+        "dateAdded": row.get("date_added") or "",
+        "createdAt": _ts(row.get("created_at")),
+    }
 
 
 def _ts(value) -> str:
