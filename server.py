@@ -2257,6 +2257,9 @@ def run_server(port=8080):
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()
+    if not IS_DESKTOP:
+        from migrations.runner import run_schema_migrations
+        run_schema_migrations()
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
