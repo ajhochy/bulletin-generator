@@ -375,6 +375,13 @@ function applyBreakCtrlMeta(el, src) {
       el.dataset.annAfterIdx  = src.annAfterIdx  ?? '';
       el.dataset.annBeforeIdx = src.annBeforeIdx ?? '';
       return '⊞ Break here';
+    case 'vr-item':
+      el.dataset.vrIdx = src.vrIdx;
+      return '✕ Remove page break';
+    case 'vr-split':
+      el.dataset.vrAfterIdx  = src.vrAfterIdx  ?? '';
+      el.dataset.vrBeforeIdx = src.vrBeforeIdx ?? '';
+      return '⊞ Break here';
     default:
       return '✕ Remove break';
   }
@@ -1293,6 +1300,119 @@ function renderPreview() {
     if (calChunks.length > 0) lastRenderedBinding = 'calendar';
   }
 
+  function renderVolunteerRolesZone() {
+    if (!Array.isArray(vrData) || vrData.length === 0) return;
+
+    const renderedVrPageEls   = [];
+    const vrPageBreakSources  = [];
+
+    function addVrPage(el, breakSrc) {
+      const contentH = measureBottomContent(el);
+      const pg = document.createElement('div');
+      pg.className = 'booklet-page';
+      pg.appendChild(el);
+      if (optFooter.checked) {
+        const footer = document.createElement('div');
+        footer.className = 'page-footer';
+        footer.innerHTML = `<span>${esc(church)}</span><span>${esc(date)}</span>`;
+        pg.appendChild(footer);
+      }
+      if (lastRenderedPageEl) lastRenderedPageEl.after(pg);
+      else previewPane.appendChild(pg);
+      lastRenderedPageEl = pg;
+      lastPageUsedH = contentH;
+      renderedVrPageEls.push(pg);
+      if (breakSrc) vrPageBreakSources.push(breakSrc);
+    }
+
+    // Split roles into page groups at _breakBefore boundaries
+    const groups = [];
+    let current = [];
+    vrData.forEach(role => {
+      if (role._breakBefore && current.length > 0) {
+        groups.push(current);
+        current = [role];
+      } else {
+        current.push(role);
+      }
+    });
+    if (current.length) groups.push(current);
+
+    groups.forEach((group, gIdx) => {
+      const contentEl = document.createElement('div');
+      contentEl.className = 'bottom-section volunteer-roles-section';
+
+      if (gIdx === 0) {
+        const heading = document.createElement('div');
+        heading.className = 'staff-section-label';
+        heading.textContent = 'Volunteer Roles';
+        contentEl.appendChild(heading);
+        const topRule = document.createElement('div');
+        topRule.className = 'staff-top-rule';
+        contentEl.appendChild(topRule);
+      }
+
+      group.forEach((role, idx) => {
+        const vrIdx = vrData.indexOf(role);
+
+        // Inject "Break here" split control between adjacent cards on the same page
+        if (idx > 0) {
+          const prevVrIdx = vrData.indexOf(group[idx - 1]);
+          contentEl.appendChild(makeSplitCtrlEl(makeBreakSrc('vr-split', {
+            vrAfterIdx: prevVrIdx, vrBeforeIdx: vrIdx,
+          })));
+        }
+
+        const card = document.createElement('div');
+        card.className = 'vr-entry';
+        card.dataset.vrIdx = vrIdx;
+
+        if (role.url && role.url.trim()) {
+          const qrWrap = document.createElement('div');
+          qrWrap.className = 'vr-entry-url';
+          const qrImg = document.createElement('img');
+          qrImg.src = `https://api.qrserver.com/v1/create-qr-code/?size=68x68&data=${encodeURIComponent(role.url.trim())}`;
+          qrImg.alt = 'QR Code';
+          qrImg.width = 68; qrImg.height = 68;
+          qrWrap.appendChild(qrImg);
+          card.appendChild(qrWrap);
+        }
+
+        if (role.title) {
+          const t = document.createElement('h3');
+          t.className = 'vr-entry-title';
+          t.textContent = role.title;
+          card.appendChild(t);
+        }
+
+        if (role.body) {
+          const b = document.createElement('div');
+          b.className = 'vr-entry-body';
+          renderBodyText(b, role.body, true);
+          card.appendChild(b);
+        }
+
+        contentEl.appendChild(card);
+      });
+
+      if (gIdx === 0) {
+        appendBottomSection(contentEl, 'volunteerRoles');
+        renderedVrPageEls.push(lastRenderedPageEl);
+      } else {
+        const vrIdx = vrData.indexOf(group[0]);
+        addVrPage(contentEl, makeBreakSrc('vr-item', { vrIdx }));
+      }
+    });
+
+    // Inject "Remove page break" controls between adjacent VR pages
+    vrPageBreakSources.forEach((src, i) => {
+      const afterPage = renderedVrPageEls[i];
+      afterPage.after(makeBreakCtrlEl(src));
+    });
+
+    lastRenderedBinding = 'volunteer_roles';
+  }
+
   function renderStaffZone() {
     if (!optStaff.checked) return;
 
@@ -1421,6 +1541,7 @@ function renderPreview() {
     pco_items: renderOOWZone,
     serving_schedule: renderServingZone,
     calendar: renderCalendarZone,
+    volunteer_roles: renderVolunteerRolesZone,
     staff: renderStaffZone,
   };
 
@@ -1555,6 +1676,16 @@ previewPane.addEventListener('click', e => {
         renderItemList();
         schedulePreviewUpdate();
       }
+    } else if (type === 'vr-item') {
+      // Remove user-added forced break before this volunteer role
+      const idx = parseInt(ctrl.dataset.vrIdx, 10);
+      if (Number.isInteger(idx) && vrData[idx]) {
+        vrData[idx]._breakBefore = false;
+        saveVrGlobal();
+        vrRender();
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
+      }
     } else if (type === 'ann-item') {
       // Remove user-added forced break before this announcement
       const idx = parseInt(ctrl.dataset.annIdx, 10);
@@ -1673,6 +1804,19 @@ previewPane.addEventListener('click', e => {
       if (Number.isInteger(beforeIdx) && annData[beforeIdx]) {
         annData[beforeIdx]._breakBefore = true;
         schedulePreviewUpdate();
+      }
+      return;
+    }
+
+    // Volunteer role split: set _breakBefore on the "before" role
+    if (ctrl.dataset.breakType === 'vr-split') {
+      const beforeIdx = parseInt(ctrl.dataset.vrBeforeIdx, 10);
+      if (Number.isInteger(beforeIdx) && vrData[beforeIdx]) {
+        vrData[beforeIdx]._breakBefore = true;
+        saveVrGlobal();
+        vrRender();
+        schedulePreviewUpdate();
+        scheduleProjectPersist();
       }
       return;
     }

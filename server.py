@@ -60,21 +60,23 @@ else:
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-PROJECTS_FILE      = DATA_DIR / "projects.json"
-ANNOUNCEMENTS_FILE = DATA_DIR / "announcements.json"
-SETTINGS_FILE      = DATA_DIR / "settings.json"
-SONGS_FILE         = DATA_DIR / "song_database.json"
-MIGRATIONS_FILE    = DATA_DIR / "migrations.json"
-TEMPLATES_FILE     = DATA_DIR / "templates.json"
+PROJECTS_FILE          = DATA_DIR / "projects.json"
+ANNOUNCEMENTS_FILE     = DATA_DIR / "announcements.json"
+VOLUNTEER_ROLES_FILE   = DATA_DIR / "volunteer-roles.json"
+SETTINGS_FILE          = DATA_DIR / "settings.json"
+SONGS_FILE             = DATA_DIR / "song_database.json"
+MIGRATIONS_FILE        = DATA_DIR / "migrations.json"
+TEMPLATES_FILE         = DATA_DIR / "templates.json"
 FONTS_DIR          = DATA_DIR / "fonts"
 USER_FONTS_DIR     = FONTS_DIR / "user"
 FONT_CACHE_DIR     = FONTS_DIR / "cache"
 # Example/seed files always live alongside the app code (read-only in frozen builds)
 _EXAMPLE_DIR = BASE_DIR / "data"
-PROJECTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "projects.example.json"
-ANNOUNCEMENTS_EXAMPLE_FILE = _EXAMPLE_DIR / "announcements.example.json"
-SETTINGS_EXAMPLE_FILE      = _EXAMPLE_DIR / "settings.example.json"
-TEMPLATES_EXAMPLE_FILE     = _EXAMPLE_DIR / "templates.example.json"
+PROJECTS_EXAMPLE_FILE           = _EXAMPLE_DIR / "projects.example.json"
+ANNOUNCEMENTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "announcements.example.json"
+VOLUNTEER_ROLES_EXAMPLE_FILE    = _EXAMPLE_DIR / "volunteer-roles.example.json"
+SETTINGS_EXAMPLE_FILE           = _EXAMPLE_DIR / "settings.example.json"
+TEMPLATES_EXAMPLE_FILE          = _EXAMPLE_DIR / "templates.example.json"
 
 ALLOWED_FONT_EXTS = {".ttf", ".otf", ".woff", ".woff2"}
 SYSTEM_FONT_FAMILIES = {"system-ui", "arial", "helvetica", "georgia", "times new roman", "trebuchet ms", "verdana"}
@@ -121,9 +123,10 @@ def _classic_template(page_size="5.5x8.5"):
             {"id": "z-oow-song",    "binding": "pco_items",    "order": 4, "enabled": True,  "match": {"type": "song"}, "elements": {"songTitle": {}, "stanzaText": {}, "copyright": {}}},
             {"id": "z-oow-liturgy", "binding": "pco_items",    "order": 5, "enabled": True,  "match": {"type": "liturgy"}, "elements": {"title": {}, "bodyParagraph": {}}},
             {"id": "z-oow-label",   "binding": "pco_items",    "order": 6, "enabled": True,  "match": {"type": "label"}, "elements": {"title": {}, "body": {}}},
-            {"id": "z-cal",     "binding": "calendar",         "order": 7, "enabled": True,  "match": {}, "elements": {"dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {}}},
-            {"id": "z-serving", "binding": "serving_schedule", "order": 8, "enabled": True,  "match": {}, "elements": {"weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {}}},
-            {"id": "z-staff",   "binding": "staff",            "order": 9, "enabled": True,  "match": {}, "elements": {"staffName": {}, "staffRole": {}, "staffEmail": {}}},
+            {"id": "z-cal",             "binding": "calendar",         "order": 7, "enabled": True,  "match": {}, "elements": {"dayHeading": {}, "eventTitle": {}, "eventTime": {}, "eventDescription": {}}},
+            {"id": "z-volunteer-roles", "binding": "volunteer_roles",  "order": 8, "enabled": True,  "match": {}, "elements": {"title": {}, "body": {}, "url": {}}},
+            {"id": "z-serving",         "binding": "serving_schedule", "order": 9, "enabled": True,  "match": {}, "elements": {"weekHeading": {}, "teamName": {}, "serviceTime": {}, "positionLabel": {}, "volunteerName": {}}},
+            {"id": "z-staff",           "binding": "staff",            "order": 10, "enabled": True, "match": {}, "elements": {"staffName": {}, "staffRole": {}, "staffEmail": {}}},
         ],
     }
 
@@ -175,14 +178,19 @@ def _modern_template():
                 "eventTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
                 "eventDescription": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
             }},
-            {"id": "modern-serving", "binding": "serving_schedule", "order": 8, "enabled": True, "match": {}, "elements": {
+            {"id": "modern-volunteer-roles", "binding": "volunteer_roles", "order": 8, "enabled": True, "match": {}, "elements": {
+                "title": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
+                "body": {"fontFamily": "Open Sans", "size": "sm", "color": "#1f2933"},
+                "url": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"}
+            }},
+            {"id": "modern-serving", "binding": "serving_schedule", "order": 9, "enabled": True, "match": {}, "elements": {
                 "weekHeading": {"fontFamily": "Open Sans", "bold": True, "color": "#2f5d62"},
                 "teamName": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
                 "serviceTime": {"fontFamily": "Open Sans", "size": "sm", "color": "#64748b"},
                 "positionLabel": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
                 "volunteerName": {"fontFamily": "Open Sans", "color": "#1f2933"}
             }},
-            {"id": "modern-staff", "binding": "staff", "order": 9, "enabled": True, "match": {}, "elements": {
+            {"id": "modern-staff", "binding": "staff", "order": 10, "enabled": True, "match": {}, "elements": {
                 "staffName": {"fontFamily": "Open Sans", "bold": True, "color": "#1f2933"},
                 "staffRole": {"fontFamily": "Open Sans", "italic": True, "color": "#64748b"},
                 "staffEmail": {"fontFamily": "Open Sans", "size": "sm", "color": "#2f5d62"}
@@ -850,6 +858,40 @@ def _migration_005_builtin_template_presets():
     _sync_builtin_templates()
 
 
+def _migration_006_insert_volunteer_roles_zone():
+    """Insert volunteer_roles zone into every existing template that lacks it, between calendar (order 7) and serving_schedule (order 8). Idempotent."""
+    templates = _read_json(TEMPLATES_FILE, [])
+    if not isinstance(templates, list):
+        return
+    changed = False
+    for template in templates:
+        if not isinstance(template, dict):
+            continue
+        zones = template.get("zones")
+        if not isinstance(zones, list):
+            continue
+        if any(isinstance(z, dict) and z.get("binding") == "volunteer_roles" for z in zones):
+            continue
+        new_zone = {
+            "id": f"z-volunteer-roles-{template.get('id', 'tpl')}",
+            "binding": "volunteer_roles",
+            "order": 8,
+            "enabled": True,
+            "match": {},
+            "elements": {"title": {}, "body": {}, "url": {}},
+        }
+        # Bump existing orders >= 8 to make room
+        for z in zones:
+            if isinstance(z, dict):
+                o = z.get("order")
+                if isinstance(o, (int, float)) and o >= 8:
+                    z["order"] = o + 1
+        zones.append(new_zone)
+        changed = True
+    if changed:
+        _write_json(TEMPLATES_FILE, templates)
+
+
 # Registry: list of (id, callable). Order matters — append only, never reorder.
 _MIGRATION_REGISTRY = [
     ("M001_songdb_extraction",        _migration_001_songdb_extraction),
@@ -857,6 +899,7 @@ _MIGRATION_REGISTRY = [
     ("M003_project_template_backfill", _migration_003_project_template_backfill),
     ("M004_classic_staff_zone_enabled", _migration_004_classic_staff_zone_enabled),
     ("M005_builtin_template_presets", _migration_005_builtin_template_presets),
+    ("M006_insert_volunteer_roles_zone", _migration_006_insert_volunteer_roles_zone),
 ]
 
 
@@ -985,6 +1028,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/favicon.ico',              '_handle_favicon'),
         ('/api/projects',             '_handle_get_projects'),
         ('/api/announcements',        '_handle_get_announcements'),
+        ('/api/volunteer-roles',      '_handle_get_volunteer_roles'),
         ('/api/settings',             '_handle_get_settings'),
         ('/api/songs',                '_handle_get_songs'),
         ('/api/templates',            '_handle_get_templates'),
@@ -1007,6 +1051,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     _POST_ROUTES = [
         ('/api/projects',             '_handle_post_projects'),
         ('/api/announcements',        '_handle_post_announcements'),
+        ('/api/volunteer-roles',      '_handle_post_volunteer_roles'),
         ('/api/settings',             '_handle_post_settings'),
         ('/api/songs',                '_handle_post_songs'),
         ('/api/templates',            '_handle_post_templates'),
@@ -1079,6 +1124,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_get_announcements(self):
         self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
+
+    def _handle_get_volunteer_roles(self):
+        self._send_json(_read_json(VOLUNTEER_ROLES_FILE, []))
 
     def _handle_get_settings(self):
         self._send_json(_read_json(SETTINGS_FILE, {}))
@@ -1159,6 +1207,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         with _lock:
             _write_json(ANNOUNCEMENTS_FILE, anns)
+        self._send_json({"ok": True})
+
+    def _handle_post_volunteer_roles(self):
+        try:
+            roles = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(roles, list):
+            self._send_json({"error": "body must be an array"}, 400)
+            return
+        with _lock:
+            _write_json(VOLUNTEER_ROLES_FILE, roles)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
@@ -1247,7 +1308,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return "zone must be an object"
             if not isinstance(zone.get("id"), str) or not zone.get("id"):
                 return "zone must include an id"
-            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "serving_schedule", "staff"}:
+            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "volunteer_roles", "serving_schedule", "staff"}:
                 return "zone has invalid binding"
             if not isinstance(zone.get("elements", {}), dict):
                 return "zone elements must be an object"
@@ -2230,6 +2291,7 @@ def run_server(port=8080):
     """Start the HTTP server. Called directly by launcher.py in desktop mode."""
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
+    _initialize_local_file(VOLUNTEER_ROLES_FILE, VOLUNTEER_ROLES_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()

@@ -565,6 +565,7 @@ function initEditor() {
   svcDate.addEventListener('input', () => { updateDocTitle(); schedulePreviewUpdate(); updateSectionPreviews(); });
   bulletinTitleInput.addEventListener('input', () => { updateSectionPreviews(); });
   annAddBtn.addEventListener('click', () => annAdd());
+  vrAddBtn.addEventListener('click', () => vrAdd());
   welcomeAddBtn.addEventListener('click', () => welcomeAdd());
   welcomeHeadingInput.addEventListener('input', () => {
     welcomeHeading = welcomeHeadingInput.value;
@@ -597,6 +598,7 @@ function initEditor() {
   });
 
   updateSectionPreviews();
+  if (typeof vrRender === 'function') vrRender();
 }
 
 // ─── Section preview strings ──────────────────────────────────────────────────

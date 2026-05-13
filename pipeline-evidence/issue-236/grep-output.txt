@@ -1,0 +1,2 @@
+1270:            if zone.get("binding") not in {"cover", "announcements", "pco_items", "calendar", "volunteer_roles", "serving_schedule", "staff"}:
+PASS: volunteer_roles found in binding validation whitelist at line 1270

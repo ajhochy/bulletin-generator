@@ -34,11 +34,12 @@ function isServerMode()  { return _publicConfig.appMode === 'server';  }
 
 async function loadAllFromServer() {
   try {
-    const [projectsData, bootstrap, annsData, templatesData] = await Promise.all([
+    const [projectsData, bootstrap, annsData, templatesData, vrDataResp] = await Promise.all([
       apiFetch('/api/projects').catch(() => ({ projects: [] })),
       apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),
       apiFetch('/api/announcements').catch(() => []),
       apiFetch('/api/templates').catch(() => []),
+      apiFetch('/api/volunteer-roles').catch(() => []),
     ]);
     setProjects(projectsData.projects);
     setTemplates(Array.isArray(templatesData) ? templatesData : []);
@@ -68,6 +69,9 @@ async function loadAllFromServer() {
       songDb = bootstrap.songDb;
     setAnnData(Array.isArray(annsData)
       ? annsData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '' }))
+      : []);
+    setVrData(Array.isArray(vrDataResp)
+      ? vrDataResp.map(r => ({ title: r.title || '', body: r.body || '', url: r.url || '', _breakBefore: !!r._breakBefore, _noBreakBefore: !!r._noBreakBefore }))
       : []);
     setServingTeamFilterMap(_serverSettings.servingTeamFilter);
     setCalendarSettings(_serverSettings.calUrls, _serverSettings.calExclude);

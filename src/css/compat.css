@@ -355,6 +355,10 @@ body {
 .ann-url-input:focus { outline: none; border-color: var(--accent-light); }
 .ann-qr-wrap { float: right; margin-left: 5px; margin-bottom: 2px; line-height: 0; }
 .ann-qr-wrap img { width: 68px; height: 68px; display: block; }
+.vr-entry-url { float: right; margin-left: 6px; margin-bottom: 2px; line-height: 0; }
+.vr-entry-url img { width: 68px; height: 68px; display: block; }
+.vr-entry-title { font-size: 0.58rem; font-family: var(--font-sans); font-weight: 700; color: #111; }
+.vr-entry-body { font-size: 0.58rem; font-family: var(--font-sans); color: #333; }
 .welcome-item-row { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem; }
 .welcome-item-row .ann-title-input { flex: 1; min-width: 0; }
 
