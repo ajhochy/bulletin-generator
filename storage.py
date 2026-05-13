@@ -575,10 +575,84 @@ class PostgresStorageBackend(StorageBackend):
     # ── Templates ─────────────────────────────────────────────────────────────
 
     def list_templates(self) -> list:
-        raise NotImplementedError("PostgresStorageBackend.list_templates not yet implemented")
+        """Return all templates ordered by built_in DESC, name ASC.
+
+        Each returned dict has keys: id, name, data, built_in.
+        The ``data`` column holds the full template JSONB object.
+        """
+        from db import transaction, from_jsonb  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, data, built_in
+                FROM templates
+                ORDER BY built_in DESC, name ASC
+                """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [_pg_row_to_template(dict(zip(cols, row))) for row in rows]
 
     def save_templates(self, data: list) -> list:
-        raise NotImplementedError("PostgresStorageBackend.save_templates not yet implemented")
+        """Upsert each custom template in *data*; built-in templates are never modified.
+
+        For each item in *data*:
+        * If ``built_in`` is True → skip silently (protected).
+        * Otherwise → upsert (INSERT ... ON CONFLICT (id) DO UPDATE SET name, data).
+
+        An ``id`` is required on each item; if the raw id is not a valid UUID
+        a stable UUID5 is generated from the template name.
+
+        Returns the full templates list as read back from the database
+        (built_in DESC, name ASC).
+        """
+        import json as _json  # noqa: PLC0415
+        import uuid as _uuid  # noqa: PLC0415
+        from db import transaction  # noqa: PLC0415
+
+        _TEMPLATE_NAMESPACE = _uuid.UUID("b01e7e00-7e00-4000-8000-000000000000")
+
+        with transaction() as conn:
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+
+                # Built-in templates are protected — never update them.
+                if item.get("built_in") or item.get("builtIn"):
+                    continue
+
+                name = str(item.get("name") or "")
+
+                # Resolve id → must be a valid UUID.
+                raw_id = item.get("id") or ""
+                if raw_id:
+                    try:
+                        template_id = str(_uuid.UUID(str(raw_id)))
+                    except ValueError:
+                        template_id = str(_uuid.uuid5(_TEMPLATE_NAMESPACE, str(raw_id)))
+                else:
+                    template_id = str(_uuid.uuid5(_TEMPLATE_NAMESPACE, name))
+
+                data_json = _json.dumps(item, ensure_ascii=False)
+
+                conn.execute(
+                    """
+                    INSERT INTO templates (id, name, data, built_in)
+                    VALUES (%(id)s::uuid, %(name)s, %(data)s::jsonb, FALSE)
+                    ON CONFLICT (id) DO UPDATE SET
+                        name       = EXCLUDED.name,
+                        data       = EXCLUDED.data,
+                        updated_at = now()
+                    WHERE NOT templates.built_in
+                    """,
+                    {
+                        "id": template_id,
+                        "name": name,
+                        "data": data_json,
+                    },
+                )
+
+        return self.list_templates()
 
 
 # ---------------------------------------------------------------------------
@@ -635,6 +709,27 @@ def _pg_row_to_project(row: dict) -> dict:
         state["updatedBy"] = row["updated_by_email"]
 
     return state
+
+
+def _pg_row_to_template(row: dict) -> dict:
+    """Convert a raw Postgres templates row dict into the shape expected by the frontend.
+
+    The ``data`` column holds the full template payload as JSONB.  We return
+    that payload merged with the DB-authoritative fields (id, name, built_in)
+    so callers can trust those keys even if the stored data blob differs.
+    """
+    from db import from_jsonb  # noqa: PLC0415
+
+    data = from_jsonb(row.get("data")) or {}
+    if not isinstance(data, dict):
+        data = {}
+
+    # Merge DB-authoritative fields on top of the stored data blob.
+    data["id"] = str(row["id"])
+    data["name"] = row.get("name") or data.get("name") or ""
+    data["builtIn"] = bool(row.get("built_in"))
+
+    return data
 
 
 def _pg_row_to_song(row: dict) -> dict:
