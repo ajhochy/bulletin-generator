@@ -232,23 +232,116 @@ class JsonStorageBackend(StorageBackend):
 class PostgresStorageBackend(StorageBackend):
     """Postgres-backed storage for multi-user server deployments.
 
-    All methods raise ``NotImplementedError`` until the Postgres
-    implementations are wired in by subsequent issues (#196-#201).
+    Project methods are fully implemented.  All other methods raise
+    ``NotImplementedError`` until the remaining issues (#197-#201) land.
     """
 
     # ── Projects ──────────────────────────────────────────────────────────────
 
     def list_projects(self) -> list:
-        raise NotImplementedError("PostgresStorageBackend.list_projects not yet implemented")
+        """Return all projects ordered by updated_at DESC."""
+        from db import transaction, from_jsonb  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, owner_user_id, visibility, state, revision,
+                       created_at, updated_at, created_by_email, updated_by_email,
+                       imported_from_json
+                FROM projects
+                ORDER BY updated_at DESC
+                """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [_pg_row_to_project(dict(zip(cols, row))) for row in rows]
 
     def get_project(self, project_id: str) -> dict | None:
-        raise NotImplementedError("PostgresStorageBackend.get_project not yet implemented")
+        """Return a single project dict by id, or None if not found."""
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, owner_user_id, visibility, state, revision,
+                       created_at, updated_at, created_by_email, updated_by_email,
+                       imported_from_json
+                FROM projects
+                WHERE id = %s::uuid
+                """,
+                (project_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+        return _pg_row_to_project(dict(zip(cols, row)))
 
     def save_project(self, data: dict) -> dict:
-        raise NotImplementedError("PostgresStorageBackend.save_project not yet implemented")
+        """Upsert a project and return the persisted dict.
+
+        * On INSERT  — revision defaults to 1.
+        * On UPDATE  — revision is incremented by 1.
+        ``data`` must contain an ``id`` key (UUID string).
+        """
+        if "id" not in data:
+            raise ValueError("project data must contain an 'id' key")
+
+        import json as _json  # noqa: PLC0415
+        from db import transaction  # noqa: PLC0415
+
+        project_id = data["id"]
+        name = str(data.get("name") or "")
+        state_json = _json.dumps(data, ensure_ascii=False)
+        created_by_email = str(data.get("createdBy") or "")
+        updated_by_email = str(data.get("updatedBy") or "")
+        created_at = data.get("createdAt") or None
+        updated_at = data.get("updatedAt") or None
+
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO projects (
+                    id, name, owner_user_id, visibility, state, revision,
+                    created_at, updated_at, created_by_email, updated_by_email,
+                    imported_from_json
+                ) VALUES (
+                    %(id)s::uuid, %(name)s, NULL, 'workspace', %(state)s::jsonb, 1,
+                    COALESCE(%(created_at)s::timestamptz, now()),
+                    COALESCE(%(updated_at)s::timestamptz, now()),
+                    %(created_by_email)s, %(updated_by_email)s, FALSE
+                )
+                ON CONFLICT (id) DO UPDATE SET
+                    name             = EXCLUDED.name,
+                    state            = EXCLUDED.state,
+                    revision         = projects.revision + 1,
+                    updated_at       = COALESCE(EXCLUDED.updated_at, now()),
+                    updated_by_email = EXCLUDED.updated_by_email
+                RETURNING id, name, owner_user_id, visibility, state, revision,
+                          created_at, updated_at, created_by_email, updated_by_email,
+                          imported_from_json
+                """,
+                {
+                    "id": project_id,
+                    "name": name,
+                    "state": state_json,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "created_by_email": created_by_email,
+                    "updated_by_email": updated_by_email,
+                },
+            )
+            row = cursor.fetchone()
+            cols = [d[0] for d in cursor.description]
+        return _pg_row_to_project(dict(zip(cols, row)))
 
     def delete_project(self, project_id: str) -> bool:
-        raise NotImplementedError("PostgresStorageBackend.delete_project not yet implemented")
+        """Delete a project by id; return True if it existed."""
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                "DELETE FROM projects WHERE id = %s::uuid",
+                (project_id,),
+            )
+        return cursor.rowcount == 1
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
@@ -281,6 +374,51 @@ class PostgresStorageBackend(StorageBackend):
 
     def save_templates(self, data: list) -> list:
         raise NotImplementedError("PostgresStorageBackend.save_templates not yet implemented")
+
+
+# ---------------------------------------------------------------------------
+# Postgres row → project dict helper
+# ---------------------------------------------------------------------------
+
+def _pg_row_to_project(row: dict) -> dict:
+    """Convert a raw Postgres row dict into the project dict shape expected by the frontend.
+
+    The ``state`` column holds the full project payload as JSONB.  We return
+    that payload merged with a few top-level fields that callers depend on
+    (``id``, ``name``, ``revision``) so callers can trust those keys even if
+    the stored state blob is missing them.
+    """
+    from db import from_jsonb  # noqa: PLC0415
+
+    state = from_jsonb(row.get("state")) or {}
+    if not isinstance(state, dict):
+        state = {}
+
+    # Merge DB-authoritative fields on top of the stored state blob.
+    state["id"] = str(row["id"])
+    state["name"] = row.get("name") or state.get("name") or ""
+    state["revision"] = row.get("revision") or state.get("revision") or 1
+
+    # Surface timestamps and attribution as camelCase keys matching the legacy format.
+    if row.get("created_at"):
+        state.setdefault("createdAt", _ts(row["created_at"]))
+    if row.get("updated_at"):
+        state["updatedAt"] = _ts(row["updated_at"])
+    if row.get("created_by_email"):
+        state.setdefault("createdBy", row["created_by_email"])
+    if row.get("updated_by_email"):
+        state["updatedBy"] = row["updated_by_email"]
+
+    return state
+
+
+def _ts(value) -> str:
+    """Convert a datetime (or string) to ISO-8601 string."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 # ---------------------------------------------------------------------------

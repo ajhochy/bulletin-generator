@@ -220,30 +220,18 @@ class TestJsonStorageBackendTemplates:
         assert [t["id"] for t in backend.list_templates()] == ["new"]
 
 
-# ── PostgresStorageBackend raises NotImplementedError ─────────────────────────
+# ── PostgresStorageBackend — unimplemented methods still raise ────────────────
 
 class TestPostgresStorageBackendNotImplemented:
-    """Every method on PostgresStorageBackend must raise NotImplementedError."""
+    """Non-project methods on PostgresStorageBackend must raise NotImplementedError.
+
+    Project methods are implemented in #196 and tested in
+    tests/test_import_projects.py (mocked DB).
+    """
 
     @pytest.fixture
     def pg(self):
         return PostgresStorageBackend()
-
-    def test_list_projects(self, pg):
-        with pytest.raises(NotImplementedError):
-            pg.list_projects()
-
-    def test_get_project(self, pg):
-        with pytest.raises(NotImplementedError):
-            pg.get_project("any-id")
-
-    def test_save_project(self, pg):
-        with pytest.raises(NotImplementedError):
-            pg.save_project({"id": "x"})
-
-    def test_delete_project(self, pg):
-        with pytest.raises(NotImplementedError):
-            pg.delete_project("x")
 
     def test_get_settings(self, pg):
         with pytest.raises(NotImplementedError):
