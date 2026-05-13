@@ -124,10 +124,17 @@ Users sign in with their own Planning Center and Google accounts through the pac
 
 ### Docker
 
-Run with Docker Compose:
+Server mode requires Postgres. Copy the example env file and fill in your credentials before starting:
 
 ```bash
-docker compose up --build
+cp .env.example .env
+# Edit .env: set POSTGRES_PASSWORD, PCO_CLIENT_ID/SECRET, GOOGLE_CLIENT_ID/SECRET, APP_URL, etc.
+```
+
+Then start all services (app + Postgres + Watchtower):
+
+```bash
+docker compose up -d
 ```
 
 Then open:
@@ -138,6 +145,11 @@ http://localhost:8080/
 
 The Compose setup mounts `./data` into the container so working data survives container rebuilds.
 The Docker build now also runs the frontend `vite` build, so JS bundle regressions fail during image creation instead of only at runtime.
+
+The `postgres` service uses a named Docker volume (`postgres_data`) for durable database storage.
+Omit `docker compose down -v` — the `-v` flag removes named volumes and will destroy your database.
+
+If `DATABASE_URL` is missing when `APP_MODE=server`, the server exits immediately with a clear error message pointing to `.env.example`.
 
 ## Data and storage
 

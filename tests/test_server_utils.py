@@ -265,3 +265,46 @@ class TestParseListEnv:
         with patch.dict(os.environ, {"TEST_LIST_ENV": "  a , b , c  "}):
             result = server._parse_list_env("TEST_LIST_ENV")
             assert result == ["a", "b", "c"]
+
+
+# ── _validate_server_config ───────────────────────────────────────────────────
+
+class TestValidateServerConfig:
+    """server._validate_server_config() should fail fast in server mode when
+    DATABASE_URL is absent, and be a no-op in desktop mode."""
+
+    def test_server_mode_with_database_url_passes(self, monkeypatch):
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        with patch.dict(os.environ, {"DATABASE_URL": "postgresql://u:p@localhost/db"}):
+            # Should not raise or exit
+            server._validate_server_config()
+
+    def test_server_mode_missing_database_url_exits(self, monkeypatch):
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+        env.pop("DATABASE_URL", None)
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(SystemExit) as exc_info:
+                server._validate_server_config()
+            assert exc_info.value.code == 1
+
+    def test_server_mode_empty_database_url_exits(self, monkeypatch):
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        with patch.dict(os.environ, {"DATABASE_URL": "   "}):
+            with pytest.raises(SystemExit) as exc_info:
+                server._validate_server_config()
+            assert exc_info.value.code == 1
+
+    def test_desktop_mode_no_database_url_passes(self, monkeypatch):
+        monkeypatch.setattr(server, "IS_DESKTOP", True)
+        env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+        env.pop("DATABASE_URL", None)
+        with patch.dict(os.environ, env, clear=True):
+            # Desktop mode must not require DATABASE_URL
+            server._validate_server_config()
+
+    def test_desktop_mode_ignores_missing_database_url(self, monkeypatch):
+        """Desktop startup must succeed even when DATABASE_URL is completely absent."""
+        monkeypatch.setattr(server, "IS_DESKTOP", True)
+        with patch.dict(os.environ, {}, clear=True):
+            server._validate_server_config()  # No SystemExit raised

@@ -247,6 +247,29 @@ if APP_MODE not in ("server", "desktop"):
     print(f"  [config] Unknown APP_MODE '{APP_MODE}', defaulting to 'server'")
     APP_MODE = "server"
 
+IS_DESKTOP = APP_MODE == "desktop"
+
+
+def _validate_server_config():
+    """Fail fast with a clear message when required server-mode env vars are missing."""
+    if IS_DESKTOP:
+        return
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not database_url:
+        print(
+            "\n"
+            "  ERROR: DATABASE_URL is not set.\n"
+            "\n"
+            "  APP_MODE=server requires a Postgres connection URL.\n"
+            "  Set DATABASE_URL in your .env file, for example:\n"
+            "\n"
+            "    DATABASE_URL=postgresql://bulletin:yourpassword@postgres:5432/bulletindb\n"
+            "\n"
+            "  See .env.example for the full list of required server-mode variables.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
 
 def _load_dotenv(path):
     if not path.exists():
@@ -2228,6 +2251,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
 def run_server(port=8080):
     """Start the HTTP server. Called directly by launcher.py in desktop mode."""
+    _validate_server_config()
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
