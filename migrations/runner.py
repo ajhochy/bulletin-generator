@@ -77,7 +77,43 @@ def _record_applied(conn, migration_id: str):
     )
 
 
-# ── Public entry point ────────────────────────────────────────────────────────
+# ── Public entry points ───────────────────────────────────────────────────────
+
+
+def get_migration_status() -> dict:
+    """
+    Return the current migration state without modifying anything.
+
+    Server mode::
+
+        {"applied": int, "latest": str|None}
+
+    Desktop mode::
+
+        {"applied": None, "latest": None, "note": "desktop mode — no Postgres"}
+
+    If the data_migrations table does not yet exist (e.g. server is starting
+    up for the first time), the exception is caught and returned as error info.
+    """
+    if IS_DESKTOP:
+        return {"applied": None, "latest": None, "note": "desktop mode — no Postgres"}
+
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id FROM data_migrations ORDER BY applied_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        ids = [row[0] for row in rows]
+        return {
+            "applied": len(ids),
+            "latest": ids[0] if ids else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"applied": None, "latest": None, "error": str(exc)}
 
 
 def run_schema_migrations():

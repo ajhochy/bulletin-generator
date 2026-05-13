@@ -1013,6 +1013,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/templates',            '_handle_get_templates'),
         ('/api/fonts',                '_handle_get_fonts'),
         ('/api/bootstrap',            '_handle_bootstrap'),
+        ('/api/health',               '_handle_health'),
         ('/api/google-calendars',     '_handle_google_calendars'),
         ('/api/admin/check-update',   '_handle_check_update'),
         ('/api/admin/update-status',  '_handle_update_status'),
@@ -1096,6 +1097,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_favicon(self):
         self.send_response(204)
         self.end_headers()
+
+    def _handle_health(self):
+        if IS_DESKTOP:
+            self._send_json({
+                "status": "healthy",
+                "mode": APP_MODE,
+                "version": APP_VERSION,
+            })
+            return
+
+        import db as _db
+        from migrations.runner import get_migration_status
+
+        db_check = _db.health_check()
+        mig_status = get_migration_status()
+
+        connected = db_check.get("connected", False)
+        payload = {
+            "status": "healthy" if connected else "unhealthy",
+            "mode": APP_MODE,
+            "version": APP_VERSION,
+            "database": {
+                "connected": connected,
+                "error": db_check.get("error"),
+                "migrations_applied": mig_status.get("applied"),
+                "latest_migration": mig_status.get("latest"),
+            },
+        }
+        self._send_json(payload, 200 if connected else 503)
 
     def _handle_get_projects(self):
         self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
