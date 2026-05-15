@@ -15,15 +15,19 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     labels:
-      - "com.centurylabs.watchtower.scope=bulletin-generator"
+      - "com.centurylinklabs.watchtower.scope=bulletin-generator"
 
   # Watchtower watches GHCR for new images and restarts the app container.
   # It is only reachable within the private Docker network — never exposed
   # externally — so the shared default token is safe for typical deployments.
   # Advanced users can override WATCHTOWER_TOKEN in .env.
+  #
+  # --http-api-periodic-polls is required alongside --http-api-update,
+  # otherwise periodic polling is disabled and Watchtower only updates when
+  # the in-app "Check for updates" button is pressed.
   watchtower:
     image: containrrr/watchtower
-    command: --http-api-update --scope bulletin-generator --cleanup
+    command: --http-api-update --http-api-periodic-polls --scope bulletin-generator --cleanup --interval 3600
     environment:
       - WATCHTOWER_HTTP_API_TOKEN=${WATCHTOWER_TOKEN:-bulletin-updater}
     volumes:
