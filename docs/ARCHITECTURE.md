@@ -63,6 +63,19 @@ Features that should usually be mode-specific:
 - song database management
 - rendering and PDF generation
 
+## Server Mode: Data Directory Layout
+
+The repo's `docker-compose.yml` bind-mounts `./data:/app/data` — the host folder `./data` sits next to `docker-compose.yml` and holds `projects.json`, `settings.json`, etc.
+
+**The Synology NAS production deployment uses a different host path: `./app/data:/app/data`.** The container side (`/app/data`) is identical; only the host side differs because of how the NAS organizes the stack's working directory.
+
+Implications:
+
+- Do **not** "fix" the repo's `./data:/app/data` to match the NAS — that would break every dev checkout and any other server deployment.
+- When pulling/restarting on the NAS, the bind-mount override is applied there (via the NAS's compose file or stack config), not in this repo.
+- Backups taken from the NAS live under `./app/data/`; backups from a dev or generic server install live under `./data/`. Same JSON schema, different host path.
+- If you ever need to migrate data between the two, copy the contents of the source `data/` folder into the destination's bind-mount target — no transformation needed.
+
 ## GitHub Organization
 
 Issues are organized with:
