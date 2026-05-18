@@ -582,6 +582,7 @@ async function restoreOnStartup() {
   await loadAllFromServer();
   renderSongDb();
   renderStaffEditor(); // re-render now that staffData is loaded from server
+  if (typeof vrRender === 'function') vrRender(); // re-render volunteer-role cards now that vrData is loaded
 
   // Always restore global logo from server settings first
   restoreDefaultStaffLogo();
