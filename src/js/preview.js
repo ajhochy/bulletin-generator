@@ -1301,6 +1301,7 @@ function renderPreview() {
   }
 
   function renderVolunteerRolesZone() {
+    if (!optVolunteerRoles.checked) return;
     if (!Array.isArray(vrData) || vrData.length === 0) return;
 
     const renderedVrPageEls   = [];

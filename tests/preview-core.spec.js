@@ -50,7 +50,7 @@ describe('preview chunk planner', () => {
     expect(plan[2]).toMatchObject({ forceBreak: true, paragraphBreakIdx: 2, paragraphBreakItemIdx: 7 });
   });
 
-  it('derives preview zone order from enabled template zones', () => {
+  it('derives preview zone order from enabled template zones, appending missing supported bindings in default order', () => {
     const template = {
       zones: [
         { binding: 'staff', order: 1, enabled: true },
@@ -61,7 +61,39 @@ describe('preview chunk planner', () => {
       ],
     };
 
-    expect(derivePreviewZoneOrder(template)).toEqual(['staff', 'pco_items', 'calendar']);
+    expect(derivePreviewZoneOrder(template)).toEqual([
+      'serving_schedule',
+      'volunteer_roles',
+      'staff',
+      'cover',
+      'announcements',
+      'pco_items',
+      'calendar',
+    ]);
+  });
+
+  it('inserts missing supported bindings at their default position relative to existing zones', () => {
+    // Mirrors the live "legacy template missing volunteer_roles" case:
+    // existing zones in default order, just without volunteer_roles.
+    const template = {
+      zones: [
+        { binding: 'cover',            order: 1, enabled: true },
+        { binding: 'announcements',    order: 2, enabled: true },
+        { binding: 'pco_items',        order: 3, enabled: true },
+        { binding: 'calendar',         order: 4, enabled: true },
+        { binding: 'serving_schedule', order: 5, enabled: true },
+        { binding: 'staff',            order: 6, enabled: true },
+      ],
+    };
+    expect(derivePreviewZoneOrder(template)).toEqual([
+      'cover',
+      'announcements',
+      'pco_items',
+      'calendar',
+      'serving_schedule',
+      'volunteer_roles',
+      'staff',
+    ]);
   });
 
   it('falls back to Classic zone order without active zones', () => {
@@ -70,8 +102,8 @@ describe('preview chunk planner', () => {
       'announcements',
       'pco_items',
       'calendar',
-      'volunteer_roles',
       'serving_schedule',
+      'volunteer_roles',
       'staff',
     ]);
   });

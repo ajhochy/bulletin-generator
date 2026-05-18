@@ -5,8 +5,8 @@ export const DEFAULT_PREVIEW_ZONE_ORDER = [
   'announcements',
   'pco_items',
   'calendar',
-  'volunteer_roles',
   'serving_schedule',
+  'volunteer_roles',
   'staff',
 ];
 
@@ -27,9 +27,26 @@ export function derivePreviewZoneOrder(template, supportedBindings = DEFAULT_PRE
     if (current === undefined || order < current) bindingOrder.set(zone.binding, order);
   });
 
-  return Array.from(bindingOrder.entries())
+  const ordered = Array.from(bindingOrder.entries())
     .sort((a, b) => a[1] - b[1])
     .map(([binding]) => binding);
+
+  // Splice in supported bindings missing from the template at their DEFAULT
+  // position relative to existing zones, so newly-added bindings (e.g.
+  // volunteer_roles) land where users expect (right after calendar, not
+  // tacked onto the end) without requiring a per-template migration.
+  DEFAULT_PREVIEW_ZONE_ORDER.forEach((binding, defaultIdx) => {
+    if (!supported.has(binding)) return;
+    if (ordered.includes(binding)) return;
+    let insertAt = ordered.length;
+    for (let i = defaultIdx + 1; i < DEFAULT_PREVIEW_ZONE_ORDER.length; i++) {
+      const successor = DEFAULT_PREVIEW_ZONE_ORDER[i];
+      const idx = ordered.indexOf(successor);
+      if (idx !== -1) { insertAt = idx; break; }
+    }
+    ordered.splice(insertAt, 0, binding);
+  });
+  return ordered;
 }
 
 export function isInlineLayout(fmt, row = 'title-row') {

@@ -263,6 +263,7 @@ function initFormattingControls() {
   optBookletSize.addEventListener('change',   () => { renderPreview(); scheduleProjectPersist(); });
   optAnnouncements.addEventListener('change', () => { renderPreview(); scheduleProjectPersist(); });
   optVolunteers.addEventListener('change',    () => { renderPreview(); scheduleProjectPersist(); });
+  optVolunteerRoles.addEventListener('change',() => { renderPreview(); scheduleProjectPersist(); });
   optStaff.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
 
   document.getElementById('fmt-save-btn').addEventListener('click', () => {

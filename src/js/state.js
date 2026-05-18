@@ -250,6 +250,7 @@ const optCal               = document.getElementById('opt-cal');
 const optBookletSize       = document.getElementById('opt-booklet-size');
 const optAnnouncements     = document.getElementById('opt-announcements');
 const optVolunteers        = document.getElementById('opt-volunteers');
+const optVolunteerRoles    = document.getElementById('opt-volunteer-roles');
 const optStaff             = document.getElementById('opt-staff');
 const pageCountDisplay     = document.getElementById('page-count-display');
 const itemList             = document.getElementById('item-list');
