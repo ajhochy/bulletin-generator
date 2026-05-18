@@ -354,8 +354,9 @@ function getClassicTemplateFallback() {
       { id: 'z-ann',     binding: 'announcements',    order: 2, enabled: true, match: {}, elements: {} },
       { id: 'z-oow',     binding: 'pco_items',        order: 3, enabled: true, match: {}, elements: {} },
       { id: 'z-cal',     binding: 'calendar',         order: 4, enabled: true, match: {}, elements: {} },
-      { id: 'z-serving', binding: 'serving_schedule', order: 5, enabled: true, match: {}, elements: {} },
-      { id: 'z-staff',   binding: 'staff',            order: 6, enabled: true, match: {}, elements: {} },
+      { id: 'z-vroles',  binding: 'volunteer_roles',  order: 5, enabled: true, match: {}, elements: {} },
+      { id: 'z-serving', binding: 'serving_schedule', order: 6, enabled: true, match: {}, elements: {} },
+      { id: 'z-staff',   binding: 'staff',            order: 7, enabled: true, match: {}, elements: {} },
     ],
   };
 }

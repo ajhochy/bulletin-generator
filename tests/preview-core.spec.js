@@ -50,7 +50,7 @@ describe('preview chunk planner', () => {
     expect(plan[2]).toMatchObject({ forceBreak: true, paragraphBreakIdx: 2, paragraphBreakItemIdx: 7 });
   });
 
-  it('derives preview zone order from enabled template zones', () => {
+  it('derives preview zone order from enabled template zones, appending missing supported bindings in default order', () => {
     const template = {
       zones: [
         { binding: 'staff', order: 1, enabled: true },
@@ -61,7 +61,15 @@ describe('preview chunk planner', () => {
       ],
     };
 
-    expect(derivePreviewZoneOrder(template)).toEqual(['staff', 'pco_items', 'calendar']);
+    expect(derivePreviewZoneOrder(template)).toEqual([
+      'staff',
+      'pco_items',
+      'calendar',
+      'cover',
+      'announcements',
+      'volunteer_roles',
+      'serving_schedule',
+    ]);
   });
 
   it('falls back to Classic zone order without active zones', () => {

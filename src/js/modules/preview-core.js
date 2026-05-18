@@ -27,9 +27,18 @@ export function derivePreviewZoneOrder(template, supportedBindings = DEFAULT_PRE
     if (current === undefined || order < current) bindingOrder.set(zone.binding, order);
   });
 
-  return Array.from(bindingOrder.entries())
+  const ordered = Array.from(bindingOrder.entries())
     .sort((a, b) => a[1] - b[1])
     .map(([binding]) => binding);
+
+  // Append any supported bindings missing from the template, in DEFAULT order.
+  // Lets newly-added zones (e.g. volunteer_roles) appear in legacy templates
+  // without a migration step.
+  const present = new Set(ordered);
+  DEFAULT_PREVIEW_ZONE_ORDER.forEach(binding => {
+    if (supported.has(binding) && !present.has(binding)) ordered.push(binding);
+  });
+  return ordered;
 }
 
 export function isInlineLayout(fmt, row = 'title-row') {
