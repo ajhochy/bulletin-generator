@@ -149,6 +149,91 @@ class TestTemplateMigration:
         assert all(t["builtIn"] for t in templates)
         assert templates[1]["cssVars"]["fontFamily"] == "Open Sans"
 
+    def test_m007_moves_volunteer_roles_after_serving_schedule(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        settings_path = tmp_path / "settings.json"
+        projects_path = tmp_path / "projects.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        monkeypatch.setattr(server, "SETTINGS_FILE", settings_path)
+        monkeypatch.setattr(server, "PROJECTS_FILE", projects_path)
+
+        # Template shaped like a post-M006 install: volunteer_roles=8, serving_schedule=9.
+        def make_template(tid):
+            return {
+                "id": tid,
+                "zones": [
+                    {"binding": "cover",            "order": 1, "enabled": True},
+                    {"binding": "announcements",    "order": 2, "enabled": True},
+                    {"binding": "pco_items",        "order": 3, "enabled": True},
+                    {"binding": "calendar",         "order": 7, "enabled": True},
+                    {"binding": "volunteer_roles",  "order": 8, "enabled": True},
+                    {"binding": "serving_schedule", "order": 9, "enabled": True},
+                    {"binding": "staff",            "order": 10, "enabled": True},
+                ],
+            }
+
+        server._write_json(templates_path, [make_template("classic"), make_template("modern")])
+        server._write_json(settings_path, {"docTemplate": make_template("active")})
+        server._write_json(projects_path, [
+            {"id": "p1", "state": {"activeDocTemplate": make_template("snap")}},
+        ])
+
+        server._migration_007_move_volunteer_roles_after_serving()
+
+        def binding_order(zones):
+            return [z["binding"] for z in sorted(zones, key=lambda z: z["order"])]
+
+        for t in server._read_json(templates_path, []):
+            assert binding_order(t["zones"]) == [
+                "cover", "announcements", "pco_items", "calendar",
+                "serving_schedule", "volunteer_roles", "staff",
+            ]
+            # Re-numbered to consecutive integers.
+            assert sorted(z["order"] for z in t["zones"]) == [1, 2, 3, 4, 5, 6, 7]
+
+        active = server._read_json(settings_path, {})["docTemplate"]
+        assert binding_order(active["zones"]) == [
+            "cover", "announcements", "pco_items", "calendar",
+            "serving_schedule", "volunteer_roles", "staff",
+        ]
+
+        snap = server._read_json(projects_path, [])[0]["state"]["activeDocTemplate"]
+        assert binding_order(snap["zones"]) == [
+            "cover", "announcements", "pco_items", "calendar",
+            "serving_schedule", "volunteer_roles", "staff",
+        ]
+
+    def test_m007_is_idempotent_and_skips_correct_templates(self, tmp_path, monkeypatch):
+        templates_path = tmp_path / "templates.json"
+        monkeypatch.setattr(server, "TEMPLATES_FILE", templates_path)
+        # Template already has the correct order.
+        already_correct = {
+            "id": "ok",
+            "zones": [
+                {"binding": "calendar",         "order": 1, "enabled": True},
+                {"binding": "serving_schedule", "order": 2, "enabled": True},
+                {"binding": "volunteer_roles",  "order": 3, "enabled": True},
+            ],
+        }
+        # Template missing volunteer_roles entirely — must be left alone.
+        no_vr = {
+            "id": "no-vr",
+            "zones": [
+                {"binding": "calendar",         "order": 1, "enabled": True},
+                {"binding": "serving_schedule", "order": 2, "enabled": True},
+            ],
+        }
+        server._write_json(templates_path, [already_correct, no_vr])
+
+        server._migration_007_move_volunteer_roles_after_serving()
+        server._migration_007_move_volunteer_roles_after_serving()  # idempotent
+
+        templates = server._read_json(templates_path, [])
+        # Untouched.
+        assert templates[0]["zones"][2]["binding"] == "volunteer_roles"
+        assert [z["order"] for z in templates[0]["zones"]] == [1, 2, 3]
+        assert [z["binding"] for z in templates[1]["zones"]] == ["calendar", "serving_schedule"]
+
     def test_template_validator_rejects_builtin_modification(self):
         class Dummy:
             pass
