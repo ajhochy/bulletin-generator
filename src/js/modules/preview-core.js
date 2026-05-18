@@ -5,8 +5,8 @@ export const DEFAULT_PREVIEW_ZONE_ORDER = [
   'announcements',
   'pco_items',
   'calendar',
-  'volunteer_roles',
   'serving_schedule',
+  'volunteer_roles',
   'staff',
 ];
 
@@ -31,12 +31,20 @@ export function derivePreviewZoneOrder(template, supportedBindings = DEFAULT_PRE
     .sort((a, b) => a[1] - b[1])
     .map(([binding]) => binding);
 
-  // Append any supported bindings missing from the template, in DEFAULT order.
-  // Lets newly-added zones (e.g. volunteer_roles) appear in legacy templates
-  // without a migration step.
-  const present = new Set(ordered);
-  DEFAULT_PREVIEW_ZONE_ORDER.forEach(binding => {
-    if (supported.has(binding) && !present.has(binding)) ordered.push(binding);
+  // Splice in supported bindings missing from the template at their DEFAULT
+  // position relative to existing zones, so newly-added bindings (e.g.
+  // volunteer_roles) land where users expect (right after calendar, not
+  // tacked onto the end) without requiring a per-template migration.
+  DEFAULT_PREVIEW_ZONE_ORDER.forEach((binding, defaultIdx) => {
+    if (!supported.has(binding)) return;
+    if (ordered.includes(binding)) return;
+    let insertAt = ordered.length;
+    for (let i = defaultIdx + 1; i < DEFAULT_PREVIEW_ZONE_ORDER.length; i++) {
+      const successor = DEFAULT_PREVIEW_ZONE_ORDER[i];
+      const idx = ordered.indexOf(successor);
+      if (idx !== -1) { insertAt = idx; break; }
+    }
+    ordered.splice(insertAt, 0, binding);
   });
   return ordered;
 }
