@@ -1377,6 +1377,7 @@ function renderPreview() {
           qrImg.alt = 'QR Code';
           qrImg.width = 68; qrImg.height = 68;
           qrWrap.appendChild(qrImg);
+          applyElementFmt(qrWrap, getTemplateElementFmt(activeDocTemplate, 'volunteer_roles', '', role.title || '', 'url'));
           card.appendChild(qrWrap);
         }
 
@@ -1384,6 +1385,7 @@ function renderPreview() {
           const t = document.createElement('h3');
           t.className = 'vr-entry-title';
           t.textContent = role.title;
+          applyElementFmt(t, getTemplateElementFmt(activeDocTemplate, 'volunteer_roles', '', role.title, 'title'));
           card.appendChild(t);
         }
 
@@ -1391,6 +1393,7 @@ function renderPreview() {
           const b = document.createElement('div');
           b.className = 'vr-entry-body';
           renderBodyText(b, role.body, true);
+          applyElementFmt(b, getTemplateElementFmt(activeDocTemplate, 'volunteer_roles', '', role.title || '', 'body'));
           card.appendChild(b);
         }
 
