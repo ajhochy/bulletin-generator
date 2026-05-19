@@ -892,6 +892,80 @@ def _migration_006_insert_volunteer_roles_zone():
         _write_json(TEMPLATES_FILE, templates)
 
 
+def _migration_007_move_volunteer_roles_after_serving():
+    """Render volunteer_roles AFTER serving_schedule, not before.
+
+    M006 (shipped in v1.12.7) inserted volunteer_roles at order=8 and bumped
+    serving_schedule to 9 — so existing installs render volunteer_roles
+    between calendar and serving_schedule. In v1.12.10 the position was
+    moved to after serving_schedule. This migration walks every template
+    (gallery, active settings, per-project snapshots) and re-numbers zones
+    so volunteer_roles sits just after serving_schedule.
+
+    Idempotent: skips any template where volunteer_roles is already past
+    serving_schedule, or where either zone is absent.
+    """
+    def reorder_template(template):
+        if not isinstance(template, dict):
+            return False
+        zones = template.get("zones")
+        if not isinstance(zones, list):
+            return False
+        vr = next((z for z in zones if isinstance(z, dict) and z.get("binding") == "volunteer_roles"), None)
+        ss = next((z for z in zones if isinstance(z, dict) and z.get("binding") == "serving_schedule"), None)
+        if not vr or not ss:
+            return False
+        vr_order = vr.get("order")
+        ss_order = ss.get("order")
+        if not isinstance(vr_order, (int, float)) or not isinstance(ss_order, (int, float)):
+            return False
+        if vr_order > ss_order:
+            return False  # already correct position
+        # Park volunteer_roles just after serving_schedule, then re-number every
+        # ordered zone to a consecutive integer sequence so on-disk data stays clean.
+        vr["order"] = ss_order + 0.5
+        ordered = sorted(
+            [z for z in zones if isinstance(z, dict) and isinstance(z.get("order"), (int, float))],
+            key=lambda z: z["order"],
+        )
+        for i, z in enumerate(ordered, start=1):
+            z["order"] = i
+        return True
+
+    # 1) Templates gallery
+    templates = _read_json(TEMPLATES_FILE, [])
+    if isinstance(templates, list):
+        # Force evaluation of every template — any() short-circuits and would
+        # leave later templates unmigrated.
+        changed_flags = [reorder_template(t) for t in templates]
+        if any(changed_flags):
+            _write_json(TEMPLATES_FILE, templates)
+
+    # 2) Active template in settings.json (separate copy from the gallery)
+    settings = _read_json(SETTINGS_FILE, {})
+    if isinstance(settings, dict):
+        active = settings.get("docTemplate")
+        if isinstance(active, dict) and reorder_template(active):
+            settings["docTemplate"] = active
+            _write_json(SETTINGS_FILE, settings)
+
+    # 3) Per-project template snapshots inside projects.json
+    projects = _read_json(PROJECTS_FILE, [])
+    if isinstance(projects, list):
+        changed = False
+        for p in projects:
+            if not isinstance(p, dict):
+                continue
+            state = p.get("state")
+            if not isinstance(state, dict):
+                continue
+            t = state.get("activeDocTemplate")
+            if isinstance(t, dict) and reorder_template(t):
+                changed = True
+        if changed:
+            _write_json(PROJECTS_FILE, projects)
+
+
 # Registry: list of (id, callable). Order matters — append only, never reorder.
 _MIGRATION_REGISTRY = [
     ("M001_songdb_extraction",        _migration_001_songdb_extraction),
@@ -900,6 +974,7 @@ _MIGRATION_REGISTRY = [
     ("M004_classic_staff_zone_enabled", _migration_004_classic_staff_zone_enabled),
     ("M005_builtin_template_presets", _migration_005_builtin_template_presets),
     ("M006_insert_volunteer_roles_zone", _migration_006_insert_volunteer_roles_zone),
+    ("M007_move_volunteer_roles_after_serving", _migration_007_move_volunteer_roles_after_serving),
 ]
 
 

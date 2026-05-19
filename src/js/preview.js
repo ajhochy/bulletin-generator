@@ -1341,7 +1341,8 @@ function renderPreview() {
 
     groups.forEach((group, gIdx) => {
       const contentEl = document.createElement('div');
-      contentEl.className = 'bottom-section volunteer-roles-section';
+      contentEl.className = 'bottom-section volunteer-roles-section preview-linkable';
+      contentEl.dataset.previewSection = 'volunteer-roles';
 
       if (gIdx === 0) {
         const heading = document.createElement('div');
