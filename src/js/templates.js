@@ -966,7 +966,7 @@ function renderDesignerCanvas() {
 }
 
 function inferCanvasElement(target) {
-  const el = target.closest('.cover-church,.cover-title,.cover-date,.ann-item-heading,.ann-body,.ann-qr-wrap,.section-heading,.item-heading,.item-body,.song-copyright,.cal-day-heading,.cal-event-title,.cal-event-time,.cal-event-loc,.serving-week-label,.serving-service-time,.serving-team-name,.serving-role,.serving-row span:not(.serving-role),.sname,.srole,.semail');
+  const el = target.closest('.cover-church,.cover-title,.cover-date,.ann-item-heading,.ann-body,.ann-qr-wrap,.section-heading,.item-heading,.item-body,.song-copyright,.cal-day-heading,.cal-event-title,.cal-event-time,.cal-event-loc,.serving-week-label,.serving-service-time,.serving-team-name,.serving-role,.serving-row span:not(.serving-role),.vr-entry-title,.vr-entry-body,.vr-entry-url,.sname,.srole,.semail');
   if (!el) return null;
   const text = (el.textContent || '').trim();
 
@@ -998,6 +998,9 @@ function inferCanvasElement(target) {
   if (el.classList.contains('serving-team-name')) return { el, binding: 'serving_schedule', itemType: '', title: text, elementKey: 'teamName' };
   if (el.classList.contains('serving-role')) return { el, binding: 'serving_schedule', itemType: '', title: text.replace(/:\s*$/, ''), elementKey: 'positionLabel' };
   if (el.closest('.serving-row')) return { el, binding: 'serving_schedule', itemType: '', title: el.closest('.serving-row')?.querySelector('.serving-role')?.textContent?.replace(/:\s*$/, '') || '', elementKey: 'volunteerName' };
+  if (el.classList.contains('vr-entry-title')) return { el, binding: 'volunteer_roles', itemType: '', title: text, elementKey: 'title' };
+  if (el.classList.contains('vr-entry-body')) return { el, binding: 'volunteer_roles', itemType: '', title: nearestVolunteerRoleTitle(el), elementKey: 'body' };
+  if (el.classList.contains('vr-entry-url')) return { el, binding: 'volunteer_roles', itemType: '', title: nearestVolunteerRoleTitle(el), elementKey: 'url' };
   if (el.classList.contains('sname')) return { el, binding: 'staff', itemType: '', title: text, elementKey: 'staffName' };
   if (el.classList.contains('srole')) return { el, binding: 'staff', itemType: '', title: closestStaffName(el), elementKey: 'staffRole' };
   if (el.classList.contains('semail')) return { el, binding: 'staff', itemType: '', title: closestStaffName(el), elementKey: 'staffEmail' };
@@ -1006,6 +1009,10 @@ function inferCanvasElement(target) {
 
 function nearestAnnouncementTitle(el) {
   return el.parentElement?.querySelector('.ann-item-heading')?.textContent?.trim() || '';
+}
+
+function nearestVolunteerRoleTitle(el) {
+  return el.closest('.vr-entry')?.querySelector('.vr-entry-title')?.textContent?.trim() || '';
 }
 
 function nearestOowTitle(el) {
@@ -1044,6 +1051,9 @@ const TPL_SELECTABLE_SELECTOR = [
   '.serving-team-name',
   '.serving-role',
   '.serving-row span:not(.serving-role)',
+  '.vr-entry-title',
+  '.vr-entry-body',
+  '.vr-entry-url',
   '.sname',
   '.srole',
   '.semail'
