@@ -237,6 +237,11 @@ WATCHTOWER_TOKEN = os.environ.get("WATCHTOWER_TOKEN", "bulletin-updater")
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 GOOGLE_CAL_API  = 'https://www.googleapis.com/calendar/v3'
 GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+
+# In-memory CSRF state store for the app-login Google OAuth flow.
+# Maps state token → True; tokens are consumed on use.
+# Not persisted — restarting the server invalidates in-flight logins.
+_auth_login_states: dict = {}
 DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service']
 
 # Deployment mode: 'server' (shared/hosted) or 'desktop' (local packaged install).
@@ -1021,6 +1026,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/oauth/pco/callback',       '_handle_pco_oauth_callback'),
         ('/oauth/google/start',       '_handle_google_oauth_start'),
         ('/oauth/google/callback',    '_handle_google_oauth_callback'),
+        ('/auth/google/login',        '_handle_auth_google_login'),
+        ('/auth/google/callback',     '_handle_auth_google_callback'),
         ('/pco-proxy/',               '_proxy_pco'),
         ('/fonts/cache/',             '_handle_google_font_cache'),
         ('/fonts/user/',              '_handle_user_font_file'),
@@ -1693,6 +1700,95 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', f'/?google_error=token&detail={detail}&tab=page-settings')
             self.end_headers()
+
+    # ── App-login Google OAuth (identity only) ─────────────────────────────────
+
+    def _handle_auth_google_login(self):
+        """
+        Start the Google app-login flow.
+
+        Server mode only.  Generates a random CSRF state token, stores it in
+        the in-memory ``_auth_login_states`` dict, then redirects the browser
+        to Google's consent page requesting identity scopes only.
+        """
+        if IS_DESKTOP:
+            self._send_json({'error': 'Not found'}, 404)
+            return
+
+        import secrets as _secrets
+        import auth as _auth
+
+        state = _secrets.token_urlsafe(32)
+        _auth_login_states[state] = True
+
+        try:
+            url = _auth.build_auth_login_url(state)
+        except Exception as e:
+            print(f'  [auth] Failed to build login URL: {e}')
+            detail = urllib.parse.quote(str(e)[:200])
+            self.send_response(302)
+            self.send_header('Location', f'/?auth_error=config&detail={detail}')
+            self.end_headers()
+            return
+
+        self.send_response(302)
+        self.send_header('Location', url)
+        self.end_headers()
+
+    def _handle_auth_google_callback(self):
+        """
+        Handle the Google app-login OAuth callback.
+
+        Server mode only.  Validates the CSRF state, exchanges the code for an
+        ID token, upserts the user record, sets a placeholder session cookie
+        (``user_id=<uuid>``; proper signed sessions will be added in #205), then
+        redirects to ``/``.
+        """
+        if IS_DESKTOP:
+            self._send_json({'error': 'Not found'}, 404)
+            return
+
+        import auth as _auth
+
+        qs     = urllib.parse.urlparse(self.path).query
+        params = urllib.parse.parse_qs(qs)
+
+        error = params.get('error', [None])[0]
+        code  = params.get('code',  [None])[0]
+        state = params.get('state', [None])[0]
+
+        # User denied consent or other OAuth error
+        if error or not code:
+            self.send_response(302)
+            self.send_header('Location', '/?auth_error=denied')
+            self.end_headers()
+            return
+
+        # Validate CSRF state
+        if not state or not _auth_login_states.pop(state, False):
+            self.send_response(302)
+            self.send_header('Location', '/?auth_error=state_mismatch')
+            self.end_headers()
+            return
+
+        try:
+            claims = _auth.exchange_auth_code(code)
+            user   = _auth.upsert_user(claims)
+        except Exception as e:
+            print(f'  [auth] App-login failed: {e}')
+            detail = urllib.parse.quote(str(e)[:200])
+            self.send_response(302)
+            self.send_header('Location', f'/?auth_error=token&detail={detail}')
+            self.end_headers()
+            return
+
+        # Placeholder session cookie — proper signed sessions in #205
+        user_id = user['id']
+        print(f'  [auth] App-login success: {user["email"]} (id={user_id})')
+        self.send_response(302)
+        self.send_header('Set-Cookie', f'user_id={user_id}; Path=/; HttpOnly; SameSite=Lax')
+        self.send_header('Location', '/')
+        self.end_headers()
 
     def _handle_google_calendars(self):
         """Return the user's Google Calendar list."""
