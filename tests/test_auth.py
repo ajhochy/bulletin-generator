@@ -372,7 +372,8 @@ class TestAuthGoogleCallbackRoute:
                  "display_name": "Test User",
                  "avatar_url": "https://example.com/pic.jpg",
                  "domain": "example.com",
-             }):
+             }), \
+             patch("auth.create_session", return_value="fake-session-token"):
             handler._handle_auth_google_callback()
         return handler
 
@@ -388,7 +389,7 @@ class TestAuthGoogleCallbackRoute:
         ]
         assert location_calls[0][0][1] == "/"
 
-    def test_sets_user_id_cookie(self):
+    def test_sets_bg_session_cookie(self):
         handler = self._call()
         cookie_calls = [
             c for c in handler.send_header.call_args_list
@@ -396,7 +397,7 @@ class TestAuthGoogleCallbackRoute:
         ]
         assert cookie_calls, "No Set-Cookie header was set"
         cookie_value = cookie_calls[0][0][1]
-        assert "user_id=user-uuid-123" in cookie_value
+        assert "bg_session=fake-session-token" in cookie_value
 
     def test_cookie_is_httponly(self):
         handler = self._call()

@@ -17,10 +17,13 @@ used by the Calendar/Drive flow — may point to the same OAuth client if desire
 """
 
 import base64
+import hashlib
 import json
 import os
+import secrets
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone, timedelta
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -170,6 +173,139 @@ def _decode_id_token_payload(id_token: str) -> dict:
         return json.loads(payload_bytes)
     except Exception as exc:
         raise ValueError(f"Failed to decode id_token payload: {exc}") from exc
+
+
+# ── Session management ────────────────────────────────────────────────────────
+
+SESSION_DURATION_DAYS = 30
+
+
+def _hash_token(token: str) -> str:
+    """Return the SHA-256 hex digest of the given token string."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_session(user_id: str) -> str:
+    """
+    Create a new session for the given user and persist it to the database.
+
+    Generates 32 random bytes as a hex token, hashes it with SHA-256, and
+    inserts a row into the ``sessions`` table with a 30-day expiry.
+
+    Args:
+        user_id: The UUID string of the authenticated user.
+
+    Returns:
+        The plain (unhashed) session token to be stored in the browser cookie.
+    """
+    token      = secrets.token_hex(32)
+    token_hash = _hash_token(token)
+    now        = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=SESSION_DURATION_DAYS)
+
+    from db import transaction  # noqa: PLC0415
+
+    with transaction() as conn:
+        conn.execute(
+            """
+            INSERT INTO sessions (token_hash, user_id, created_at, expires_at)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (token_hash, user_id, now, expires_at),
+        )
+
+    return token
+
+
+def get_session_user(token: str) -> dict | None:
+    """
+    Look up an active session by token and return the associated user.
+
+    Hashes the token, queries ``sessions JOIN users`` where the token hash
+    matches and the session has not expired.
+
+    Args:
+        token: The plain session token from the browser cookie.
+
+    Returns:
+        A dict with keys ``id``, ``email``, ``display_name``, ``avatar_url``,
+        ``domain`` if a valid, unexpired session exists; ``None`` otherwise.
+    """
+    token_hash = _hash_token(token)
+
+    from db import transaction  # noqa: PLC0415
+
+    with transaction() as conn:
+        row = conn.execute(
+            """
+            SELECT u.id, u.email, u.display_name, u.avatar_url, u.domain
+            FROM sessions s
+            JOIN users u ON u.id = s.user_id
+            WHERE s.token_hash = %s
+              AND s.expires_at > now()
+            """,
+            (token_hash,),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "id":           str(row[0]),
+        "email":        row[1],
+        "display_name": row[2],
+        "avatar_url":   row[3],
+        "domain":       row[4],
+    }
+
+
+def delete_session(token: str) -> None:
+    """
+    Invalidate a session by deleting its row from the database.
+
+    Args:
+        token: The plain session token from the browser cookie.
+    """
+    token_hash = _hash_token(token)
+
+    from db import transaction  # noqa: PLC0415
+
+    with transaction() as conn:
+        conn.execute(
+            "DELETE FROM sessions WHERE token_hash = %s",
+            (token_hash,),
+        )
+
+
+def get_request_user(cookie_header: str) -> dict | None:
+    """
+    Extract the ``bg_session`` token from a Cookie header and look up the user.
+
+    Parses the raw ``Cookie`` header string (e.g. ``"bg_session=abc; other=1"``),
+    extracts the ``bg_session`` value, and delegates to ``get_session_user``.
+
+    Args:
+        cookie_header: The raw value of the ``Cookie`` HTTP header, or an empty
+            string / ``None`` if the header is absent.
+
+    Returns:
+        The user dict from ``get_session_user``, or ``None`` if the cookie is
+        missing, malformed, or the session is expired/unknown.
+    """
+    if not cookie_header:
+        return None
+
+    for part in cookie_header.split(";"):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        if name.strip() == "bg_session":
+            token = value.strip()
+            if token:
+                return get_session_user(token)
+
+    return None
 
 
 # ── User upsert ───────────────────────────────────────────────────────────────

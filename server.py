@@ -1026,6 +1026,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/oauth/pco/callback',       '_handle_pco_oauth_callback'),
         ('/oauth/google/start',       '_handle_google_oauth_start'),
         ('/oauth/google/callback',    '_handle_google_oauth_callback'),
+        ('/api/me',                    '_handle_api_me'),
         ('/auth/google/login',        '_handle_auth_google_login'),
         ('/auth/google/callback',     '_handle_auth_google_callback'),
         ('/pco-proxy/',               '_proxy_pco'),
@@ -1048,6 +1049,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/pco-disconnect',       '_handle_pco_disconnect'),
         ('/api/google-disconnect',    '_handle_google_disconnect'),
         ('/api/admin/apply-update',   '_handle_apply_update'),
+        ('/auth/logout',              '_handle_auth_logout'),
     ]
 
     _DELETE_ROUTES = [
@@ -1798,13 +1800,88 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             return
 
-        # Placeholder session cookie — proper signed sessions in #205
         user_id = user['id']
         print(f'  [auth] App-login success: {user["email"]} (id={user_id})')
+
+        token = _auth.create_session(user_id)
+        secure_flag = '; Secure' if os.environ.get('HTTPS', '').lower() == 'true' else ''
         self.send_response(302)
-        self.send_header('Set-Cookie', f'user_id={user_id}; Path=/; HttpOnly; SameSite=Lax')
+        self.send_header(
+            'Set-Cookie',
+            f'bg_session={token}; Path=/; HttpOnly; SameSite=Lax{secure_flag}',
+        )
         self.send_header('Location', '/')
         self.end_headers()
+
+    def _handle_api_me(self):
+        """
+        Return the currently authenticated user.
+
+        In desktop mode returns ``{"mode": "desktop", "user": null}``.
+        In server mode parses the ``bg_session`` cookie, returns the user dict
+        on success, or 401 if the session is missing/expired.
+        """
+        if IS_DESKTOP:
+            self._send_json({'mode': 'desktop', 'user': None})
+            return
+
+        import auth as _auth
+
+        cookie_header = self.headers.get('Cookie', '')
+        user = _auth.get_request_user(cookie_header)
+        if user is None:
+            self._send_json({'error': 'Unauthenticated'}, 401)
+            return
+
+        self._send_json({
+            'mode': 'server',
+            'user': {
+                'id':          user['id'],
+                'email':       user['email'],
+                'displayName': user['display_name'],
+                'avatarUrl':   user['avatar_url'],
+                'domain':      user['domain'],
+            },
+        })
+
+    def _handle_auth_logout(self):
+        """
+        Log out the current user by deleting their server-side session.
+
+        Parses the ``bg_session`` cookie, calls ``delete_session``, clears the
+        cookie, and returns ``{"ok": true}``.  Always returns 200 (idempotent).
+        """
+        import auth as _auth
+
+        cookie_header = self.headers.get('Cookie', '')
+        token = None
+        for part in cookie_header.split(';'):
+            part = part.strip()
+            if '=' not in part:
+                continue
+            name, _, value = part.partition('=')
+            if name.strip() == 'bg_session':
+                token = value.strip()
+                break
+
+        if token:
+            try:
+                _auth.delete_session(token)
+            except Exception as e:
+                print(f'  [auth] Logout session delete error (ignored): {e}')
+
+        # Clear the cookie by setting an expired date
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header(
+            'Set-Cookie',
+            'bg_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+        )
+        self._cors_headers()
+        body = b'{"ok": true}'
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_google_calendars(self):
         """Return the user's Google Calendar list."""
