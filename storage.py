@@ -64,8 +64,12 @@ class StorageBackend(ABC):
         ...
 
     @abstractmethod
-    def save_project(self, data: dict) -> dict:
-        """Upsert a project.  ``data`` must contain an ``id`` key.  Returns the saved project."""
+    def save_project(self, data: dict, *, updated_by_email: str = "", updated_by_user_id: str | None = None) -> dict:
+        """Upsert a project.  ``data`` must contain an ``id`` key.  Returns the saved project.
+
+        ``updated_by_email`` and ``updated_by_user_id`` are optional attribution kwargs.
+        When supplied (server mode), the backend records who performed the save.
+        """
         ...
 
     @abstractmethod
@@ -174,7 +178,7 @@ class JsonStorageBackend(StorageBackend):
                 return p
         return None
 
-    def save_project(self, data: dict) -> dict:
+    def save_project(self, data: dict, *, updated_by_email: str = "", updated_by_user_id: str | None = None) -> dict:
         if "id" not in data:
             raise ValueError("project data must contain an 'id' key")
         with self._lock:
@@ -341,12 +345,15 @@ class PostgresStorageBackend(StorageBackend):
             cols = [d[0] for d in cursor.description]
         return _pg_row_to_project(dict(zip(cols, row)))
 
-    def save_project(self, data: dict) -> dict:
+    def save_project(self, data: dict, *, updated_by_email: str = "", updated_by_user_id: str | None = None) -> dict:
         """Upsert a project and return the persisted dict.
 
-        * On INSERT  — revision defaults to 1.
-        * On UPDATE  — revision is incremented by 1.
+        * On INSERT  — revision defaults to 1; owner_user_id set from ``updated_by_user_id``.
+        * On UPDATE  — revision is incremented by 1; updated_by_email set from caller.
         ``data`` must contain an ``id`` key (UUID string).
+
+        ``updated_by_email`` and ``updated_by_user_id`` are caller-supplied attribution
+        values that override any values embedded in ``data``.
         """
         if "id" not in data:
             raise ValueError("project data must contain an 'id' key")
@@ -358,7 +365,8 @@ class PostgresStorageBackend(StorageBackend):
         name = str(data.get("name") or "")
         state_json = _json.dumps(data, ensure_ascii=False)
         created_by_email = str(data.get("createdBy") or "")
-        updated_by_email = str(data.get("updatedBy") or "")
+        # Caller-supplied attribution takes precedence over data payload.
+        resolved_updated_by_email = updated_by_email or str(data.get("updatedBy") or "")
         created_at = data.get("createdAt") or None
         updated_at = data.get("updatedAt") or None
 
@@ -370,16 +378,18 @@ class PostgresStorageBackend(StorageBackend):
                     created_at, updated_at, created_by_email, updated_by_email,
                     imported_from_json
                 ) VALUES (
-                    %(id)s::uuid, %(name)s, NULL, 'workspace', %(state)s::jsonb, 1,
+                    %(id)s::uuid, %(name)s,
+                    %(owner_user_id)s::uuid,
+                    'private', %(state)s::jsonb, 1,
                     COALESCE(%(created_at)s::timestamptz, now()),
-                    COALESCE(%(updated_at)s::timestamptz, now()),
+                    now(),
                     %(created_by_email)s, %(updated_by_email)s, FALSE
                 )
                 ON CONFLICT (id) DO UPDATE SET
                     name             = EXCLUDED.name,
                     state            = EXCLUDED.state,
                     revision         = projects.revision + 1,
-                    updated_at       = COALESCE(EXCLUDED.updated_at, now()),
+                    updated_at       = now(),
                     updated_by_email = EXCLUDED.updated_by_email
                 RETURNING id, name, owner_user_id, visibility, state, revision,
                           created_at, updated_at, created_by_email, updated_by_email,
@@ -388,11 +398,11 @@ class PostgresStorageBackend(StorageBackend):
                 {
                     "id": project_id,
                     "name": name,
+                    "owner_user_id": updated_by_user_id,
                     "state": state_json,
                     "created_at": created_at,
-                    "updated_at": updated_at,
-                    "created_by_email": created_by_email,
-                    "updated_by_email": updated_by_email,
+                    "updated_by_email": resolved_updated_by_email,
+                    "created_by_email": created_by_email or resolved_updated_by_email,
                 },
             )
             row = cursor.fetchone()
@@ -786,9 +796,18 @@ def _pg_row_to_project(row: dict) -> dict:
     """Convert a raw Postgres row dict into the project dict shape expected by the frontend.
 
     The ``state`` column holds the full project payload as JSONB.  We return
-    that payload merged with a few top-level fields that callers depend on
-    (``id``, ``name``, ``revision``) so callers can trust those keys even if
-    the stored state blob is missing them.
+    that payload merged with DB-authoritative fields so callers can trust those
+    keys even if the stored state blob is missing them.
+
+    Metadata fields included (all top-level):
+      - id, name, revision  (always present)
+      - visibility           ("private" or "workspace")
+      - owner_user_id        (UUID string or None)
+      - owner_email          (created_by_email, may be None for legacy imports)
+      - created_at, updated_at (ISO-8601 strings)
+      - created_by_email, updated_by_email
+      - imported_from_json   (bool)
+      - createdAt, updatedAt, createdBy, updatedBy  (camelCase for frontend compat)
     """
     from db import from_jsonb  # noqa: PLC0415
 
@@ -796,12 +815,25 @@ def _pg_row_to_project(row: dict) -> dict:
     if not isinstance(state, dict):
         state = {}
 
-    # Merge DB-authoritative fields on top of the stored state blob.
+    # ── DB-authoritative scalar fields ────────────────────────────────────────
     state["id"] = str(row["id"])
     state["name"] = row.get("name") or state.get("name") or ""
     state["revision"] = row.get("revision") or state.get("revision") or 1
 
-    # Surface timestamps and attribution as camelCase keys matching the legacy format.
+    # ── Ownership & visibility ────────────────────────────────────────────────
+    owner_uid = row.get("owner_user_id")
+    state["owner_user_id"] = str(owner_uid) if owner_uid is not None else None
+    state["owner_email"] = row.get("created_by_email") or None
+    state["visibility"] = row.get("visibility") or "workspace"
+    state["imported_from_json"] = bool(row.get("imported_from_json"))
+
+    # ── Timestamps & attribution (snake_case for API consumers) ───────────────
+    state["created_at"] = _ts(row.get("created_at")) or None
+    state["updated_at"] = _ts(row.get("updated_at")) or None
+    state["created_by_email"] = row.get("created_by_email") or None
+    state["updated_by_email"] = row.get("updated_by_email") or None
+
+    # ── Legacy camelCase keys for frontend backward compatibility ─────────────
     if row.get("created_at"):
         state.setdefault("createdAt", _ts(row["created_at"]))
     if row.get("updated_at"):

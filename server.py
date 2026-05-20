@@ -1175,7 +1175,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+        if IS_DESKTOP:
+            self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+        else:
+            from storage import get_storage  # noqa: PLC0415
+            store = get_storage()
+            self._send_json({"projects": store.list_projects()})
 
     def _handle_get_announcements(self):
         user = self._require_auth()
@@ -1227,6 +1232,38 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(project, dict) or "id" not in project:
             self._send_json({"error": "project must be an object with an id"}, 400)
             return
+
+        if not IS_DESKTOP:
+            # ── Server mode: delegate to storage layer with user attribution ──
+            from storage import get_storage  # noqa: PLC0415
+            store = get_storage()
+
+            # Conflict detection against DB-authoritative revision.
+            client_rev = project.pop("_clientRevision", None)
+            existing = store.get_project(project["id"])
+            if existing is not None:
+                stored_rev = existing.get("revision")
+                if (stored_rev is not None
+                        and int(stored_rev) > 0
+                        and (client_rev is None or int(client_rev) < int(stored_rev))):
+                    self._send_json({
+                        "error": "conflict",
+                        "projectId": project["id"],
+                        "serverRevision": stored_rev,
+                        "serverUpdatedAt": existing.get("updatedAt"),
+                        "serverUpdatedBy": existing.get("updatedBy"),
+                    }, 409)
+                    return
+
+            saved = store.save_project(
+                project,
+                updated_by_email=user.get("email") or "",
+                updated_by_user_id=user.get("id") or None,
+            )
+            self._send_json({"ok": True, "revision": saved.get("revision")})
+            return
+
+        # ── Desktop / JSON-file mode: legacy in-memory path ──────────────────
         with _lock:
             projects = _read_json(PROJECTS_FILE, [])
             idx = next((i for i, p in enumerate(projects) if p.get("id") == project["id"]), -1)
