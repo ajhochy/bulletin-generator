@@ -341,7 +341,8 @@ function saveCurrentProject(saveAs = false) {
       name: nameToUse,
       createdAt: ts,
       updatedAt: ts,
-      createdBy: isServerMode() ? (_editorDisplayName || '') : undefined,
+      // createdBy is intentionally omitted: in server mode the server derives
+      // owner and visibility from the authenticated session, not the client payload.
       state,
     };
     _loadedRevision = null;

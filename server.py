@@ -1238,9 +1238,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             from storage import get_storage  # noqa: PLC0415
             store = get_storage()
 
+            # Detect new vs existing project before popping _clientRevision.
+            is_new_project = not project.get("id") or store.get_project(project["id"]) is None
+
             # Conflict detection against DB-authoritative revision.
             client_rev = project.pop("_clientRevision", None)
-            existing = store.get_project(project["id"])
+            existing = None if is_new_project else store.get_project(project["id"])
             if existing is not None:
                 stored_rev = existing.get("revision")
                 if (stored_rev is not None
@@ -1254,6 +1257,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         "serverUpdatedBy": existing.get("updatedBy"),
                     }, 409)
                     return
+
+            if is_new_project:
+                # Never trust client-supplied ownership fields for new projects.
+                # Server always sets owner and visibility from the authenticated session.
+                project.pop("owner_user_id", None)
+                project.pop("visibility", None)
 
             saved = store.save_project(
                 project,
