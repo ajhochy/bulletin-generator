@@ -687,6 +687,16 @@ function renderFilesList() {
       `updated ${shortTimestamp(project.updatedAt) || '—'}`,
     ].filter(Boolean);
 
+    // Determine whether to show "Share to Workspace" button:
+    //   - Server mode only
+    //   - Project must be private (visibility !== 'workspace')
+    //   - Current user must be the owner, OR project has no owner (legacy import)
+    const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+    const isPrivate = project.visibility !== 'workspace';
+    const isOwnerOrLegacy = !project.owner_user_id
+      || (currentUser && String(project.owner_user_id) === String(currentUser.id));
+    const showShareBtn = isServerMode() && isPrivate && isOwnerOrLegacy;
+
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
     card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
@@ -698,6 +708,7 @@ function renderFilesList() {
         <div class="file-card-name font-medium text-sm truncate">
           ${esc(project.name)}
           ${isActive ? '<span class="file-active-badge badge badge-sm badge-primary ml-1">active</span>' : ''}
+          ${isPrivate && isServerMode() ? '<span class="badge badge-sm badge-ghost ml-1">private</span>' : ''}
         </div>
         <div class="file-card-meta text-xs text-base-content/50 truncate">${esc(metaParts.join(' · '))}</div>
       </div>
@@ -706,6 +717,7 @@ function renderFilesList() {
         <button class="btn btn-xs btn-ghost"   data-fm="download-pdf" data-id="${escAttr(project.id)}">↓ PDF</button>
         <button class="btn btn-xs btn-ghost"   data-fm="download-json" data-id="${escAttr(project.id)}">↓ JSON</button>
         <button class="btn btn-xs btn-ghost"   data-fm="rename"       data-id="${escAttr(project.id)}">Rename</button>
+        ${showShareBtn ? `<button class="btn btn-xs btn-ghost" data-fm="share" data-id="${escAttr(project.id)}">Share</button>` : ''}
         <button class="btn btn-xs btn-error"   data-fm="delete"       data-id="${escAttr(project.id)}">Delete</button>
       </div>`;
 
@@ -738,6 +750,16 @@ function downloadProjectJson(id) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Share a private project to the workspace so all users can see it.
+ * Server mode only.  Calls POST /api/projects/{id}/share.
+ * Refreshes the project list on success.
+ */
+async function shareProjectToWorkspace(projectId) {
+  const result = await apiFetch(`/api/projects/${projectId}/share`, { method: 'POST' });
+  return result;
 }
 
 function bytesToB64(bytes) {
@@ -1032,6 +1054,24 @@ function handleFilesListClick(e) {
     saveProjectToServer(proj);
     renderProjectSelect();
     setStatus(`Renamed to "${proj.name}".`, 'success');
+  } else if (action === 'share') {
+    const proj = projectById(id);
+    if (!proj) return;
+    if (!confirm(`Share "${proj.name}" to the workspace? All users will be able to see it.`)) return;
+    (async () => {
+      try {
+        const result = await shareProjectToWorkspace(id);
+        if (result && result.project) {
+          // Update local copy with new visibility
+          const idx = projects.findIndex(p => p.id === id);
+          if (idx >= 0) projects[idx] = Object.assign(projects[idx], result.project);
+        }
+        renderFilesList();
+        setStatus(`"${proj.name}" shared to workspace.`, 'success');
+      } catch (err) {
+        setStatus(err.message || 'Failed to share project.', 'error');
+      }
+    })();
   } else if (action === 'delete') {
     const proj = projectById(id);
     if (!proj) return;

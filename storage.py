@@ -77,6 +77,14 @@ class StorageBackend(ABC):
         """Delete a project by id.  Returns True if it existed."""
         ...
 
+    @abstractmethod
+    def share_project_to_workspace(self, project_id: str) -> "dict | None":
+        """Set visibility='workspace' on the project and return the updated dict.
+
+        Returns the updated project dict, or None if the project was not found.
+        """
+        ...
+
     # ── Settings ──────────────────────────────────────────────────────────────
 
     @abstractmethod
@@ -200,6 +208,13 @@ class JsonStorageBackend(StorageBackend):
             if existed:
                 _write_json(self._projects_file, new_projects)
         return existed
+
+    def share_project_to_workspace(self, project_id: str) -> "dict | None":
+        """Desktop mode no-op: workspace concept does not apply.
+
+        Returns the project dict unchanged, or None if not found.
+        """
+        return self.get_project(project_id)
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
@@ -418,6 +433,30 @@ class PostgresStorageBackend(StorageBackend):
                 (project_id,),
             )
         return cursor.rowcount == 1
+
+    def share_project_to_workspace(self, project_id: str) -> "dict | None":
+        """Set visibility='workspace' on the project and return the updated dict.
+
+        Returns the updated project dict, or None if the project was not found.
+        """
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE projects
+                SET visibility = 'workspace', updated_at = NOW()
+                WHERE id = %s::uuid
+                RETURNING id, name, owner_user_id, visibility, state, revision,
+                          created_at, updated_at, created_by_email, updated_by_email,
+                          imported_from_json
+                """,
+                (project_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+        return _pg_row_to_project(dict(zip(cols, row)))
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
