@@ -75,6 +75,7 @@ export const LEGACY_SCRIPT_PATHS = [
   '/src/js/pco.js',
   '/src/js/update.js',
   '/src/js/templates.js',
+  '/src/js/auth.js',
   '/src/js/app.js',
 ];
 

@@ -12,11 +12,35 @@
 </head>
 <body>
 
+<!-- ═══ Login Screen (shown in server mode when unauthenticated) ═════════════ -->
+<div id="login-screen" style="display:none; position:fixed; inset:0; z-index:1000; background:var(--b2,#f2f2f2); align-items:center; justify-content:center;">
+  <div style="background:var(--b1,#fff); border-radius:1rem; box-shadow:0 8px 32px rgba(0,0,0,0.12); padding:2.5rem 2rem; max-width:380px; width:100%; text-align:center;">
+    <h1 style="font-size:1.4rem; font-weight:700; margin:0 0 0.25rem;">Bulletin Generator</h1>
+    <p style="font-size:0.85rem; color:var(--bc,#555); opacity:0.6; margin:0 0 2rem;">Sign in to continue</p>
+    <a href="/auth/google/login"
+       style="display:inline-flex; align-items:center; gap:0.6rem; background:#4285F4; color:#fff; font-weight:600; font-size:0.9rem; padding:0.65rem 1.4rem; border-radius:0.5rem; text-decoration:none;">
+      <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.3-.2-2.7-.5-4z" fill="#FFC107"/>
+        <path d="M6.3 14.7l7 5.1C15.1 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3c-7.7 0-14.4 4.5-17.7 11.7z" fill="#FF3D00"/>
+        <path d="M24 45c5.5 0 10.5-2 14.3-5.3l-6.6-5.6C29.7 35.9 27 37 24 37c-5.7 0-10.6-3.1-11.8-7.5l-7 5.4C8.1 41 15.6 45 24 45z" fill="#4CAF50"/>
+        <path d="M44.5 20H24v8.5h11.8c-0.6 2.4-2 4.5-3.9 5.9l6.6 5.6C42.3 36.5 45 30.8 45 24c0-1.3-.2-2.7-.5-4z" fill="#1976D2"/>
+      </svg>
+      Sign in with Google
+    </a>
+  </div>
+</div>
+
+<!-- ═══ App Container (hidden until authenticated) ═══════════════════════════ -->
+<div id="app-container">
 
 <div class="navbar bg-primary text-primary-content px-4 shadow-sm" style="min-height:52px;">
   <div class="flex-1 flex flex-col gap-0 leading-tight">
     <span class="font-bold text-base">Bulletin Generator</span>
     <span class="text-xs opacity-60">Import from PCO &mdash; edit items &mdash; download PDF</span>
+  </div>
+  <!-- User info area (shown in server mode when signed in) -->
+  <div id="user-info" style="display:none; align-items:center; gap:0.5rem; flex-shrink:0;">
+    <!-- avatar, name, sign-out button injected by auth.js -->
   </div>
 </div>
 
@@ -754,6 +778,7 @@
 
 <div id="toast-container" class="toast toast-top toast-end z-50"></div>
 
+</div><!-- #app-container -->
 
 <script type="module" src="src/js/main.js"></script>
 </body>
