@@ -326,6 +326,11 @@
         <button class="bulk-bar-clear btn btn-sm btn-ghost" id="bulk-clear">Clear</button>
       </div>
     </div>
+    <!-- Server-mode sub-tabs (hidden in desktop mode via JS) -->
+    <div id="files-subtabs" class="files-subtabs flex gap-1 mb-3" style="display:none!important;">
+      <button class="files-subtab-btn btn btn-sm btn-primary" data-subtab="my">My Projects</button>
+      <button class="files-subtab-btn btn btn-sm btn-ghost" data-subtab="workspace">Workspace</button>
+    </div>
     <div id="files-list"></div>
   </div>
 </div><!-- #page-files -->

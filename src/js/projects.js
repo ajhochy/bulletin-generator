@@ -636,6 +636,8 @@ async function restoreOnStartup() {
 
 let _projectsInitialized = false;
 
+// ─── Files sub-tab state (server mode) ───────────────────────────────────────
+let _filesActiveTab = 'my'; // 'my' | 'workspace'
 
 // ─── Files page ───────────────────────────────────────────────────────────────
 function updateBulkBar() {
@@ -649,12 +651,67 @@ function updateBulkBar() {
   if (selAllBtn) selAllBtn.textContent = (n === projects.length && projects.length > 0) ? 'Deselect All' : 'Select All';
 }
 
+function _initFilesSubtabs() {
+  const subtabsEl = document.getElementById('files-subtabs');
+  if (!subtabsEl) return;
+
+  if (!isServerMode()) {
+    // Desktop: keep sub-tabs hidden
+    subtabsEl.style.setProperty('display', 'none', 'important');
+    return;
+  }
+
+  // Show the sub-tab bar
+  subtabsEl.style.removeProperty('display');
+
+  // Wire buttons (idempotent — avoid double-binding by cloning)
+  subtabsEl.querySelectorAll('.files-subtab-btn').forEach(btn => {
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener('click', () => {
+      _filesActiveTab = fresh.dataset.subtab;
+      _updateSubtabActive();
+      renderFilesList();
+    });
+  });
+
+  _updateSubtabActive();
+}
+
+function _updateSubtabActive() {
+  const subtabsEl = document.getElementById('files-subtabs');
+  if (!subtabsEl) return;
+  subtabsEl.querySelectorAll('.files-subtab-btn').forEach(btn => {
+    const isActive = btn.dataset.subtab === _filesActiveTab;
+    btn.className = 'files-subtab-btn btn btn-sm ' + (isActive ? 'btn-primary' : 'btn-ghost');
+  });
+}
+
 function renderFilesList() {
+  // Ensure sub-tabs are wired up each time the Files page is rendered
+  _initFilesSubtabs();
+
   const list    = document.getElementById('files-list');
   const countEl = document.getElementById('files-count');
   if (!list) return;
 
-  const sorted = projects.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+
+  // Filter projects for server-mode tabs
+  let displayProjects = projects.slice();
+  if (isServerMode() && currentUser) {
+    if (_filesActiveTab === 'my') {
+      // All projects owned by the current user (private or workspace)
+      displayProjects = displayProjects.filter(p =>
+        !p.owner_user_id || String(p.owner_user_id) === String(currentUser.id)
+      );
+    } else {
+      // Workspace tab: all projects with workspace visibility
+      displayProjects = displayProjects.filter(p => p.visibility === 'workspace');
+    }
+  }
+
+  const sorted = displayProjects.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
   if (countEl) {
     countEl.textContent = sorted.length === 0
@@ -663,13 +720,15 @@ function renderFilesList() {
   }
 
   if (sorted.length === 0) {
+    const emptyMsg = isServerMode() && _filesActiveTab === 'workspace'
+      ? 'No workspace projects yet. Share a private project to make it visible to your team.'
+      : 'No saved projects yet. Use the Booklet Editor to build a bulletin, then save it as a project.';
     list.innerHTML = `
       <div class="files-empty flex flex-col items-center justify-center py-16 text-center">
-        <div class="files-empty-title text-lg font-semibold mb-2">No saved projects yet.</div>
-        <div class="files-empty-sub text-sm text-base-content/60 mb-4">Use the Booklet Editor to build a bulletin, then save it as a project.</div>
-        <button class="btn btn-sm btn-primary files-empty-goto">→ Go to Booklet Editor</button>
+        <div class="files-empty-title text-lg font-semibold mb-2">${esc(emptyMsg)}</div>
+        ${_filesActiveTab !== 'workspace' ? '<button class="btn btn-sm btn-primary files-empty-goto">→ Go to Booklet Editor</button>' : ''}
       </div>`;
-    list.querySelector('.files-empty-goto').addEventListener('click', () => {
+    list.querySelector('.files-empty-goto')?.addEventListener('click', () => {
       document.querySelector('.tab-btn[data-tab="page-editor"]').click();
     });
     return;
@@ -682,21 +741,42 @@ function renderFilesList() {
     const date     = state.svcDate  || '';
     const title    = state.svcTitle || '';
     const count    = Array.isArray(state.items) ? state.items.length : 0;
-    const metaParts = [
-      date && title ? `${date} · ${title}` : (date || title || null),
-      `${count} item${count === 1 ? '' : 's'}`,
-      `updated ${shortTimestamp(project.updatedAt) || '—'}`,
-    ].filter(Boolean);
+
+    // Visibility + ownership
+    const isPrivate = project.visibility !== 'workspace';
+    const isOwnerOrLegacy = !project.owner_user_id
+      || (currentUser && String(project.owner_user_id) === String(currentUser.id));
 
     // Determine whether to show "Share to Workspace" button:
     //   - Server mode only
     //   - Project must be private (visibility !== 'workspace')
     //   - Current user must be the owner, OR project has no owner (legacy import)
-    const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
-    const isPrivate = project.visibility !== 'workspace';
-    const isOwnerOrLegacy = !project.owner_user_id
-      || (currentUser && String(project.owner_user_id) === String(currentUser.id));
     const showShareBtn = isServerMode() && isPrivate && isOwnerOrLegacy;
+
+    // Build meta parts
+    const lastEditorEmail = project.updated_by_email || project.updatedBy || null;
+    const lastEditedAt    = project.updated_at || project.updatedAt || null;
+    const relTime         = (typeof formatRelativeTime === 'function') ? formatRelativeTime(lastEditedAt) : shortTimestamp(lastEditedAt);
+    const metaParts = [
+      date && title ? `${date} · ${title}` : (date || title || null),
+      `${count} item${count === 1 ? '' : 's'}`,
+    ].filter(Boolean);
+
+    // Visibility badge
+    const visibilityBadge = isServerMode()
+      ? (isPrivate
+          ? '<span class="badge badge-sm badge-ghost ml-1" title="Only you can see this project">🔒 Private</span>'
+          : '<span class="badge badge-sm badge-info ml-1" title="Visible to everyone in your workspace">Workspace</span>')
+      : '';
+
+    // Last-edited-by line (server mode only)
+    const editorMeta = isServerMode() && (lastEditorEmail || relTime)
+      ? `<div class="file-card-editor text-xs text-base-content/40 truncate mt-0.5">`
+        + (lastEditorEmail ? `edited by ${esc(lastEditorEmail)}` : '')
+        + (lastEditorEmail && relTime ? ' · ' : '')
+        + (relTime ? relTime : '')
+        + `</div>`
+      : '';
 
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
@@ -709,9 +789,10 @@ function renderFilesList() {
         <div class="file-card-name font-medium text-sm truncate">
           ${esc(project.name)}
           ${isActive ? '<span class="file-active-badge badge badge-sm badge-primary ml-1">active</span>' : ''}
-          ${isPrivate && isServerMode() ? '<span class="badge badge-sm badge-ghost ml-1">private</span>' : ''}
+          ${visibilityBadge}
         </div>
         <div class="file-card-meta text-xs text-base-content/50 truncate">${esc(metaParts.join(' · '))}</div>
+        ${editorMeta}
       </div>
       <div class="file-card-actions flex gap-1 shrink-0">
         <button class="btn btn-xs btn-primary" data-fm="load"         data-id="${escAttr(project.id)}">Load</button>
