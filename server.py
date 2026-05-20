@@ -1179,9 +1179,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if IS_DESKTOP:
             self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
         else:
-            from storage import get_storage  # noqa: PLC0415
+            from storage import get_storage, can_read_project  # noqa: PLC0415
             store = get_storage()
-            self._send_json({"projects": store.list_projects()})
+            # Check if a specific project id was requested via query string.
+            qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            project_id = (qs.get("id") or [None])[0]
+            if project_id:
+                project = store.get_project(project_id)
+                if project is None:
+                    self._send_json({"error": "project not found"}, 404)
+                    return
+                if not can_read_project(project, user["id"]):
+                    self._send_json({"error": "forbidden"}, 403)
+                    return
+                self._send_json({"project": project})
+            else:
+                self._send_json({"projects": store.list_projects(user_id=user["id"])})
 
     def _handle_get_announcements(self):
         user = self._require_auth()
@@ -1245,6 +1258,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # Conflict detection against DB-authoritative revision.
             client_rev = project.pop("_clientRevision", None)
             existing = None if is_new_project else store.get_project(project["id"])
+
+            # Access control: only the owner (or any user for workspace projects) may save.
+            if not is_new_project and existing is not None:
+                from storage import can_write_project  # noqa: PLC0415
+                if not can_write_project(existing, user["id"]):
+                    self._send_json({"error": "forbidden"}, 403)
+                    return
             if existing is not None:
                 stored_rev = existing.get("revision")
                 if (stored_rev is not None
@@ -1461,6 +1481,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not project_id:
             self._send_json({"error": "missing project id"}, 400)
             return
+
+        if not IS_DESKTOP:
+            from storage import get_storage, can_delete_project  # noqa: PLC0415
+            store = get_storage()
+            project = store.get_project(project_id)
+            if project is None:
+                self._send_json({"error": "project not found"}, 404)
+                return
+            if not can_delete_project(project, user["id"]):
+                self._send_json({"error": "forbidden"}, 403)
+                return
+            store.delete_project(project_id)
+            self._send_json({"ok": True})
+            return
+
         with _lock:
             projects = _read_json(PROJECTS_FILE, [])
             projects = [p for p in projects if p.get("id") != project_id]

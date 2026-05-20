@@ -54,8 +54,13 @@ class StorageBackend(ABC):
     # ── Projects ──────────────────────────────────────────────────────────────
 
     @abstractmethod
-    def list_projects(self) -> list:
-        """Return the full list of project dicts."""
+    def list_projects(self, user_id: str | None = None) -> list:
+        """Return the full list of project dicts.
+
+        When *user_id* is supplied (normal server-mode operation) only projects
+        visible to that user are returned.  When None, all projects are returned
+        (admin/migration use only).
+        """
         ...
 
     @abstractmethod
@@ -174,7 +179,8 @@ class JsonStorageBackend(StorageBackend):
 
     # ── Projects ──────────────────────────────────────────────────────────────
 
-    def list_projects(self) -> list:
+    def list_projects(self, user_id: str | None = None) -> list:
+        # Desktop mode has no multi-user concept; always return all projects.
         with self._lock:
             return _read_json(self._projects_file, [])
 
@@ -323,8 +329,15 @@ class PostgresStorageBackend(StorageBackend):
 
     # ── Projects ──────────────────────────────────────────────────────────────
 
-    def list_projects(self) -> list:
-        """Return all projects ordered by updated_at DESC."""
+    def list_projects(self, user_id: str | None = None) -> list:
+        """Return projects visible to *user_id*, or all projects when user_id is None.
+
+        When *user_id* is provided (normal server-mode operation) this delegates
+        to ``list_projects_for_user()`` which filters by visibility/ownership.
+        When *user_id* is None (admin/migration use) all projects are returned.
+        """
+        if user_id is not None:
+            return self.list_projects_for_user(user_id)
         from db import transaction, from_jsonb  # noqa: PLC0415
         with transaction() as conn:
             cursor = conn.execute(
@@ -335,6 +348,33 @@ class PostgresStorageBackend(StorageBackend):
                 FROM projects
                 ORDER BY updated_at DESC
                 """
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        return [_pg_row_to_project(dict(zip(cols, row))) for row in rows]
+
+    def list_projects_for_user(self, user_id: str) -> list:
+        """Return all projects visible to *user_id*.
+
+        A project is visible when:
+          - visibility='workspace'  (every authenticated user can see it)
+          - visibility='private' AND owner_user_id = user_id  (own private project)
+          - visibility='private' AND owner_user_id IS NULL  (legacy import, accessible to all)
+        """
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, name, owner_user_id, visibility, state, revision,
+                       created_at, updated_at, created_by_email, updated_by_email,
+                       imported_from_json
+                FROM projects
+                WHERE visibility = 'workspace'
+                   OR owner_user_id = %(user_id)s::uuid
+                   OR (visibility = 'private' AND owner_user_id IS NULL)
+                ORDER BY updated_at DESC
+                """,
+                {"user_id": user_id},
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
@@ -951,6 +991,51 @@ def _ts(value) -> str:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+# ---------------------------------------------------------------------------
+# Project access control helpers
+# ---------------------------------------------------------------------------
+
+def can_read_project(project: dict, user_id: str) -> bool:
+    """Return True if *user_id* may read *project*.
+
+    Rules:
+      - workspace projects  → visible to all authenticated users
+      - private + owned     → visible to the owner only
+      - private + no owner  → legacy import, accessible to all (for now)
+    """
+    visibility = project.get("visibility") or "private"
+    owner = project.get("owner_user_id")
+    if visibility == "workspace":
+        return True
+    # private
+    if owner is None:
+        return True  # legacy import — no owner assigned yet
+    return str(owner) == str(user_id)
+
+
+def can_write_project(project: dict, user_id: str) -> bool:
+    """Return True if *user_id* may save (update) *project*.
+
+    Write access mirrors read access: all workspace users may edit workspace
+    projects; only the owner may edit their private project.
+    """
+    return can_read_project(project, user_id)
+
+
+def can_delete_project(project: dict, user_id: str) -> bool:
+    """Return True if *user_id* may delete *project*.
+
+    Rules:
+      - owner == user_id  → True
+      - owner is None (legacy, no owner assigned) → False (disable until admin role exists)
+      - else              → False
+    """
+    owner = project.get("owner_user_id")
+    if owner is None:
+        return False  # ownerless legacy project — disable delete
+    return str(owner) == str(user_id)
 
 
 # ---------------------------------------------------------------------------

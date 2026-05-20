@@ -211,12 +211,12 @@ class TestExistingProjectUpdate:
         """save_project is still called; SQL ON CONFLICT UPDATE does not touch owner_user_id."""
         # The SQL UPDATE clause does not include owner_user_id, so even if the data
         # dict carries it the column is never changed.  This test verifies the update
-        # succeeds and that the authenticated editor's email is recorded.
+        # succeeds (as the owner) and that the authenticated editor's identity is recorded.
         project_id = str(uuid.uuid4())
         existing = self._existing_project(project_id, _USER_ALICE["id"])
 
         handler, store = _post_project(
-            user=_USER_BOB,  # a different user editing Alice's project
+            user=_USER_ALICE,  # Alice is the owner — she may edit her own project
             payload={
                 "id": project_id,
                 "name": "Sunday Service",
@@ -228,7 +228,7 @@ class TestExistingProjectUpdate:
         store.save_project.assert_called_once()
         # Verify the authenticated editor's identity is sent, not the payload's
         kwargs = store.save_project.call_args[1]
-        assert kwargs["updated_by_user_id"] == _USER_BOB["id"]
+        assert kwargs["updated_by_user_id"] == _USER_ALICE["id"]
         result = handler._send_json.call_args[0][0]
         assert result.get("ok") is True
 
@@ -238,12 +238,12 @@ class TestExistingProjectUpdate:
         existing = self._existing_project(project_id, _USER_ALICE["id"])
 
         _handler, store = _post_project(
-            user=_USER_BOB,
+            user=_USER_ALICE,  # Alice is the owner — she may edit her own project
             payload={"id": project_id, "name": "Sunday Service", "_clientRevision": 5},
             existing_in_store=existing,
         )
         kwargs = store.save_project.call_args[1]
-        assert kwargs["updated_by_email"] == _USER_BOB["email"]
+        assert kwargs["updated_by_email"] == _USER_ALICE["email"]
 
 
 # ── Desktop mode: ownership enforcement is skipped ───────────────────────────
