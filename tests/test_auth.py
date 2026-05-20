@@ -232,7 +232,8 @@ class TestUpsertUser:
             row = ("uuid-1", "alice@example.org", "Alice Smith",
                    "https://example.org/alice.jpg", "example.org")
         mock_conn = self._make_mock_conn(row)
-        with patch("db.transaction", return_value=mock_conn):
+        with patch.object(auth, "ALLOWED_DOMAIN", "example.org"), \
+             patch("db.transaction", return_value=mock_conn):
             return auth.upsert_user(claims)
 
     def test_returns_id(self):
@@ -265,10 +266,10 @@ class TestUpsertUser:
 
     def test_domain_extracted_from_email(self):
         row = ("uid-2", "bob@myorg.com", "Bob", "", "myorg.com")
-        user = self._call(
-            claims={"email": "bob@myorg.com", "name": "Bob", "picture": ""},
-            row=row,
-        )
+        mock_conn = self._make_mock_conn(row)
+        with patch.object(auth, "ALLOWED_DOMAIN", "myorg.com"), \
+             patch("db.transaction", return_value=mock_conn):
+            user = auth.upsert_user({"email": "bob@myorg.com", "name": "Bob", "picture": ""})
         assert user["domain"] == "myorg.com"
 
     def test_upsert_sql_called_with_correct_args(self):
@@ -276,7 +277,8 @@ class TestUpsertUser:
         row = ("uid-3", "alice@example.org", "Alice Smith",
                "https://example.org/alice.jpg", "example.org")
         mock_conn = self._make_mock_conn(row)
-        with patch("db.transaction", return_value=mock_conn):
+        with patch.object(auth, "ALLOWED_DOMAIN", "example.org"), \
+             patch("db.transaction", return_value=mock_conn):
             auth.upsert_user(self._CLAIMS)
 
         assert mock_conn.execute.called
@@ -457,14 +459,131 @@ class TestAuthGoogleCallbackRoute:
         assert "valid-state" not in server._auth_login_states
 
     def test_redirects_on_exchange_failure(self):
+        """A ValueError from exchange_auth_code results in a 403 (domain-rejection path)."""
         handler = _make_handler()
         handler.path = "/auth/google/callback?code=bad&state=valid-state"
+        handler.wfile = MagicMock()
         self._setup_state("valid-state")
         with patch.object(server, "IS_DESKTOP", False), \
              patch("auth.exchange_auth_code", side_effect=ValueError("boom")):
             handler._handle_auth_google_callback()
+        # ValueError is now caught by the domain-rejection branch → 403
+        handler.send_response.assert_called_once_with(403)
+
+
+# ── validate_domain ───────────────────────────────────────────────────────────
+
+class TestValidateDomain:
+    """auth.validate_domain() should accept only the configured allowed domain."""
+
+    def _call(self, email, allowed="visaliacrc.com"):
+        with patch.dict(os.environ, {"GOOGLE_WORKSPACE_DOMAIN": allowed}, clear=False):
+            # Re-read ALLOWED_DOMAIN from env for each call via the module-level constant.
+            # Since the constant is set at import time, patch the attribute directly.
+            with patch.object(auth, "ALLOWED_DOMAIN", allowed):
+                return auth.validate_domain(email)
+
+    def test_accepted_domain(self):
+        assert self._call("person@visaliacrc.com") is True
+
+    def test_rejected_domain(self):
+        assert self._call("person@gmail.com") is False
+
+    def test_case_insensitive_uppercase(self):
+        assert self._call("USER@VISALIACRC.COM") is True
+
+    def test_whitespace_stripped(self):
+        assert self._call("  user@visaliacrc.com  ") is True
+
+    def test_no_at_sign_returns_false(self):
+        assert self._call("notanemail") is False
+
+    def test_subdomain_rejected(self):
+        assert self._call("user@sub.visaliacrc.com") is False
+
+
+# ── upsert_user domain enforcement ───────────────────────────────────────────
+
+class TestUpsertUserDomainEnforcement:
+    """upsert_user() should raise ValueError for disallowed email domains."""
+
+    def _make_mock_conn(self, returned_row):
+        mock_cursor = MagicMock()
+        mock_cursor.fetchone.return_value = returned_row
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value = mock_cursor
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__  = MagicMock(return_value=False)
+        return mock_conn
+
+    def test_raises_for_wrong_domain(self):
+        with patch.object(auth, "ALLOWED_DOMAIN", "visaliacrc.com"), \
+             pytest.raises(ValueError, match="Login restricted"):
+            auth.upsert_user({"email": "person@gmail.com", "name": "Person", "picture": ""})
+
+    def test_does_not_raise_for_allowed_domain(self):
+        row = ("uid-ok", "person@visaliacrc.com", "Person", "", "visaliacrc.com")
+        mock_conn = self._make_mock_conn(row)
+        with patch.object(auth, "ALLOWED_DOMAIN", "visaliacrc.com"), \
+             patch("db.transaction", return_value=mock_conn):
+            user = auth.upsert_user({"email": "person@visaliacrc.com", "name": "Person", "picture": ""})
+        assert user["email"] == "person@visaliacrc.com"
+
+
+# ── callback route: domain rejection returns 403 ──────────────────────────────
+
+class TestCallbackDomainRejection:
+    """Callback with a wrong-domain account should return 403 with no cookie."""
+
+    _WRONG_CLAIMS = {
+        "sub":     "99",
+        "email":   "outsider@gmail.com",
+        "name":    "Outsider",
+        "picture": "",
+    }
+
+    def _setup_state(self, state="valid-state"):
+        server._auth_login_states[state] = True
+
+    def _call_with_wrong_domain(self):
+        handler = _make_handler()
+        handler.path = "/auth/google/callback?code=mycode&state=valid-state"
+        handler.wfile = MagicMock()
+        self._setup_state("valid-state")
+        with patch.object(server, "IS_DESKTOP", False), \
+             patch("auth.exchange_auth_code", return_value=self._WRONG_CLAIMS), \
+             patch("auth.upsert_user", side_effect=ValueError("Login restricted to @visaliacrc.com accounts")):
+            handler._handle_auth_google_callback()
+        return handler
+
+    def test_returns_403(self):
+        handler = self._call_with_wrong_domain()
+        handler.send_response.assert_called_once_with(403)
+
+    def test_no_cookie_set(self):
+        handler = self._call_with_wrong_domain()
+        cookie_calls = [
+            c for c in handler.send_header.call_args_list
+            if c[0][0] == "Set-Cookie"
+        ]
+        assert not cookie_calls, "Set-Cookie header should not be set on rejection"
+
+    def test_no_redirect(self):
+        handler = self._call_with_wrong_domain()
         location_calls = [
             c for c in handler.send_header.call_args_list
             if c[0][0] == "Location"
         ]
-        assert "auth_error=token" in location_calls[0][0][1]
+        assert not location_calls, "Location header should not be set on 403"
+
+    def test_response_body_mentions_domain(self):
+        handler = self._call_with_wrong_domain()
+        write_calls = handler.wfile.write.call_args_list
+        assert write_calls, "Response body should be written"
+        body = write_calls[0][0][0].decode("utf-8")
+        assert "visaliacrc.com" in body
+
+    def test_response_body_has_try_again_link(self):
+        handler = self._call_with_wrong_domain()
+        body = handler.wfile.write.call_args_list[0][0][0].decode("utf-8")
+        assert "/auth/google/login" in body

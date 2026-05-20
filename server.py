@@ -1774,6 +1774,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         try:
             claims = _auth.exchange_auth_code(code)
             user   = _auth.upsert_user(claims)
+        except ValueError as e:
+            print(f'  [auth] App-login rejected: {e}')
+            allowed_domain = getattr(_auth, 'ALLOWED_DOMAIN', 'visaliacrc.com')
+            body = (
+                '<!DOCTYPE html><html><head><title>Access Denied</title></head><body>'
+                '<h1>Access denied</h1>'
+                f'<p>Only @{allowed_domain} Google accounts may sign in.</p>'
+                '<p><a href="/auth/google/login">Try a different account</a></p>'
+                '</body></html>'
+            ).encode('utf-8')
+            self.send_response(403)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         except Exception as e:
             print(f'  [auth] App-login failed: {e}')
             detail = urllib.parse.quote(str(e)[:200])

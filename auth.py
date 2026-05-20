@@ -26,8 +26,33 @@ import urllib.request
 
 AUTH_GOOGLE_LOGIN_SCOPES = ["openid", "email", "profile"]
 
+ALLOWED_DOMAIN = os.environ.get("GOOGLE_WORKSPACE_DOMAIN", "visaliacrc.com")
+
 _GOOGLE_AUTH_URL  = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+
+# ── Domain validation ─────────────────────────────────────────────────────────
+
+def validate_domain(email: str) -> bool:
+    """
+    Return True if the email's domain matches ALLOWED_DOMAIN.
+
+    The check is case-insensitive and strips leading/trailing whitespace from
+    the email before splitting.
+
+    Args:
+        email: An email address string (whitespace is stripped before checking).
+
+    Returns:
+        True if the domain part equals ALLOWED_DOMAIN (case-insensitive),
+        False otherwise.
+    """
+    normalized = email.strip().lower()
+    if "@" not in normalized:
+        return False
+    domain = normalized.split("@", 1)[1]
+    return domain == ALLOWED_DOMAIN.lower()
 
 
 # ── Authorization URL ─────────────────────────────────────────────────────────
@@ -172,6 +197,9 @@ def upsert_user(claims: dict) -> dict:
     email = (claims.get("email") or "").strip()
     if not email:
         raise ValueError("Google ID token claims are missing the 'email' field.")
+
+    if not validate_domain(email):
+        raise ValueError(f"Login restricted to @{ALLOWED_DOMAIN} accounts")
 
     display_name = (claims.get("name") or "").strip()
     avatar_url   = (claims.get("picture") or "").strip()
