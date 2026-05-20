@@ -1712,7 +1712,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', f'/?pco_error=token&detail={detail}')
             self.end_headers()
 
-    # ── Google Calendar OAuth ──────────────────────────────────────────────────
+    # --- Google Calendar/Drive Integration OAuth ---
+    # Separate from app login (/auth/google/login). Uses calendar+drive scopes.
+    # Tokens stored deployment-wide in settings.json (not per-user in this version).
+    # Must NOT request identity scopes (openid, profile) — those belong to the
+    # app-login flow in auth.py.
 
     def _handle_google_oauth_start(self):
         client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
@@ -1730,11 +1734,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         port = self.server.server_address[1]
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
         redirect_uri = f'{app_url}/oauth/google/callback' if app_url else f'http://localhost:{port}/oauth/google/callback'
+        # These scopes are strictly for Calendar/Drive access — identity scopes
+        # (openid, email, profile) are intentionally excluded here.  App login
+        # uses a separate flow (/auth/google/login) defined in auth.py.
+        _GCAL_DRIVE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file'
+        assert 'openid' not in _GCAL_DRIVE_SCOPES and 'profile' not in _GCAL_DRIVE_SCOPES, \
+            'Calendar/Drive OAuth must not include identity scopes'
         params = urllib.parse.urlencode({
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
-            'scope':         'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file',
+            'scope':         _GCAL_DRIVE_SCOPES,
             'access_type':   'offline',
             'prompt':        'consent',
         })

@@ -25,6 +25,11 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
 
+# --- App Login OAuth (Google Workspace Identity) ---
+# Separate from Calendar/Drive integration (/oauth/google/*).
+# Uses identity scopes only: openid, email, profile.
+# Tokens stored in sessions table, not in settings.json.
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 AUTH_GOOGLE_LOGIN_SCOPES = ["openid", "email", "profile"]
