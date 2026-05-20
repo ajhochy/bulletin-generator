@@ -77,6 +77,32 @@ class StorageBackend(ABC):
         """
         ...
 
+    def save_project_transactional(
+        self,
+        data: dict,
+        client_revision: int | None,
+        *,
+        updated_by_email: str = "",
+        updated_by_user_id: str | None = None,
+        updated_by_name: str = "",
+    ) -> dict:
+        """Save a project only when *client_revision* matches the stored revision.
+
+        This is the conflict-safe write path for server mode.  The default
+        implementation falls back to ``save_project()`` (used by the JSON
+        backend where single-writer semantics are guaranteed by the file lock).
+
+        Raises:
+            ConflictError: when the stored revision does not match *client_revision*.
+                           ``ConflictError.project`` holds the current server-side
+                           project dict so callers can build a 409 response.
+        """
+        return self.save_project(
+            data,
+            updated_by_email=updated_by_email,
+            updated_by_user_id=updated_by_user_id,
+        )
+
     @abstractmethod
     def delete_project(self, project_id: str) -> bool:
         """Delete a project by id.  Returns True if it existed."""
@@ -317,6 +343,25 @@ class JsonStorageBackend(StorageBackend):
 
 
 # ---------------------------------------------------------------------------
+# ConflictError — raised by transactional save on revision mismatch
+# ---------------------------------------------------------------------------
+
+class ConflictError(Exception):
+    """Raised by save_project_transactional() when the client revision is stale.
+
+    ``self.project`` holds the current server-side project dict (as returned
+    by ``get_project()``) so callers can extract the authoritative revision,
+    updated_at, and updated_by_email for a 409 response.
+    """
+
+    def __init__(self, project: dict) -> None:
+        super().__init__(
+            f"Revision conflict: server is at revision {project.get('revision')}"
+        )
+        self.project = project
+
+
+# ---------------------------------------------------------------------------
 # Postgres stub (server mode — filled in by issues #196-#201)
 # ---------------------------------------------------------------------------
 
@@ -463,6 +508,131 @@ class PostgresStorageBackend(StorageBackend):
             row = cursor.fetchone()
             cols = [d[0] for d in cursor.description]
         return _pg_row_to_project(dict(zip(cols, row)))
+
+    def save_project_transactional(
+        self,
+        data: dict,
+        client_revision: int | None,
+        *,
+        updated_by_email: str = "",
+        updated_by_user_id: str | None = None,
+        updated_by_name: str = "",
+    ) -> dict:
+        """Save a project transactionally, only when *client_revision* matches.
+
+        Uses ``UPDATE ... WHERE id=? AND revision=?`` so that two concurrent
+        saves cannot both overwrite the same revision.
+
+        On success:
+          - Increments the project revision by 1.
+          - Inserts a snapshot row into ``project_revisions``.
+          - Returns the updated project dict.
+
+        Raises:
+            ConflictError: when rowcount == 0 (revision mismatch or project missing).
+                           ``ConflictError.project`` contains the current server-side
+                           project dict for building the 409 response.
+            ValueError: when ``data`` has no ``id`` key.
+        """
+        if "id" not in data:
+            raise ValueError("project data must contain an 'id' key")
+
+        import json as _json  # noqa: PLC0415
+        import uuid as _uuid  # noqa: PLC0415
+        from db import transaction  # noqa: PLC0415
+
+        project_id = data["id"]
+        name = str(data.get("name") or "")
+        state_json = _json.dumps(data, ensure_ascii=False)
+        resolved_email = updated_by_email or str(data.get("updatedBy") or "")
+
+        # Treat a missing client_revision as 0 — will conflict unless the
+        # project is brand-new (revision 0 in DB, which should not occur in
+        # practice because inserts start at revision 1).
+        effective_client_rev = int(client_revision) if client_revision is not None else 0
+
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE projects
+                SET
+                    name             = %(name)s,
+                    state            = %(state)s::jsonb,
+                    revision         = revision + 1,
+                    updated_at       = NOW(),
+                    updated_by_email = %(updated_by_email)s
+                WHERE id = %(id)s::uuid
+                  AND revision = %(client_revision)s
+                RETURNING id, name, owner_user_id, visibility, state, revision,
+                          created_at, updated_at, created_by_email, updated_by_email,
+                          imported_from_json
+                """,
+                {
+                    "id": project_id,
+                    "name": name,
+                    "state": state_json,
+                    "updated_by_email": resolved_email,
+                    "client_revision": effective_client_rev,
+                },
+            )
+            row = cursor.fetchone()
+
+            if row is None:
+                # Either revision mismatch or project does not exist.  Fetch the
+                # current server state so the caller can build a 409 body.
+                cur2 = conn.execute(
+                    """
+                    SELECT id, name, owner_user_id, visibility, state, revision,
+                           created_at, updated_at, created_by_email, updated_by_email,
+                           imported_from_json
+                    FROM projects
+                    WHERE id = %(id)s::uuid
+                    """,
+                    {"id": project_id},
+                )
+                server_row = cur2.fetchone()
+                if server_row is not None:
+                    cols2 = [d[0] for d in cur2.description]
+                    server_project = _pg_row_to_project(dict(zip(cols2, server_row)))
+                else:
+                    # Project doesn't exist at all — surface a generic conflict.
+                    server_project = {"id": project_id, "revision": 0}
+                raise ConflictError(server_project)
+
+            cols = [d[0] for d in cursor.description]
+            saved_project = _pg_row_to_project(dict(zip(cols, row)))
+            new_revision = saved_project["revision"]
+
+            # Insert a revision snapshot.
+            conn.execute(
+                """
+                INSERT INTO project_revisions (
+                    id, project_id, revision, state,
+                    saved_at, saved_by_user_id, saved_by_email, saved_by_name, summary
+                ) VALUES (
+                    %(snap_id)s::uuid,
+                    %(project_id)s::uuid,
+                    %(revision)s,
+                    %(state)s::jsonb,
+                    NOW(),
+                    %(saved_by_user_id)s::uuid,
+                    %(saved_by_email)s,
+                    %(saved_by_name)s,
+                    ''
+                )
+                """,
+                {
+                    "snap_id": str(_uuid.uuid4()),
+                    "project_id": project_id,
+                    "revision": new_revision,
+                    "state": state_json,
+                    "saved_by_user_id": updated_by_user_id,
+                    "saved_by_email": resolved_email,
+                    "saved_by_name": updated_by_name,
+                },
+            )
+
+        return saved_project
 
     def delete_project(self, project_id: str) -> bool:
         """Delete a project by id; return True if it existed."""

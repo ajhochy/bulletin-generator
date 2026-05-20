@@ -1249,47 +1249,58 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if not IS_DESKTOP:
             # ── Server mode: delegate to storage layer with user attribution ──
-            from storage import get_storage  # noqa: PLC0415
+            from storage import get_storage, ConflictError  # noqa: PLC0415
             store = get_storage()
 
             # Detect new vs existing project before popping _clientRevision.
             is_new_project = not project.get("id") or store.get_project(project["id"]) is None
 
-            # Conflict detection against DB-authoritative revision.
+            # Extract client revision before passing data to the storage layer.
             client_rev = project.pop("_clientRevision", None)
-            existing = None if is_new_project else store.get_project(project["id"])
-
-            # Access control: only the owner (or any user for workspace projects) may save.
-            if not is_new_project and existing is not None:
-                from storage import can_write_project  # noqa: PLC0415
-                if not can_write_project(existing, user["id"]):
-                    self._send_json({"error": "forbidden"}, 403)
-                    return
-            if existing is not None:
-                stored_rev = existing.get("revision")
-                if (stored_rev is not None
-                        and int(stored_rev) > 0
-                        and (client_rev is None or int(client_rev) < int(stored_rev))):
-                    self._send_json({
-                        "error": "conflict",
-                        "projectId": project["id"],
-                        "serverRevision": stored_rev,
-                        "serverUpdatedAt": existing.get("updatedAt"),
-                        "serverUpdatedBy": existing.get("updatedBy"),
-                    }, 409)
-                    return
 
             if is_new_project:
                 # Never trust client-supplied ownership fields for new projects.
                 # Server always sets owner and visibility from the authenticated session.
                 project.pop("owner_user_id", None)
                 project.pop("visibility", None)
+                # New projects: use the non-transactional upsert path.
+                saved = store.save_project(
+                    project,
+                    updated_by_email=user.get("email") or "",
+                    updated_by_user_id=user.get("id") or None,
+                )
+                self._send_json({"ok": True, "revision": saved.get("revision")})
+                return
 
-            saved = store.save_project(
-                project,
-                updated_by_email=user.get("email") or "",
-                updated_by_user_id=user.get("id") or None,
-            )
+            # Existing project: check write access before attempting the save.
+            existing = store.get_project(project["id"])
+            if existing is not None:
+                from storage import can_write_project  # noqa: PLC0415
+                if not can_write_project(existing, user["id"]):
+                    self._send_json({"error": "forbidden"}, 403)
+                    return
+
+            # Transactional save: UPDATE WHERE revision=client_rev.
+            # ConflictError is raised when the revision does not match.
+            try:
+                saved = store.save_project_transactional(
+                    project,
+                    client_revision=client_rev,
+                    updated_by_email=user.get("email") or "",
+                    updated_by_user_id=user.get("id") or None,
+                    updated_by_name=user.get("display_name") or "",
+                )
+            except ConflictError as e:
+                srv = e.project
+                self._send_json({
+                    "conflict": True,
+                    "error": "conflict",
+                    "projectId": project["id"],
+                    "serverRevision": srv.get("revision"),
+                    "serverUpdatedAt": srv.get("updated_at") or srv.get("updatedAt"),
+                    "serverUpdatedBy": srv.get("updated_by_email") or srv.get("updatedBy") or "",
+                }, 409)
+                return
             self._send_json({"ok": True, "revision": saved.get("revision")})
             return
 

@@ -86,7 +86,15 @@ def _post_project(user: dict, payload: dict, existing_in_store=None):
 
     mock_store = MagicMock()
     mock_store.get_project.return_value = existing_in_store
-    mock_store.save_project.return_value = {"revision": 1, "id": payload.get("id", "")}
+    project_id = payload.get("id", "")
+    # New projects use save_project(); existing projects use save_project_transactional().
+    mock_store.save_project.return_value = {"revision": 1, "id": project_id}
+    if existing_in_store is not None:
+        saved_revision = (existing_in_store.get("revision") or 1) + 1
+        mock_store.save_project_transactional.return_value = {
+            "revision": saved_revision,
+            "id": project_id,
+        }
 
     with patch.object(server, "IS_DESKTOP", False), \
          patch("auth.get_request_user", return_value=user), \
@@ -185,11 +193,11 @@ class TestExistingProjectUpdate:
         }
 
     def test_visibility_not_overwritten_on_update(self):
-        """storage.save_project is still called (visibility preserved by SQL ON CONFLICT)."""
+        """save_project_transactional is called (visibility preserved by SQL UPDATE clause)."""
         # The SQL UPDATE clause only touches name/state/revision/updated_at/updated_by_email,
         # so even if the data dict carries 'visibility' the DB column is never overwritten.
-        # This test verifies save_project is called exactly once (not rejected) and that
-        # the handler returns ok=True.
+        # This test verifies save_project_transactional is called exactly once (not rejected)
+        # and that the handler returns ok=True.
         project_id = str(uuid.uuid4())
         existing = self._existing_project(project_id, _USER_ALICE["id"])
 
@@ -203,12 +211,12 @@ class TestExistingProjectUpdate:
             },
             existing_in_store=existing,
         )
-        store.save_project.assert_called_once()
+        store.save_project_transactional.assert_called_once()
         result = handler._send_json.call_args[0][0]
         assert result.get("ok") is True
 
     def test_owner_user_id_not_overwritten_on_update(self):
-        """save_project is still called; SQL ON CONFLICT UPDATE does not touch owner_user_id."""
+        """save_project_transactional is called; SQL UPDATE does not touch owner_user_id."""
         # The SQL UPDATE clause does not include owner_user_id, so even if the data
         # dict carries it the column is never changed.  This test verifies the update
         # succeeds (as the owner) and that the authenticated editor's identity is recorded.
@@ -225,9 +233,9 @@ class TestExistingProjectUpdate:
             },
             existing_in_store=existing,
         )
-        store.save_project.assert_called_once()
+        store.save_project_transactional.assert_called_once()
         # Verify the authenticated editor's identity is sent, not the payload's
-        kwargs = store.save_project.call_args[1]
+        kwargs = store.save_project_transactional.call_args[1]
         assert kwargs["updated_by_user_id"] == _USER_ALICE["id"]
         result = handler._send_json.call_args[0][0]
         assert result.get("ok") is True
@@ -242,7 +250,7 @@ class TestExistingProjectUpdate:
             payload={"id": project_id, "name": "Sunday Service", "_clientRevision": 5},
             existing_in_store=existing,
         )
-        kwargs = store.save_project.call_args[1]
+        kwargs = store.save_project_transactional.call_args[1]
         assert kwargs["updated_by_email"] == _USER_ALICE["email"]
 
 

@@ -344,7 +344,10 @@ class TestPostProjectsSave:
         mock_store.get_project.return_value = existing_project
         if existing_project is not None:
             saved = dict(existing_project, revision=(existing_project.get("revision", 1) + 1))
-            mock_store.save_project.return_value = saved
+            # Existing projects use the transactional save path.
+            mock_store.save_project_transactional.return_value = saved
+        else:
+            mock_store.save_project.return_value = {"id": project_id, "revision": 1}
         with patch.object(server, "IS_DESKTOP", False), \
              patch("auth.get_request_user", return_value=user), \
              patch("storage.get_storage", return_value=mock_store):
@@ -356,13 +359,14 @@ class TestPostProjectsSave:
         prj = _project(pid, _USER_ALICE["id"], "private")
         handler, store = self._call_save(_USER_ALICE, pid, prj)
         assert _status(handler) == 200
-        store.save_project.assert_called_once()
+        store.save_project_transactional.assert_called_once()
 
     def test_non_owner_cannot_save_private_project(self):
         pid = str(uuid.uuid4())
         prj = _project(pid, _USER_ALICE["id"], "private")
         handler, store = self._call_save(_USER_BOB, pid, prj)
         assert _status(handler) == 403
+        store.save_project_transactional.assert_not_called()
         store.save_project.assert_not_called()
 
     def test_both_users_can_save_workspace_project(self):
@@ -371,7 +375,7 @@ class TestPostProjectsSave:
         for user in (_USER_ALICE, _USER_BOB):
             handler, store = self._call_save(user, pid, prj)
             assert _status(handler) == 200, f"Expected 200 for {user['email']}"
-            store.save_project.assert_called_once()
+            store.save_project_transactional.assert_called_once()
 
     def test_new_project_always_allowed(self):
         """A brand-new project (not yet in DB) is always allowed for any user."""
@@ -386,7 +390,9 @@ class TestPostProjectsSave:
              patch("storage.get_storage", return_value=mock_store):
             handler._handle_post_projects()
         assert _status(handler) == 200
+        # New projects use the non-transactional path
         mock_store.save_project.assert_called_once()
+        mock_store.save_project_transactional.assert_not_called()
 
     def test_unauthenticated_save_returns_401(self):
         pid = str(uuid.uuid4())
@@ -402,7 +408,7 @@ class TestPostProjectsSave:
         prj = _project(pid, None, "private")
         handler, store = self._call_save(_USER_BOB, pid, prj)
         assert _status(handler) == 200
-        store.save_project.assert_called_once()
+        store.save_project_transactional.assert_called_once()
 
 
 # ===========================================================================
