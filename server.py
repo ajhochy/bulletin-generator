@@ -999,6 +999,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ── Auth helpers ───────────────────────────────────────────────────────────
+
+    def _get_authenticated_user(self) -> "dict | None":
+        """Return the current user dict.
+
+        In desktop mode returns a synthetic desktop user so route handlers don't
+        need to special-case IS_DESKTOP.  In server mode parses the ``bg_session``
+        cookie via auth.get_request_user(); returns None if missing/expired.
+        """
+        if IS_DESKTOP:
+            return {
+                "id": None,
+                "email": "desktop",
+                "display_name": "Desktop User",
+                "domain": "local",
+            }
+        import auth as _auth  # noqa: PLC0415 — deferred; db not available in desktop
+        cookie = self.headers.get("Cookie", "")
+        return _auth.get_request_user(cookie)
+
+    def _require_auth(self) -> "dict | None":
+        """Return the authenticated user, or send 401 and return None.
+
+        Callers must ``return`` immediately when this method returns None::
+
+            user = self._require_auth()
+            if user is None:
+                return
+        """
+        user = self._get_authenticated_user()
+        if user is None:
+            self._send_json({"error": "Authentication required"}, 401)
+            return None
+        return user
+
     # ── Routing ────────────────────────────────────────────────────────────────
 
     # ── Routing tables ─────────────────────────────────────────────────────────
@@ -1137,18 +1172,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json(payload, 200 if connected else 503)
 
     def _handle_get_projects(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
 
     def _handle_get_announcements(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
 
     def _handle_get_settings(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json(_read_json(SETTINGS_FILE, {}))
 
     def _handle_get_songs(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json(_read_json(SONGS_FILE, []))
 
     def _handle_bootstrap(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json({
             "settings": _read_json(SETTINGS_FILE, {}),
             "songDb":   _read_json(SONGS_FILE, []),
@@ -1166,6 +1216,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Route handlers (POST) ──────────────────────────────────────────────────
 
     def _handle_post_projects(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             project = self._read_body_json()
         except Exception:
@@ -1211,6 +1264,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "revision": saved.get("revision")})
 
     def _handle_post_announcements(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             anns = self._read_body_json()
         except Exception:
@@ -1224,6 +1280,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             partial = self._read_body_json()
         except Exception:
@@ -1243,6 +1302,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_post_songs(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             songs = self._read_body_json()
         except Exception:
@@ -1256,6 +1318,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_pco_disconnect(self):
+        user = self._require_auth()
+        if user is None:
+            return
         with _lock:
             settings = _read_json(SETTINGS_FILE, {})
             settings.pop('pcoAccessToken', None)
@@ -1264,6 +1329,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_google_disconnect(self):
+        user = self._require_auth()
+        if user is None:
+            return
         with _lock:
             settings = _read_json(SETTINGS_FILE, {})
             settings.pop('googleAccessToken', None)
@@ -1277,6 +1345,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Route handlers (DELETE) ────────────────────────────────────────────────
 
     def _handle_delete_project(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = self.path.split("?")[0]
         project_id = path[len("/api/projects/"):]
         if not project_id:
@@ -1291,6 +1362,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Templates ─────────────────────────────────────────────────────────────
 
     def _handle_get_templates(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json(_read_json(TEMPLATES_FILE, []))
 
     def _validate_template(self, template):
@@ -1316,6 +1390,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None
 
     def _handle_post_templates(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             template = self._read_body_json()
         except Exception:
@@ -1343,6 +1420,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_delete_template(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = self.path.split("?")[0]
         template_id = path[len("/api/templates/"):]
         if not template_id:
@@ -1391,9 +1471,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return fonts
 
     def _handle_get_fonts(self):
+        user = self._require_auth()
+        if user is None:
+            return
         self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
 
     def _handle_post_fonts(self):
+        user = self._require_auth()
+        if user is None:
+            return
         ctype = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in ctype:
             self._send_json({"error": "multipart/form-data required"}, 400)
@@ -1441,6 +1527,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         }})
 
     def _handle_delete_font(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = self.path.split("?")[0]
         slug = _slugify(urllib.parse.unquote(path[len("/api/fonts/"):]))
         if not slug:
@@ -1452,6 +1541,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_user_font_file(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/user/"):].strip("/")
         parts = rest.split("/", 1)
@@ -1488,6 +1580,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return "\n".join(rules)
 
     def _handle_google_font_cache(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/cache/"):].strip("/")
         parts = rest.split("/", 1)
@@ -1885,6 +1980,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_google_calendars(self):
         """Return the user's Google Calendar list."""
+        user = self._require_auth()
+        if user is None:
+            return
         auth = _google_auth_header()
         if not auth:
             self._send_json({'error': 'Not connected to Google Calendar.'}, 401)
@@ -1930,6 +2028,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── PDF generation ─────────────────────────────────────────────────────────
 
     def _handle_pdf(self):
+        user = self._require_auth()
+        if user is None:
+            return
         MAX_PDF_HTML_BYTES = 5 * 1024 * 1024  # 5 MB
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length > MAX_PDF_HTML_BYTES:
@@ -2044,6 +2145,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(e.read())
 
     def _proxy_pco(self):
+        user = self._require_auth()
+        if user is None:
+            return
         auth = _pco_auth_header()
         if not auth:
             return self._send_json({"errors": [{"detail": "Planning Center credentials are not configured."}]}, 503)
@@ -2067,6 +2171,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Update endpoints ────────────────────────────────────────────────────────
 
     def _handle_check_update(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             req = urllib.request.Request(url, headers={
@@ -2089,6 +2196,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_update_status(self):
         """Return update environment info for diagnostics."""
+        user = self._require_auth()
+        if user is None:
+            return
         import shutil
         docker_available = shutil.which("docker") is not None
         socket_exists    = os.path.exists("/var/run/docker.sock")
@@ -2101,6 +2211,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _handle_apply_update(self):
+        user = self._require_auth()
+        if user is None:
+            return
         if APP_MODE == "server":
             self._apply_update_server()
         else:
@@ -2108,6 +2221,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_propresenter_export(self):
         """Export bulletin items as ProPresenter .pro files in a ZIP."""
+        user = self._require_auth()
+        if user is None:
+            return
         if not _PP_EXPORT_AVAILABLE:
             self._send_json({"error": "ProPresenter export module not available."}, 500)
             return
@@ -2146,6 +2262,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_drive_upload(self):
         """Upload a file to Google Drive. Body: {filename, content (base64), mimeType}."""
+        user = self._require_auth()
+        if user is None:
+            return
         import base64 as _base64
         settings = _read_json(SETTINGS_FILE, {})
         auth = _google_auth_header()
@@ -2397,6 +2516,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Calendar endpoint ──────────────────────────────────────────────────────
 
     def _handle_cal(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
