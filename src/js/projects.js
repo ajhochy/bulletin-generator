@@ -589,35 +589,36 @@ async function restoreOnStartup() {
 
   let restored = false;
 
-  // 1. Try the project that was last active (stored in localStorage by this browser)
-  const rememberedActive = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-  if (rememberedActive) {
-    const activeProject = projectById(rememberedActive);
-    if (activeProject) {
-      activeProjectId = activeProject.id;
-      _loadedRevision = typeof activeProject.revision === 'number' ? activeProject.revision : null;
-      applyProjectState(activeProject.state || {});
-      restored = true;
-      setStatus(`Loaded "${activeProject.name}".`, 'success');
-      startStaleCheck();
-    }
-  }
+  const rememberedId = (() => {
+    try { return localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || ''; } catch (_) { return ''; }
+  })();
 
-  // 2. If no remembered project (fresh browser / different machine), auto-load
-  //    the most recently updated server project so work is never invisible.
-  if (!restored && projects.length > 0) {
-    const newest = projects
-      .slice()
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
-    activeProjectId = newest.id;
-    _loadedRevision = typeof newest.revision === 'number' ? newest.revision : null;
-    applyProjectState(newest.state || {});
+  // Decide what to do based on remembered project ID and deployment mode.
+  // deriveStartupRestore() encodes the safety rule: in server mode we never
+  // auto-load the newest workspace project for a fresh browser session, because
+  // that project may belong to a different user.
+  const decision = deriveStartupRestoreCore({ rememberedId, projects, isServerMode: isServerMode() });
+
+  if (decision.action === 'load' || decision.action === 'load-newest') {
+    const project = decision.project;
+    activeProjectId = project.id;
+    _loadedRevision = typeof project.revision === 'number' ? project.revision : null;
+    applyProjectState(project.state || {});
+    bulletinTitleInput.value = project.name;
     restored = true;
-    setStatus(`Loaded "${newest.name}".`, 'success');
+    setStatus(`Loaded "${project.name}".`, 'success');
+    storeActiveProjectId();
     startStaleCheck();
+  } else if (decision.action === 'blank' && decision.reason === 'not-found') {
+    // Remembered project is gone or inaccessible — clear the stale reference
+    // and show a non-blocking notice so the user understands what happened.
+    try { localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY); } catch (_) {}
+    setStatus(decision.statusMessage, 'info');
+    // Fall through to draft / blank below
   }
+  // decision.action === 'blank' with reason 'none-remembered': just start blank.
 
-  // 3. Fall back to unsaved local draft
+  // Fall back to unsaved local draft if no project was restored
   if (!restored) {
     restored = loadDraftState();
     if (restored) setStatus('Restored unsaved draft.', 'success');
