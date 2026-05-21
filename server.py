@@ -1046,6 +1046,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/index.html',               '_handle_index'),
         ('/worship-booklet.html',     '_handle_index'),
         ('/favicon.ico',              '_handle_favicon'),
+        ('/api/projects/',            '_handle_get_projects_sub'),
         ('/api/projects',             '_handle_get_projects'),
         ('/api/announcements',        '_handle_get_announcements'),
         ('/api/settings',             '_handle_get_settings'),
@@ -1342,12 +1343,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "revision": saved.get("revision")})
 
     def _handle_post_projects_sub(self):
-        """Dispatch POST /api/projects/{id}/share and any future sub-routes."""
+        """Dispatch POST /api/projects/{id}/share|restore and any future sub-routes."""
         path = self.path.split("?")[0]
         # Strip the /api/projects/ prefix to get the remainder: "{id}/share"
         remainder = path[len("/api/projects/"):]
         if remainder.endswith("/share"):
             self._handle_share_project()
+        elif remainder.endswith("/restore"):
+            project_id = remainder[: -len("/restore")]
+            self._handle_project_restore(project_id)
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -1398,6 +1402,135 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         updated = store.share_project_to_workspace(project_id)
         if updated is None:
             self._send_json({"error": "project not found"}, 404)
+            return
+
+        self._send_json({"ok": True, "project": updated})
+
+    # ── GET sub-route dispatcher for /api/projects/{id}/... ───────────────────
+
+    def _handle_get_projects_sub(self):
+        """Dispatch GET /api/projects/{id}/history and any future GET sub-routes."""
+        path = self.path.split("?")[0]
+        # Strip the /api/projects/ prefix to get the remainder: "{id}/history"
+        remainder = path[len("/api/projects/"):]
+        if remainder.endswith("/history"):
+            project_id = remainder[: -len("/history")]
+            self._handle_project_history(project_id)
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+    def _handle_project_history(self, project_id: str):
+        """GET /api/projects/{id}/history — return revision history for a project.
+
+        Auth required.  Returns the revision list with metadata (no state blobs).
+
+        Returns:
+            200  {"revisions": [{revision, saved_at, saved_by_email, saved_by_name, summary}, ...]}
+            401  if unauthenticated
+            403  if the authenticated user may not read the project
+            404  if the project is not found
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        from storage import get_storage, can_read_project  # noqa: PLC0415
+        store = get_storage()
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_read_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        revisions = store.get_project_revisions(project_id)
+        self._send_json({"revisions": revisions})
+
+    def _handle_project_restore(self, project_id: str):
+        """POST /api/projects/{id}/restore — restore a prior revision as the new head.
+
+        Loads the target revision's state and saves it as a new revision on top
+        of the current head.  History is preserved — the old revisions remain.
+
+        Body: {"revision": <int>, "_clientRevision": <int>}
+
+        Returns:
+            200  {"ok": True, "project": <updated project dict>}
+            400  if body is invalid or revision field is missing
+            401  if unauthenticated
+            403  if the authenticated user may not write the project
+            404  if the project or target revision is not found
+            409  if _clientRevision is stale (concurrent edit conflict)
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+
+        target_revision = body.get("revision")
+        client_revision = body.get("_clientRevision")
+
+        if target_revision is None:
+            self._send_json({"error": "missing required field: revision"}, 400)
+            return
+
+        try:
+            target_revision = int(target_revision)
+        except (TypeError, ValueError):
+            self._send_json({"error": "revision must be an integer"}, 400)
+            return
+
+        from storage import get_storage, can_write_project, ConflictError  # noqa: PLC0415
+        store = get_storage()
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_write_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        snapshot = store.get_project_revision(project_id, target_revision)
+        if snapshot is None:
+            self._send_json({"error": "revision not found"}, 404)
+            return
+
+        state = snapshot.get("state")
+        if not isinstance(state, dict):
+            self._send_json({"error": "revision state is invalid"}, 500)
+            return
+
+        try:
+            updated = store.save_project_transactional(
+                state,
+                client_revision=client_revision,
+                updated_by_email=user.get("email", ""),
+                updated_by_user_id=user.get("id"),
+                updated_by_name=user.get("display_name", ""),
+            )
+        except ConflictError as exc:
+            current = exc.project
+            self._send_json(
+                {
+                    "error": "conflict",
+                    "serverRevision": current.get("revision"),
+                    "serverUpdatedAt": current.get("updated_at"),
+                    "serverUpdatedBy": current.get("updated_by_email"),
+                },
+                409,
+            )
             return
 
         self._send_json({"ok": True, "project": updated})

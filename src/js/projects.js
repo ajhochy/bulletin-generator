@@ -844,6 +844,43 @@ async function shareProjectToWorkspace(projectId) {
   return result;
 }
 
+/**
+ * Fetch the revision history for a project.
+ *
+ * Returns an array of revision metadata objects:
+ *   { revision, saved_at, saved_by_email, saved_by_name, summary }
+ *
+ * The full state blob is not included — call restoreProjectRevision() to
+ * apply a specific revision.
+ *
+ * @param {string} projectId
+ * @returns {Promise<Array>} revisions array (newest first)
+ */
+async function fetchProjectHistory(projectId) {
+  const result = await apiFetch(`/api/projects/${projectId}/history`);
+  return result.revisions || [];
+}
+
+/**
+ * Restore a prior revision as the new current state.
+ *
+ * Creates a NEW revision on top (history is preserved).  Requires the
+ * caller to supply the current loaded revision so the server can detect
+ * concurrent-edit conflicts (returning 409 when stale).
+ *
+ * @param {string} projectId
+ * @param {number} revisionNumber  The target revision to restore
+ * @param {number|null} clientRevision  The last revision loaded by this client
+ * @returns {Promise<Object>}  { ok: true, project: <updated project dict> }
+ */
+async function restoreProjectRevision(projectId, revisionNumber, clientRevision) {
+  const result = await apiFetch(`/api/projects/${projectId}/restore`, 'POST', {
+    revision: revisionNumber,
+    _clientRevision: clientRevision,
+  });
+  return result;
+}
+
 function bytesToB64(bytes) {
   const CHUNK = 8192;
   let bin = '';
