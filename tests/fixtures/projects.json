@@ -1,0 +1,23 @@
+[
+  {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "May 18 Bulletin",
+    "revision": 5,
+    "createdAt": "2024-05-01T10:00:00Z",
+    "updatedAt": "2024-05-18T09:00:00Z",
+    "createdBy": "pastor@visaliacrc.com",
+    "state": {
+      "items": [{"type": "song", "title": "Holy Holy Holy"}],
+      "serviceDate": "May 18, 2024"
+    }
+  },
+  {
+    "id": "legacy-string-id",
+    "name": "Easter Bulletin",
+    "state": {"items": []}
+  },
+  {
+    "name": "No-ID Bulletin",
+    "state": {"items": [], "serviceDate": "June 1, 2024"}
+  }
+]
