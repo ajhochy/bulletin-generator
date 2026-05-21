@@ -181,6 +181,32 @@ class StorageBackend(ABC):
         """Return a single font metadata dict by slug, or None if not found."""
         ...
 
+    # ── Project revisions ──────────────────────────────────────────────────────
+
+    def get_project_revisions(self, project_id: str) -> list:
+        """Return revision metadata for *project_id*, newest first.
+
+        Each dict contains: id, project_id, revision, saved_at,
+        saved_by_email, saved_by_name, summary.  The ``state`` JSONB is
+        intentionally excluded — use ``get_project_revision()`` to fetch a
+        specific snapshot including state.
+
+        Returns an empty list when the project has no recorded revisions or
+        when the backend does not support revision history (desktop mode).
+        """
+        return []
+
+    def get_project_revision(self, project_id: str, revision: int) -> "dict | None":
+        """Return the full revision snapshot for *project_id* at *revision*.
+
+        Returns a dict with all ``project_revisions`` columns including
+        ``state`` (the full JSONB snapshot), or ``None`` if not found.
+
+        The desktop/JSON backend always returns ``None`` because it does not
+        record revision snapshots.
+        """
+        return None
+
 
 # ---------------------------------------------------------------------------
 # JSON implementation (desktop mode)
@@ -1015,6 +1041,75 @@ class PostgresStorageBackend(StorageBackend):
                 return None
             cols = [d[0] for d in cursor.description]
         return _pg_row_to_font(dict(zip(cols, row)))
+
+    # ── Project revisions ──────────────────────────────────────────────────────
+
+    def get_project_revisions(self, project_id: str) -> list:
+        """Return revision metadata for *project_id*, newest first.
+
+        Fetches id, project_id, revision, saved_at, saved_by_email,
+        saved_by_name, and summary — but NOT the full state JSONB, which
+        can be large.  Use ``get_project_revision()`` to fetch a specific
+        snapshot with its state.
+        """
+        from db import transaction  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, project_id, revision, saved_at,
+                       saved_by_email, saved_by_name, summary
+                FROM project_revisions
+                WHERE project_id = %s::uuid
+                ORDER BY revision DESC
+                """,
+                (project_id,),
+            )
+            rows = cursor.fetchall()
+            cols = [d[0] for d in cursor.description]
+        result = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            d["id"] = str(d["id"])
+            d["project_id"] = str(d["project_id"])
+            d["saved_at"] = _ts(d.get("saved_at"))
+            result.append(d)
+        return result
+
+    def get_project_revision(self, project_id: str, revision: int) -> "dict | None":
+        """Return the full revision snapshot including state for *project_id* at *revision*.
+
+        Returns a dict with all ``project_revisions`` columns, or ``None``
+        if no matching row is found.
+        """
+        from db import transaction, from_jsonb  # noqa: PLC0415
+        with transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, project_id, revision, state,
+                       saved_at, saved_by_user_id, saved_by_email,
+                       saved_by_name, summary
+                FROM project_revisions
+                WHERE project_id = %s::uuid
+                  AND revision = %s
+                """,
+                (project_id, revision),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cursor.description]
+            raw = dict(zip(cols, row))
+        return {
+            "id": str(raw["id"]),
+            "project_id": str(raw["project_id"]),
+            "revision": raw["revision"],
+            "state": from_jsonb(raw.get("state")),
+            "saved_at": _ts(raw.get("saved_at")),
+            "saved_by_user_id": str(raw["saved_by_user_id"]) if raw.get("saved_by_user_id") else None,
+            "saved_by_email": raw.get("saved_by_email") or "",
+            "saved_by_name": raw.get("saved_by_name") or "",
+            "summary": raw.get("summary") or "",
+        }
 
 
 # ---------------------------------------------------------------------------
