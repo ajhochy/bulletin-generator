@@ -334,9 +334,21 @@ def _oauth_config_error_redirect(provider, detail):
     return f'/?{provider}_error=config&detail={msg}&tab=page-settings'
 
 
+def _get_settings():
+    """Return the settings dict via the storage abstraction."""
+    from storage import get_storage  # noqa: PLC0415
+    return get_storage(DATA_DIR).get_settings()
+
+
+def _save_settings(data: dict) -> dict:
+    """Persist the settings dict via the storage abstraction."""
+    from storage import get_storage  # noqa: PLC0415
+    return get_storage(DATA_DIR).save_settings(data)
+
+
 def _pco_auth_header():
     """Return the OAuth Bearer header from stored access token, or None."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings()
     access_token = settings.get('pcoAccessToken', '').strip()
     if access_token:
         return f'Bearer {access_token}'
@@ -345,7 +357,7 @@ def _pco_auth_header():
 
 def _refresh_pco_token():
     """Exchange refresh_token for a new access_token. Returns new Bearer header or None."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings()
     refresh_token = settings.get('pcoRefreshToken', '').strip()
     client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
@@ -370,12 +382,11 @@ def _refresh_pco_token():
         new_refresh = token_resp.get('refresh_token', '').strip()
         if not new_access:
             return None
-        with _lock:
-            s = _read_json(SETTINGS_FILE, {})
-            s['pcoAccessToken']  = new_access
-            if new_refresh:
-                s['pcoRefreshToken'] = new_refresh
-            _write_json(SETTINGS_FILE, s)
+        s = _get_settings()
+        s['pcoAccessToken']  = new_access
+        if new_refresh:
+            s['pcoRefreshToken'] = new_refresh
+        _save_settings(s)
         print('  [oauth] PCO access token refreshed.')
         return f'Bearer {new_access}'
     except Exception as e:
@@ -384,14 +395,14 @@ def _refresh_pco_token():
 
 
 def _google_auth_header():
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings()
     token = settings.get('googleAccessToken', '').strip()
     return f'Bearer {token}' if token else None
 
 
 def _refresh_google_token():
     """Exchange stored refresh_token for a new Google access_token."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings()
     refresh_token = settings.get('googleRefreshToken', '').strip()
     client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
@@ -414,10 +425,9 @@ def _refresh_google_token():
         new_token = resp_data.get('access_token', '').strip()
         if not new_token:
             return None
-        with _lock:
-            s = _read_json(SETTINGS_FILE, {})
-            s['googleAccessToken'] = new_token
-            _write_json(SETTINGS_FILE, s)
+        s = _get_settings()
+        s['googleAccessToken'] = new_token
+        _save_settings(s)
         print('  [google] Access token refreshed.')
         return f'Bearer {new_token}'
     except Exception as e:
@@ -426,14 +436,13 @@ def _refresh_google_token():
 
 
 def _public_config():
+    settings = _get_settings()
     return {
         "appMode": APP_MODE,
         "appVersion": APP_VERSION,
         "pcoConfigured": _pco_auth_header() is not None,
         "googleConfigured": _google_auth_header() is not None,
-        "driveConfigured": bool(
-            _read_json(SETTINGS_FILE, {}).get('googleDriveScopeGranted')
-        ),
+        "driveConfigured": bool(settings.get('googleDriveScopeGranted')),
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
             "exclude": _parse_list_env("CALENDAR_EXCLUDE_TITLES") or DEFAULT_EXCLUDE[:],
@@ -1201,27 +1210,35 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        self._send_json(store.list_announcements())
 
     def _handle_get_settings(self):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json(_read_json(SETTINGS_FILE, {}))
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        self._send_json(store.get_settings())
 
     def _handle_get_songs(self):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json(_read_json(SONGS_FILE, []))
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        self._send_json(store.list_songs())
 
     def _handle_bootstrap(self):
         user = self._require_auth()
         if user is None:
             return
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
         self._send_json({
-            "settings": _read_json(SETTINGS_FILE, {}),
-            "songDb":   _read_json(SONGS_FILE, []),
+            "settings": store.get_settings(),
+            "songDb":   store.list_songs(),
             "config":   _public_config(),
         })
 
@@ -1584,8 +1601,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(anns, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(ANNOUNCEMENTS_FILE, anns)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        store.save_announcements(anns)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
@@ -1600,14 +1618,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(partial, dict):
             self._send_json({"error": "body must be an object"}, 400)
             return
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            for key, value in partial.items():
-                if value is None:
-                    settings.pop(key, None)
-                else:
-                    settings[key] = value
-            _write_json(SETTINGS_FILE, settings)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        # Merge the partial update with existing settings.
+        existing = store.get_settings()
+        for key, value in partial.items():
+            if value is None:
+                existing.pop(key, None)
+            else:
+                existing[key] = value
+        store.save_settings(existing)
         self._send_json({"ok": True})
 
     def _handle_post_songs(self):
@@ -1622,33 +1642,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(songs, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(SONGS_FILE, songs)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        store.save_songs(songs)
         self._send_json({"ok": True})
 
     def _handle_pco_disconnect(self):
         user = self._require_auth()
         if user is None:
             return
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            settings.pop('pcoAccessToken', None)
-            settings.pop('pcoRefreshToken', None)
-            _write_json(SETTINGS_FILE, settings)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        settings = store.get_settings()
+        settings.pop('pcoAccessToken', None)
+        settings.pop('pcoRefreshToken', None)
+        store.save_settings(settings)
         self._send_json({"ok": True})
 
     def _handle_google_disconnect(self):
         user = self._require_auth()
         if user is None:
             return
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            settings.pop('googleAccessToken', None)
-            settings.pop('googleRefreshToken', None)
-            settings.pop('googleCalendarIds', None)
-            settings.pop('googleDriveScopeGranted', None)
-            settings.pop('googleDriveFolderId', None)
-            _write_json(SETTINGS_FILE, settings)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        settings = store.get_settings()
+        settings.pop('googleAccessToken', None)
+        settings.pop('googleRefreshToken', None)
+        settings.pop('googleCalendarIds', None)
+        settings.pop('googleDriveScopeGranted', None)
+        settings.pop('googleDriveFolderId', None)
+        store.save_settings(settings)
         self._send_json({"ok": True})
 
     # ── Route handlers (DELETE) ────────────────────────────────────────────────
@@ -1689,7 +1712,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json(_read_json(TEMPLATES_FILE, []))
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        self._send_json(store.list_templates())
 
     def _validate_template(self, template):
         if not isinstance(template, dict):
@@ -1729,18 +1754,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         template["id"] = _slugify(template["id"])
         template["builtIn"] = False
-        with _lock:
-            templates = _read_json(TEMPLATES_FILE, [])
-            idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
-            if idx >= 0:
-                # Preserve builtIn flag if the stored record has it (prevent downgrade attack)
-                if templates[idx].get("builtIn"):
-                    self._send_json({"error": "built-in templates cannot be modified"}, 403)
-                    return
-                templates[idx] = template
-            else:
-                templates.append(template)
-            _write_json(TEMPLATES_FILE, templates)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        templates = store.list_templates()
+        idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
+        if idx >= 0:
+            # Preserve builtIn flag if the stored record has it (prevent downgrade attack)
+            if templates[idx].get("builtIn") or templates[idx].get("built_in"):
+                self._send_json({"error": "built-in templates cannot be modified"}, 403)
+                return
+            templates[idx] = template
+        else:
+            templates.append(template)
+        store.save_templates(templates)
         self._send_json({"ok": True})
 
     def _handle_delete_template(self):
@@ -1752,14 +1778,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not template_id:
             self._send_json({"error": "missing template id"}, 400)
             return
-        with _lock:
-            templates = _read_json(TEMPLATES_FILE, [])
-            target = next((t for t in templates if t.get("id") == template_id), None)
-            if target and target.get("builtIn"):
-                self._send_json({"error": "built-in templates cannot be deleted"}, 403)
-                return
-            templates = [t for t in templates if t.get("id") != template_id]
-            _write_json(TEMPLATES_FILE, templates)
+        from storage import get_storage  # noqa: PLC0415
+        store = get_storage(DATA_DIR)
+        templates = store.list_templates()
+        target = next((t for t in templates if t.get("id") == template_id), None)
+        if target and (target.get("builtIn") or target.get("built_in")):
+            self._send_json({"error": "built-in templates cannot be deleted"}, 403)
+            return
+        templates = [t for t in templates if t.get("id") != template_id]
+        store.save_templates(templates)
         self._send_json({"ok": True})
 
     # ── Fonts ────────────────────────────────────────────────────────────────
@@ -1798,7 +1825,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
+        if IS_DESKTOP:
+            self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
+        else:
+            from storage import get_storage  # noqa: PLC0415
+            store = get_storage(DATA_DIR)
+            all_fonts = store.list_fonts()
+            user_fonts = [f for f in all_fonts if f.get("source") == "user"]
+            cached_fonts = [f for f in all_fonts if f.get("source") != "user"]
+            self._send_json({"user": user_fonts, "cached": cached_fonts})
 
     def _handle_post_fonts(self):
         user = self._require_auth()
@@ -2019,11 +2054,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by PCO.')
 
-            with _lock:
-                settings = _read_json(SETTINGS_FILE, {})
-                settings['pcoAccessToken']  = access_token
-                settings['pcoRefreshToken'] = refresh_token
-                _write_json(SETTINGS_FILE, settings)
+            settings = _get_settings()
+            settings['pcoAccessToken']  = access_token
+            settings['pcoRefreshToken'] = refresh_token
+            _save_settings(settings)
 
             self.send_response(302)
             self.send_header('Location', '/?pco_connected=1')
@@ -2113,13 +2147,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by Google.')
 
-            with _lock:
-                s = _read_json(SETTINGS_FILE, {})
-                s['googleAccessToken']       = access_token
-                s['googleDriveScopeGranted'] = True
-                if refresh_token:
-                    s['googleRefreshToken'] = refresh_token
-                _write_json(SETTINGS_FILE, s)
+            s = _get_settings()
+            s['googleAccessToken']       = access_token
+            s['googleDriveScopeGranted'] = True
+            if refresh_token:
+                s['googleRefreshToken'] = refresh_token
+            _save_settings(s)
 
             self.send_response(302)
             self.send_header('Location', '/?google_connected=1&tab=page-settings')
@@ -2600,7 +2633,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if user is None:
             return
         import base64 as _base64
-        settings = _read_json(SETTINGS_FILE, {})
+        settings = _get_settings()
         auth = _google_auth_header()
         if not auth or not settings.get('googleDriveScopeGranted'):
             self._send_json({
@@ -2879,7 +2912,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             svc_date_str = params.get('date', [None])[0]
 
             # Prefer Google Calendar API if the user is connected and has selected calendars
-            google_cal_ids = _read_json(SETTINGS_FILE, {}).get('googleCalendarIds', [])
+            google_cal_ids = _get_settings().get('googleCalendarIds', [])
             google_auth = _google_auth_header()
             if google_auth and google_cal_ids:
                 result = fetch_google_cal_events(google_auth, google_cal_ids, exclude, svc_date_str)
