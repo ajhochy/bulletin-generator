@@ -1409,13 +1409,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── GET sub-route dispatcher for /api/projects/{id}/... ───────────────────
 
     def _handle_get_projects_sub(self):
-        """Dispatch GET /api/projects/{id}/history and any future GET sub-routes."""
+        """Dispatch GET /api/projects/{id}/history|revision and any future GET sub-routes."""
         path = self.path.split("?")[0]
         # Strip the /api/projects/ prefix to get the remainder: "{id}/history"
         remainder = path[len("/api/projects/"):]
         if remainder.endswith("/history"):
             project_id = remainder[: -len("/history")]
             self._handle_project_history(project_id)
+        elif remainder.endswith("/revision"):
+            project_id = remainder[: -len("/revision")]
+            self._handle_project_revision(project_id)
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -1447,6 +1450,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         revisions = store.get_project_revisions(project_id)
         self._send_json({"revisions": revisions})
+
+    def _handle_project_revision(self, project_id: str):
+        """GET /api/projects/{id}/revision — return lightweight revision metadata.
+
+        Cheaper than fetching the full project: returns only the fields needed
+        for stale-poll detection without the state JSONB blob.
+
+        Returns:
+            200  {"revision", "updated_at", "updated_by_email", "updated_by_name"}
+            401  if unauthenticated
+            403  if the authenticated user may not read the project
+            404  if the project is not found
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        from storage import get_storage, can_read_project  # noqa: PLC0415
+        store = get_storage()
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_read_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        self._send_json({
+            "revision":         project.get("revision"),
+            "updated_at":       project.get("updated_at") or project.get("updatedAt"),
+            "updated_by_email": project.get("updated_by_email") or project.get("updatedBy") or "",
+            "updated_by_name":  project.get("updated_by_name") or "",
+        })
 
     def _handle_project_restore(self, project_id: str):
         """POST /api/projects/{id}/restore — restore a prior revision as the new head.

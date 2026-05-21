@@ -597,6 +597,37 @@ function loadProjectById(id) {
   startStaleCheck();
 }
 
+// ─── Relative time formatter ─────────────────────────────────────────────────
+// Returns a short human-readable relative time string, e.g. "just now", "3m ago".
+// Pure function — kept in sync with src/js/modules/stale-poll-core.js (which is
+// the testable version of the same logic).
+function _staleRelativeTime(isoString, nowMs = Date.now()) {
+  if (!isoString) return '';
+  const then = new Date(isoString);
+  if (isNaN(then.getTime())) return '';
+  const diffMs = nowMs - then.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+// ─── Stale banner message builder ────────────────────────────────────────────
+// Builds the display string shown in the stale banner, e.g.:
+//   "Updated by alice@example.com · 3m ago"
+// Pure function — kept in sync with src/js/modules/stale-poll-core.js.
+function _buildStaleBannerWho(updatedByEmail, updatedByName, updatedAt) {
+  const who = updatedByEmail || updatedByName || 'Someone';
+  const when = _staleRelativeTime(updatedAt);
+  let msg = `Updated by ${who}`;
+  if (when) msg += ` · ${when}`;
+  return msg;
+}
+
 function startStaleCheck() {
   if (!isServerMode()) return;
   clearInterval(_staleCheckTimer);
@@ -604,26 +635,37 @@ function startStaleCheck() {
     if (!activeProjectId) return;
     try {
       const staleBanner = document.getElementById('stale-banner');
-      const data = await apiFetch('/api/projects');
-      const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
-      if (!serverProject) {
-        staleBanner.style.display = 'none';
-        _updateFileDirtyDot();
+
+      // Use the lightweight revision endpoint — no state JSONB transferred.
+      let revData;
+      try {
+        revData = await apiFetch(`/api/projects/${activeProjectId}/revision`);
+      } catch (pollErr) {
+        // 403/404: project is gone or inaccessible — stop polling.
+        if (pollErr.status === 403 || pollErr.status === 404) {
+          clearInterval(_staleCheckTimer);
+          _staleCheckTimer = null;
+          setStatus('Project is no longer accessible.', 'info');
+        }
+        // Any other error: silently skip this tick.
         return;
       }
-      // Update local copy with latest metadata
-      const local = projectById(activeProjectId);
-      if (local) {
-        local.updatedAt = serverProject.updatedAt;
-        local.updatedBy = serverProject.updatedBy;
-        local.revision  = serverProject.revision;
-      }
-      const serverRev = serverProject.revision;
+
+      const serverRev = revData.revision;
       if (typeof serverRev === 'number' && _loadedRevision !== null && serverRev > _loadedRevision) {
-        const by = serverProject.updatedBy ? ` by ${serverProject.updatedBy}` : '';
-        const when = shortTimestamp(serverProject.updatedAt) || '';
-        staleBanner.innerHTML = `This bulletin was updated${by}${when ? ' at ' + when : ''}. <a href="#" style="color:inherit">Reload latest</a>`;
-        staleBanner.querySelector('a').addEventListener('click', e => {
+        const whoMsg = _buildStaleBannerWho(
+          revData.updated_by_email,
+          revData.updated_by_name,
+          revData.updated_at,
+        );
+        staleBanner.innerHTML = '';
+        const textSpan = document.createElement('span');
+        textSpan.textContent = `${whoMsg}. `;
+        const reloadLink = document.createElement('a');
+        reloadLink.href = '#';
+        reloadLink.style.color = 'inherit';
+        reloadLink.textContent = 'Reload latest';
+        reloadLink.addEventListener('click', e => {
           e.preventDefault();
           apiFetch('/api/projects').then(d => {
             const fresh = (d.projects || []).find(p => p.id === activeProjectId);
@@ -633,13 +675,27 @@ function startStaleCheck() {
             loadProjectById(fresh.id);
           }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
+        const dismissLink = document.createElement('a');
+        dismissLink.href = '#';
+        dismissLink.style.cssText = 'color:inherit;margin-left:0.75em';
+        dismissLink.textContent = 'Dismiss';
+        dismissLink.addEventListener('click', e => {
+          e.preventDefault();
+          staleBanner.style.display = 'none';
+          _updateFileDirtyDot();
+        });
+        staleBanner.appendChild(textSpan);
+        staleBanner.appendChild(reloadLink);
+        staleBanner.appendChild(dismissLink);
         staleBanner.style.display = '';
         _updateFileDirtyDot();
+        // NOTE: do NOT update _loadedRevision here — only update it when the
+        // user explicitly reloads the project via loadProjectById().
       } else {
         staleBanner.style.display = 'none';
         _updateFileDirtyDot();
       }
-    } catch (e) { /* ignore poll errors */ }
+    } catch (e) { /* ignore unexpected poll errors */ }
   }, 30000);
 }
 
