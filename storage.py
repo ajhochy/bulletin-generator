@@ -565,7 +565,8 @@ class PostgresStorageBackend(StorageBackend):
 
         import json as _json  # noqa: PLC0415
         import uuid as _uuid  # noqa: PLC0415
-        from db import transaction  # noqa: PLC0415
+        from db import transaction, from_jsonb  # noqa: PLC0415
+        from revisions import generate_summary  # noqa: PLC0415
 
         project_id = data["id"]
         name = str(data.get("name") or "")
@@ -578,6 +579,20 @@ class PostgresStorageBackend(StorageBackend):
         effective_client_rev = int(client_revision) if client_revision is not None else 0
 
         with transaction() as conn:
+            # Fetch the previous state BEFORE updating so we can generate a
+            # meaningful summary of what changed.
+            prev_cursor = conn.execute(
+                "SELECT state FROM projects WHERE id = %(id)s::uuid",
+                {"id": project_id},
+            )
+            prev_row = prev_cursor.fetchone()
+            if prev_row is not None:
+                prev_state = from_jsonb(prev_row[0])
+                if not isinstance(prev_state, dict):
+                    prev_state = None
+            else:
+                prev_state = None
+
             cursor = conn.execute(
                 """
                 UPDATE projects
@@ -629,6 +644,9 @@ class PostgresStorageBackend(StorageBackend):
             saved_project = _pg_row_to_project(dict(zip(cols, row)))
             new_revision = saved_project["revision"]
 
+            # Generate a human-readable summary of the changes.
+            summary = generate_summary(prev_state, data)
+
             # Insert a revision snapshot.
             conn.execute(
                 """
@@ -644,7 +662,7 @@ class PostgresStorageBackend(StorageBackend):
                     %(saved_by_user_id)s::uuid,
                     %(saved_by_email)s,
                     %(saved_by_name)s,
-                    ''
+                    %(summary)s
                 )
                 """,
                 {
@@ -655,6 +673,7 @@ class PostgresStorageBackend(StorageBackend):
                     "saved_by_user_id": updated_by_user_id,
                     "saved_by_email": resolved_email,
                     "saved_by_name": updated_by_name,
+                    "summary": summary,
                 },
             )
 

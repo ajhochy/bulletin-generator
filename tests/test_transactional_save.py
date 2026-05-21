@@ -122,20 +122,35 @@ class TestSaveProjectTransactionalUnit:
             cursor.rowcount = 0
         return cursor
 
+    def _make_prev_cursor(self):
+        """Return a mock cursor for the prev-state SELECT (first execute call)."""
+        cursor = MagicMock()
+        prev_json = json.dumps({"id": self._PROJECT_ID, "name": "Sunday Service"})
+        cursor.fetchone.return_value = (prev_json,)
+        return cursor
+
     def _make_conn(self, update_row, *, conflict_server_row=None):
-        """Build a mock connection where execute() returns different cursors per call."""
+        """Build a mock connection where execute() returns different cursors per call.
+
+        execute() call order in save_project_transactional:
+          1. SELECT state FROM projects  (prev-state fetch for summary generation)
+          2. UPDATE projects ... RETURNING  (the main transactional save)
+          3a. INSERT INTO project_revisions  (success path)
+          3b. SELECT ... FROM projects  (conflict path — fetch server state)
+        """
         conn = MagicMock()
+        prev_cursor = self._make_prev_cursor()
         update_cursor = self._make_cursor(update_row)
         snapshot_cursor = MagicMock()
         snapshot_cursor.rowcount = 1
 
         if conflict_server_row is not None:
             server_cursor = self._make_cursor(conflict_server_row)
-            # First call → UPDATE (returns None row), second → SELECT server state
-            conn.execute.side_effect = [update_cursor, server_cursor]
+            # prev state SELECT + UPDATE (None) + SELECT server state
+            conn.execute.side_effect = [prev_cursor, update_cursor, server_cursor]
         else:
-            # Successful path: UPDATE + INSERT snapshot
-            conn.execute.side_effect = [update_cursor, snapshot_cursor]
+            # prev state SELECT + UPDATE + INSERT snapshot
+            conn.execute.side_effect = [prev_cursor, update_cursor, snapshot_cursor]
         return conn
 
     def _patch_transaction(self, conn):
@@ -198,11 +213,12 @@ class TestSaveProjectTransactionalUnit:
                 updated_by_email="bob@example.com",
             )
 
-        # conn.execute should have been called twice: UPDATE + INSERT snapshot
-        assert conn.execute.call_count == 2
-        # The second call should insert into project_revisions
-        second_call_sql = conn.execute.call_args_list[1][0][0]
-        assert "project_revisions" in second_call_sql
+        # conn.execute should have been called three times:
+        # SELECT prev state + UPDATE + INSERT snapshot
+        assert conn.execute.call_count == 3
+        # The third call should insert into project_revisions
+        third_call_sql = conn.execute.call_args_list[2][0][0]
+        assert "project_revisions" in third_call_sql
 
     def test_successful_save_snapshot_uses_new_revision(self):
         from storage import PostgresStorageBackend
@@ -226,7 +242,7 @@ class TestSaveProjectTransactionalUnit:
                 updated_by_name="Carol",
             )
 
-        snapshot_params = conn.execute.call_args_list[1][0][1]
+        snapshot_params = conn.execute.call_args_list[2][0][1]
         assert snapshot_params["revision"] == 10
         assert snapshot_params["saved_by_email"] == "carol@example.com"
         assert snapshot_params["saved_by_name"] == "Carol"
@@ -297,8 +313,8 @@ class TestSaveProjectTransactionalUnit:
             with patch("db.transaction", _fake_tx):
                 backend.save_project_transactional(project_data, client_revision=None)
 
-        # Verify the UPDATE was called with revision=0
-        update_params = conn.execute.call_args_list[0][0][1]
+        # Verify the UPDATE (second call, after prev-state SELECT) was called with revision=0
+        update_params = conn.execute.call_args_list[1][0][1]
         assert update_params["client_revision"] == 0
 
     # -- Project not found ─────────────────────────────────────────────────────
@@ -310,16 +326,21 @@ class TestSaveProjectTransactionalUnit:
         project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
 
         conn = MagicMock()
-        # UPDATE returns None (no row), SELECT also returns None (project gone)
+        # Prev-state SELECT returns None (project not yet in DB)
+        prev_cursor = MagicMock()
+        prev_cursor.fetchone.return_value = None
+
+        # UPDATE returns None (no row)
         update_cursor = MagicMock()
         update_cursor.fetchone.return_value = None
         update_cursor.description = []
 
+        # SELECT server state also returns None (project gone)
         server_cursor = MagicMock()
         server_cursor.fetchone.return_value = None
         server_cursor.description = []
 
-        conn.execute.side_effect = [update_cursor, server_cursor]
+        conn.execute.side_effect = [prev_cursor, update_cursor, server_cursor]
 
         from contextlib import contextmanager
 
