@@ -15,6 +15,7 @@ async function apiFetch(path, method = 'GET', body = null) {
     e.status = res.status;
     e.code = errData?.code || null;
     e.detail = errData?.detail || null;
+    e.responseBody = errData || null;
     throw e;
   }
   return res.json();

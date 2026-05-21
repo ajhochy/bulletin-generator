@@ -697,6 +697,25 @@
   </div>
 </div>
 
+<!-- Conflict resolution dialog (shown on 409 save conflict) -->
+<div id="conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="conflict-dialog-title" style="display:none; position:fixed; inset:0; z-index:400; background:rgba(0,0,0,0.5); align-items:center; justify-content:center;">
+  <div class="bg-base-100 rounded-xl shadow-xl p-6 max-w-lg w-full mx-4">
+    <div class="flex items-center gap-2 mb-3">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="text-warning shrink-0" style="color:var(--warning,#f59e0b)"><path d="M10 2L2 17h16L10 2z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v4M10 14h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+      <h3 class="text-base font-semibold" id="conflict-dialog-title">Save conflict</h3>
+    </div>
+    <p class="text-sm mb-1">Another editor saved this project while you were editing. <strong>Your changes are preserved.</strong></p>
+    <p class="text-sm text-base-content/60 mb-4" id="conflict-dialog-who"></p>
+    <div id="conflict-dialog-summary" class="text-sm bg-base-200 rounded-lg px-4 py-3 mb-4" style="display:none;"></div>
+    <div id="conflict-dialog-review-result" class="text-sm bg-base-200 rounded-lg px-4 py-3 mb-4" style="display:none;"></div>
+    <div class="flex flex-wrap gap-2 justify-end">
+      <button class="btn btn-sm btn-ghost" id="conflict-btn-review">Review latest</button>
+      <button class="btn btn-sm btn-ghost" id="conflict-btn-copy">Save as my copy</button>
+      <button class="btn btn-sm btn-error btn-outline" id="conflict-btn-replace">Replace with latest</button>
+    </div>
+  </div>
+</div>
+
 <!-- Apply-to-project dialog (modal) -->
 <div id="tpl-apply-dialog" role="dialog" aria-modal="true" aria-labelledby="tpl-apply-dialog-msg" style="display:none; position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.4); align-items:center; justify-content:center;">
   <div class="bg-base-100 rounded-xl shadow-xl p-6 max-w-sm w-full mx-4">

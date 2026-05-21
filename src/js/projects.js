@@ -4,9 +4,155 @@ function _updateFileDirtyDot() {
   if (!dot) return;
   const stale = document.getElementById('stale-banner');
   const conflict = document.getElementById('conflict-banner');
+  const conflictDialog = document.getElementById('conflict-dialog');
   const active = (stale && stale.style.display !== 'none' && stale.textContent.trim()) ||
-                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim());
+                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim()) ||
+                 (conflictDialog && conflictDialog.style.display !== 'none');
   dot.style.display = active ? 'inline-block' : 'none';
+}
+
+// ─── Conflict summary helper ──────────────────────────────────────────────────
+// Returns a short plain-text summary comparing local and server state.
+// Used inside the conflict dialog to give the user context before deciding.
+function buildConflictSummary(local, server) {
+  const localItems  = Array.isArray(local  && local.items)  ? local.items  : [];
+  const serverItems = Array.isArray(server && server.items) ? server.items : [];
+
+  const localCount  = localItems.length;
+  const serverCount = serverItems.length;
+
+  let itemMsg;
+  if (serverCount === localCount) {
+    itemMsg = `Both versions have ${localCount} item${localCount !== 1 ? 's' : ''}.`;
+  } else {
+    itemMsg = `Server has ${serverCount} item${serverCount !== 1 ? 's' : ''} (you have ${localCount}).`;
+  }
+
+  const serverDate = (server && server.svcDate) || '';
+  const localDate  = (local  && local.svcDate)  || '';
+  let dateMsg = '';
+  if (serverDate) {
+    dateMsg = serverDate === localDate
+      ? ` Service date: ${serverDate}.`
+      : ` Server service date: ${serverDate}${localDate ? ` (yours: ${localDate})` : ''}.`;
+  }
+
+  return itemMsg + dateMsg;
+}
+
+// ─── Conflict dialog ──────────────────────────────────────────────────────────
+// Shows a modal letting the user resolve a 409 conflict without losing work.
+// localSnapshot  — result of collectCurrentProjectState() captured before the failing save
+// serverInfo     — 409 response body: { serverRevision, serverUpdatedAt, serverUpdatedBy }
+// project        — the project object that was being saved (has .id, .name)
+function showConflictDialog(localSnapshot, serverInfo, project) {
+  const dialog       = document.getElementById('conflict-dialog');
+  const whoEl        = document.getElementById('conflict-dialog-who');
+  const summaryEl    = document.getElementById('conflict-dialog-summary');
+  const reviewResult = document.getElementById('conflict-dialog-review-result');
+  const btnReview    = document.getElementById('conflict-btn-review');
+  const btnCopy      = document.getElementById('conflict-btn-copy');
+  const btnReplace   = document.getElementById('conflict-btn-replace');
+
+  if (!dialog) return; // guard against missing HTML
+
+  // Reset dialog state
+  summaryEl.style.display   = 'none';
+  summaryEl.textContent     = '';
+  reviewResult.style.display = 'none';
+  reviewResult.innerHTML    = '';
+
+  // Who / when line
+  const by   = serverInfo && serverInfo.serverUpdatedBy ? serverInfo.serverUpdatedBy : null;
+  const when = serverInfo && serverInfo.serverUpdatedAt ? shortTimestamp(serverInfo.serverUpdatedAt) : null;
+  whoEl.textContent = [by ? `Saved by ${by}` : null, when ? `at ${when}` : null].filter(Boolean).join(' ') || '';
+
+  // ── "Review latest" button ─────────────────────────────────────────────────
+  const onReview = () => {
+    btnReview.disabled = true;
+    btnReview.textContent = 'Loading…';
+    apiFetch('/api/projects').then(d => {
+      const fresh = (d.projects || []).find(p => p.id === project.id);
+      if (!fresh || !fresh.state) {
+        reviewResult.textContent = 'Could not load server version.';
+        reviewResult.style.display = '';
+        return;
+      }
+      const summary = buildConflictSummary(localSnapshot, fresh.state);
+      const serverTitle = fresh.state.svcTitle || fresh.name || '(untitled)';
+      reviewResult.innerHTML = `<strong>Server version:</strong> ${esc(serverTitle)}<br>${esc(summary)}`;
+      reviewResult.style.display = '';
+    }).catch(() => {
+      reviewResult.textContent = 'Could not load server version.';
+      reviewResult.style.display = '';
+    }).finally(() => {
+      btnReview.disabled = false;
+      btnReview.textContent = 'Review latest';
+    });
+  };
+
+  // ── "Save as my copy" button ───────────────────────────────────────────────
+  const onCopy = () => {
+    const ts = nowIso();
+    const originalName = project.name || suggestedProjectName();
+    const copyName = 'Copy of ' + originalName;
+    const copyProject = {
+      id: generateProjectId(),
+      name: copyName,
+      createdAt: ts,
+      updatedAt: ts,
+      visibility: 'private',
+      state: localSnapshot,
+    };
+    projects.unshift(copyProject);
+    _loadedRevision = null; // reset so the copy saves cleanly
+    // Switch active project to the copy so the user keeps editing their work
+    activeProjectId = copyProject.id;
+    bulletinTitleInput.value = copyName;
+    storeActiveProjectId();
+    saveProjectToServer(copyProject);
+    renderProjectSelect();
+    setStatus(`Saved as "${copyName}".`, 'success');
+    _closeConflictDialog();
+  };
+
+  // ── "Replace with latest" button ───────────────────────────────────────────
+  const onReplace = () => {
+    if (!confirm('Replace your local changes with the server version? Your local edits will be lost.')) return;
+    apiFetch('/api/projects').then(d => {
+      const fresh = (d.projects || []).find(p => p.id === project.id);
+      if (!fresh) { loadProjectById(project.id); _closeConflictDialog(); return; }
+      projects = projects.map(p => p.id === fresh.id ? fresh : p);
+      loadProjectById(fresh.id);
+      _closeConflictDialog();
+    }).catch(() => {
+      loadProjectById(project.id);
+      _closeConflictDialog();
+    });
+  };
+
+  // Clone buttons to remove old listeners, then re-attach
+  const freshReview  = btnReview.cloneNode(true);
+  const freshCopy    = btnCopy.cloneNode(true);
+  const freshReplace = btnReplace.cloneNode(true);
+  btnReview.replaceWith(freshReview);
+  btnCopy.replaceWith(freshCopy);
+  btnReplace.replaceWith(freshReplace);
+  freshReview.addEventListener('click', onReview);
+  freshCopy.addEventListener('click', onCopy);
+  freshReplace.addEventListener('click', onReplace);
+
+  dialog.style.display = 'flex';
+  _updateFileDirtyDot();
+}
+
+function _closeConflictDialog() {
+  const dialog = document.getElementById('conflict-dialog');
+  if (dialog) dialog.style.display = 'none';
+  // Also hide legacy conflict-banner if it's still in DOM
+  const banner = document.getElementById('conflict-banner');
+  if (banner) banner.style.display = 'none';
+  _updateFileDirtyDot();
 }
 
 // ─── Sync diff helper ─────────────────────────────────────────────────────────
@@ -168,6 +314,11 @@ async function saveProjectToServer(project) {
     return;
   }
   _saveInFlight = true;
+  // Capture local state before the network round-trip so that if a 409 is
+  // returned, the conflict dialog has an accurate snapshot of what the user
+  // had at the moment of conflict (not whatever the editor state is after the
+  // async await returns, which may have drifted).
+  const localSnapshot = collectCurrentProjectState();
   try {
     const requestProject = buildProjectSaveRequestCore(project, {
       isServerMode: isServerMode(),
@@ -185,7 +336,7 @@ async function saveProjectToServer(project) {
     _loadedRevision = saveState.loadedRevision;
     if (stored && saveState.storedRevision !== null) stored.revision = saveState.storedRevision;
     if (saveState.hideStaleBanner) document.getElementById('stale-banner').style.display = 'none';
-    if (saveState.hideConflictBanner) document.getElementById('conflict-banner').style.display = 'none';
+    if (saveState.hideConflictBanner) _closeConflictDialog();
     _updateFileDirtyDot();
   } catch (err) {
     const failure = deriveProjectSaveFailureCore({
@@ -193,29 +344,11 @@ async function saveProjectToServer(project) {
       isDesktopMode: isDesktopMode(),
     });
     if (failure.type === 'conflict') {
-      const banner = document.getElementById('conflict-banner');
-      banner.innerHTML = '';
-      const bannerText = document.createTextNode(failure.message);
-      banner.appendChild(bannerText);
-      banner.style.display = '';
-      const reloadLink = document.createElement('a');
-      reloadLink.href = '#';
-      reloadLink.textContent = ' Reload latest';
-      reloadLink.style.marginLeft = '0.4rem';
-      reloadLink.addEventListener('click', e => {
-        e.preventDefault();
-        // Fetch fresh state from server (local cache may be stale — stale check only
-        // updates metadata, not the full project state) then show a diff before applying.
-        apiFetch('/api/projects').then(d => {
-          const fresh = (d.projects || []).find(p => p.id === project.id);
-          if (!fresh) { loadProjectById(project.id); return; }
-          if (!confirm(buildSyncDiffMessage(fresh))) return;
-          projects = projects.map(p => p.id === fresh.id ? fresh : p);
-          loadProjectById(fresh.id);
-        }).catch(() => loadProjectById(project.id));
-      });
-      banner.appendChild(reloadLink);
-      _updateFileDirtyDot();
+      // Parse 409 response body if available
+      let serverInfo = {};
+      try { serverInfo = (err.responseBody && typeof err.responseBody === 'object') ? err.responseBody : {}; } catch (_) {}
+      showConflictDialog(localSnapshot, serverInfo, project);
+      // Do not re-throw — the dialog handles all recovery paths
     } else {
       setStatus(failure.message, 'error');
     }
