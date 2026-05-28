@@ -472,7 +472,9 @@ function startStaleCheck() {
     if (!activeProjectId) return;
     try {
       const staleBanner = document.getElementById('stale-banner');
-      const data = await apiFetch('/api/projects');
+      // Poll lightweight metadata only — the full /api/projects payload embeds
+      // base64 images and is multi-megabyte. We only need revision/updatedAt here.
+      const data = await apiFetch('/api/projects/revisions');
       const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
       if (!serverProject) {
         staleBanner.style.display = 'none';

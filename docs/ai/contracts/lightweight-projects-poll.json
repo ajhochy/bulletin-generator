@@ -1,0 +1,33 @@
+{
+  "issue": "lightweight-projects-poll",
+  "title": "Stale-check poll must not download full project state (base64 images)",
+  "generated": "2026-05-28",
+  "context": "The 30s stale-check poll in src/js/projects.js calls GET /api/projects, which returns the entire projects.json (~8.4 MB, including base64 cover/logo images). With multiple open tabs this transferred ~279 GB over a few weeks. The poll only needs id/revision/updatedAt/updatedBy per project.",
+  "criteria": [
+    {
+      "criterion_id": "lightweight-poll-c1",
+      "text": "A server helper _project_revision_summary(projects) returns one entry per project containing only id, revision, updatedAt, updatedBy — and excludes the heavy `state` field (base64 images). Serialized payload is at least 10x smaller than the full project list.",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestProjectRevisionSummary::test_summary_excludes_heavy_state / test_summary_preserves_metadata / test_summary_payload_is_tiny",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "lightweight-poll-c2",
+      "text": "GET /api/projects/revisions is registered as an exact-match route mapping to _handle_get_project_revisions, distinct from /api/projects.",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestProjectRevisionSummary::test_revisions_route_registered",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "lightweight-poll-c3",
+      "text": "The frontend stale-check poll (src/js/projects.js startStaleCheck) calls /api/projects/revisions instead of /api/projects; the explicit 'Reload latest' click handler still fetches full /api/projects.",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Frontend JS is loaded via plain <script> tags with no module seam for the polling timer; behavior is verified by manual smoke (observe network tab) rather than an automated test."
+    }
+  ],
+  "stack": "python",
+  "not_tested": ["lightweight-poll-c3"]
+}
