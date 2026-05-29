@@ -350,3 +350,75 @@ class TestParseListEnv:
         with patch.dict(os.environ, {"TEST_LIST_ENV": "  a , b , c  "}):
             result = server._parse_list_env("TEST_LIST_ENV")
             assert result == ["a", "b", "c"]
+
+
+# ── Lightweight stale-check poll (contract: lightweight-projects-poll) ──────────
+
+class TestProjectRevisionSummary:
+    """Contract tests for the lightweight stale-check polling endpoint.
+
+    The 30s stale-check poll must NOT download full project state (which
+    embeds base64 cover/logo images, ~8.4 MB total). _project_revision_summary
+    returns metadata only, and GET /api/projects/revisions serves it.
+    """
+
+    def _sample_projects(self):
+        big_image = "data:image/png;base64," + ("A" * 50000)
+        return [
+            {
+                "id": "p1",
+                "revision": 5,
+                "updatedAt": "2026-05-28T10:00:00Z",
+                "updatedBy": "Alice",
+                "createdAt": "2026-05-01T00:00:00Z",
+                "createdBy": "Alice",
+                "name": "Sunday Service",
+                "state": {"coverImage": big_image, "items": [1, 2, 3]},
+            },
+            {
+                "id": "p2",
+                "revision": 2,
+                "updatedAt": "2026-05-27T09:00:00Z",
+                "updatedBy": "Bob",
+                "state": {"logoImage": big_image},
+            },
+        ]
+
+    def test_summary_excludes_heavy_state(self):
+        """lightweight-poll-c1: summary must not include `state` or images."""
+        summary = server._project_revision_summary(self._sample_projects())
+        for entry in summary:
+            assert "state" not in entry
+            assert set(entry.keys()) == {"id", "revision", "updatedAt", "updatedBy"}
+
+    def test_summary_preserves_metadata(self):
+        """lightweight-poll-c1: summary keeps id/revision/updatedAt/updatedBy."""
+        summary = server._project_revision_summary(self._sample_projects())
+        assert summary[0] == {
+            "id": "p1", "revision": 5,
+            "updatedAt": "2026-05-28T10:00:00Z", "updatedBy": "Alice",
+        }
+        assert summary[1] == {
+            "id": "p2", "revision": 2,
+            "updatedAt": "2026-05-27T09:00:00Z", "updatedBy": "Bob",
+        }
+
+    def test_summary_fills_missing_metadata_with_none(self):
+        """lightweight-poll-c1: all four keys present even when absent in source."""
+        summary = server._project_revision_summary([{"id": "p3"}])
+        assert summary[0] == {
+            "id": "p3", "revision": None, "updatedAt": None, "updatedBy": None,
+        }
+
+    def test_summary_payload_is_tiny(self):
+        """lightweight-poll-c1: serialized summary >10x smaller than full state."""
+        projects = self._sample_projects()
+        full = json.dumps({"projects": projects})
+        summary = json.dumps({"projects": server._project_revision_summary(projects)})
+        assert len(summary) < len(full) / 10
+
+    def test_revisions_route_registered(self):
+        """lightweight-poll-c2: GET /api/projects/revisions route is wired."""
+        routes = dict(server.Handler._GET_ROUTES)
+        assert routes.get("/api/projects/revisions") == "_handle_get_project_revisions"
+        assert hasattr(server.Handler, "_handle_get_project_revisions")

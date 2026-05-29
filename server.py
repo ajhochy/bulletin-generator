@@ -506,6 +506,24 @@ def _write_json(path, data):
     tmp.replace(path)
 
 
+def _project_revision_summary(projects):
+    """Metadata-only view of projects for the stale-check poll.
+
+    Returns just the fields the 30s poll needs (id/revision/updatedAt/updatedBy),
+    omitting `state` — which embeds base64 cover/logo images and makes the full
+    project list multi-megabyte.
+    """
+    return [
+        {
+            "id":        p.get("id"),
+            "revision":  p.get("revision"),
+            "updatedAt": p.get("updatedAt"),
+            "updatedBy": p.get("updatedBy"),
+        }
+        for p in projects
+    ]
+
+
 # ─── iCal parsing ─────────────────────────────────────────────────────────────
 
 def unfold_ical(text):
@@ -1101,6 +1119,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/index.html',               '_handle_index'),
         ('/worship-booklet.html',     '_handle_index'),
         ('/favicon.ico',              '_handle_favicon'),
+        ('/api/projects/revisions',   '_handle_get_project_revisions'),
         ('/api/projects',             '_handle_get_projects'),
         ('/api/announcements',        '_handle_get_announcements'),
         ('/api/volunteer-roles',      '_handle_get_volunteer_roles'),
@@ -1196,6 +1215,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_get_projects(self):
         self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+
+    def _handle_get_project_revisions(self):
+        """Lightweight poll target: project metadata without heavy `state`."""
+        self._send_json({"projects": _project_revision_summary(_read_json(PROJECTS_FILE, []))})
 
     def _handle_get_announcements(self):
         self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
