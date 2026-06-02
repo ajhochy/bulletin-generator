@@ -4,6 +4,32 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-02 — Re-platform to Supabase + multi-tenant Workspaces + Electron (build on collab-v1)
+
+**Context.** Goal is to retire the self-hosted Synology/Docker deployment, gain real multi-user with per-church isolation, and ship a desktop client — without a frontend rewrite. The `collab-v1` branch (`claude/amazing-archimedes-122d78`, 37 commits) already implements "Migration A": a `storage.py` backend boundary, `db.py` (psycopg3 via `DATABASE_URL`), `migrations/`, a full Postgres schema, `project_revisions` history, and transactional optimistic-revision saves with a conflict UX — but it is single-tenant and uses a custom Google-only/single-domain auth (`auth.py`). Work lives on integration branch `feat/supabase-multitenant-electron`. Full plan: `docs/ai/current-plan.md`.
+
+**Alternatives.**
+- Stay on JSON/Synology. Rejected — the user wants off Docker + real multi-tenant.
+- Self-hosted Postgres (as `collab-v1` built it). Rejected — managed Supabase removes ops burden and provides Auth + Storage + RLS; the swap is just `DATABASE_URL`.
+- React + Electron rewrite. Rejected for v1 — the existing vanilla-JS UI runs unchanged in Electron's Chromium renderer; the ~11k-line rewrite is deferred.
+- Browser talks to Supabase directly (`supabase-js` CRUD, RLS-pure). Deferred — would rewrite every data call; kept `server.py` as the trusted API instead.
+
+**Decisions.**
+- **D1** Managed Supabase replaces self-hosted Docker Postgres; drop the postgres compose service on this branch.
+- **D2** RLS is enforced through the trusted `server.py`: connect as `authenticated` and `SET LOCAL request.jwt.claims` per transaction so policies see `auth.uid()`/`auth.jwt()`. `service_role` is seed/migration/admin only (it bypasses RLS). Pooling: default session/direct (5432); if connection limits force the transaction pooler (6543), disable psycopg3 prepared statements and keep claim-setting transaction-local.
+- **D3** Supabase Auth (Google + email magic link) replaces `auth.py`; `server.py` verifies the Supabase JWT and resolves workspace membership; per-workspace allow-list replaces the hard-coded `visaliacrc.com`.
+- **D4** Electron wraps the existing frontend (spawns `server.py` as a PyInstaller sidecar); `webContents.printToPDF` replaces the headless-Chrome dependency; `electron-updater` replaces Watchtower/zip for the desktop build.
+- **D5** Cover/logo images and font binaries move from base64-in-JSONB to Supabase Storage (fixes the ~8.6 MB project bloat and enables cross-client sharing).
+- **Multi-tenancy** via `workspaces` + `workspace_members` + `workspace_id` on every table + RLS; workspaces seeded manually for v1 (no self-serve onboarding).
+
+**Consequences.**
+- Synology + Watchtower + GHCR auto-update are superseded for the desktop distribution; keep them running until cutover QA (plan issue 20) passes (parallel-run, non-destructive migration).
+- RLS becomes security-critical: cross-tenant isolation must be proven by tests (plan issue 8), not assumed.
+- The `collab-v1` rebase (plan issue 1) is the first real cost — 37 commits diverged at 2026-04-27, with expected conflicts against the volunteer-roles and lightweight-poll work on `main`.
+- Open items to confirm before their milestone: offline (assumed online-required v1), seed-data source, membership allow-list vs invite, pooling mode, and per-workspace vs per-user PCO/Google tokens.
+
+---
+
 ## 2026-05-28 — Separate `/api/projects/revisions` endpoint for the stale-check poll
 
 **Context.** The 30s stale-check poll (`startStaleCheck` in `src/js/projects.js`) called `GET /api/projects`, which returns the entire `projects.json` — ~8.6 MB because project `state` embeds base64 cover/logo images. With multiple browser tabs open this transferred ~279 GB over a few weeks and inflated server RSS (repeated multi-MB JSON parse/serialize). The poll only reads `revision`/`updatedAt`/`updatedBy`.
