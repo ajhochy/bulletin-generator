@@ -2,6 +2,12 @@
 
 _Last updated: 2026-06-02_
 
+## Active workflow run (Supabase + Multi-tenant + Electron, milestone #30)
+
+Run branch: `feat/supabase-multitenant-electron` (stacking all issues; one PR for the run). Toolchain: 3.11 venv at `.venv` (gitignored). `ai-workflow checks` now wired via `scripts/run_ai_workflow.py` to the real CI suite (pytest subset + vitest + vite build); `vite.config.js` excludes `.claude/**` so stale agent worktrees no longer inject phantom specs. User authorized psql apply+verify against **staging** `dgydekhfzrmeoscpgmvo` for this run (DATABASE_URL in gitignored `.env`, session pooler). Policy: pause-and-hand-off at any issue needing external setup (Supabase dashboard, OAuth secrets, signing certs).
+
+- **001 (#257) — DONE.** `supabase/migrations/20260602000002_data_tables.sql` (commit `d971025`). 7 tables — `project_revisions` (append-only: select+insert only), `workspace_settings`, `user_settings` (per-user RLS on `auth.uid()`), `announcements`, `songs`, `templates`, `fonts` — on the proven foundation pattern. Applied+verified on staging: 7 tables, RLS on all, append-only/per-user policies confirmed, anon zero-priv, idempotent re-run (exit 0). verification-gate PASS. **Next: 002 (#258) RLS isolation test suite.**
+
 ## Current focus
 
 Supabase multi-tenant + Electron migration. Branch `feat/supabase-multitenant-electron` now holds the integrated union of:
@@ -38,7 +44,7 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 - `auth.py` (from collab-v1) uses `dict | None` annotations without `from __future__ import annotations`, so it hard-requires Python 3.10+ at import time. Matches the documented 3.11+ requirement but breaks on the system 3.9. Candidate one-line follow-up: add the future import for resilience.
 - Minor: `server.py` imports the `cgi` module (DeprecationWarning; removed in Python 3.13). Pre-existing; replace before any 3.13 bump.
 - **DB password still needed** to build the app's `DATABASE_URL` (for gitignored `.env`); the MCP cannot expose it. Without it the app can't yet connect to Supabase (the 2 DB-integration tests stay red). Schema work proceeds via MCP without it.
-- **Migration-history reconciliation:** the foundation schema was applied to staging via MCP `execute_sql` (not the CLI), and the matching `supabase/migrations/*.sql` file is hand-written. When the CLI is linked (needs DB password), reconcile via `supabase migration repair --status applied 20260602000001` (or `db push`; SQL is idempotent).
+- **Migration-history reconciliation:** the foundation schema (`20260602000001`) was applied via MCP and `20260602000002_data_tables.sql` via direct `psql` — neither through the CLI, so `supabase_migrations.schema_migrations` does not exist yet. When the CLI is linked (needs DB password), reconcile via `supabase migration repair --status applied 20260602000001 20260602000002` (or `db push`; both files are idempotent).
 - **Leaked-password protection disabled** (Supabase Auth dashboard toggle). Low priority (OAuth/magic-link focused) but enable before any password auth.
 
 ## Next step
