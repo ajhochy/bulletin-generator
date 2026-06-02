@@ -4,6 +4,19 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-02 — Schema source of truth = Supabase-managed migrations (refines D1)
+
+**Context.** With the Supabase MCP installed and a staging project provisioned (`bulletin-generator`, ref `dgydekhfzrmeoscpgmvo`, org Visalia CRC, region us-west-1), we have direct DDL access. The earlier plan reuse-map said "keep collab-v1's Python migration runner + `data_migrations` table" for schema.
+
+**Decision.** The Postgres **schema** (multi-tenant tables + RLS) is now owned by **Supabase-managed migrations**: iterate on the staging project via the MCP (`execute_sql`), verify cross-tenant isolation, then capture as versioned SQL under `supabase/migrations/`. collab-v1's Python schema-creation migration (`migrations/v001_initial_schema.py`) is retired for DDL. collab-v1's JSON→Postgres **data importers** are kept but become a one-time data-migration/seed step that inserts into the Supabase-created schema. `data_migrations` table is superseded by Supabase's `supabase_migrations.schema_migrations`.
+
+**Consequences.**
+- Supersedes the "reuse migrations/ runner for schema" part of the 2026-06-02 re-platform reuse map; the runner's importers survive, its DDL does not.
+- Supabase Auth owns `auth.users` + sessions, so collab-v1's `users`/`sessions` tables are NOT recreated — a `public.profiles` mirror of `auth.users` is used for joins/RLS instead.
+- RLS authoring/testing happens against staging directly; isolation must be proven (security-critical) before capture.
+
+---
+
 ## 2026-06-02 — Re-platform to Supabase + multi-tenant Workspaces + Electron (build on collab-v1)
 
 **Context.** Goal is to retire the self-hosted Synology/Docker deployment, gain real multi-user with per-church isolation, and ship a desktop client — without a frontend rewrite. The `collab-v1` branch (`claude/amazing-archimedes-122d78`, 37 commits) already implements "Migration A": a `storage.py` backend boundary, `db.py` (psycopg3 via `DATABASE_URL`), `migrations/`, a full Postgres schema, `project_revisions` history, and transactional optimistic-revision saves with a conflict UX — but it is single-tenant and uses a custom Google-only/single-domain auth (`auth.py`). Work lives on integration branch `feat/supabase-multitenant-electron`. Full plan: `docs/ai/current-plan.md`.

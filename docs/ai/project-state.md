@@ -20,6 +20,9 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 - 1.12.12 release tagged.
 - collab-v1 branch merged into `feat/supabase-multitenant-electron` (commit `b16b842`). All 3 content conflicts resolved with UNION strategy.
+- **Supabase MCP installed** (`.mcp.json`, scoped to `?project_ref=dgydekhfzrmeoscpgmvo`, browser-OAuth, no secret committed).
+- **Staging Supabase project provisioned:** `bulletin-generator` · ref `dgydekhfzrmeoscpgmvo` · org Visalia CRC · region us-west-1 · Postgres 17. API URL `https://dgydekhfzrmeoscpgmvo.supabase.co`; publishable key `sb_publishable_qrAHj2Kj5yKeWxeqy5vifA_ufX6rOzJ` (RLS-protected, not secret).
+- **Tenancy foundation + RLS applied to staging** and captured at `supabase/migrations/20260602000001_tenancy_foundation.sql`: `public.profiles` (+ `handle_new_user` signup trigger, EXECUTE revoked from API roles), `workspaces`, `workspace_members`, `projects` (central), `private.is_workspace_member()` / `private.shares_workspace_with()` SECURITY DEFINER helpers, RLS policies on all four, indexes, and `authenticated` grants (anon denied). **Cross-tenant read AND write isolation verified** via simulated-JWT tests (user A/B each see only their workspace; cross-tenant read=0, write=0 rows). Security advisor clean except the leaked-password Auth toggle. This satisfies the security-critical core of plan issue 8 on the central table.
 
 ## In progress
 
@@ -33,10 +36,13 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 - Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL. Expected failures without a DB (provisioned in plan issue 2/3).
 - `auth.py` (from collab-v1) uses `dict | None` annotations without `from __future__ import annotations`, so it hard-requires Python 3.10+ at import time. Matches the documented 3.11+ requirement but breaks on the system 3.9. Candidate one-line follow-up: add the future import for resilience.
 - Minor: `server.py` imports the `cgi` module (DeprecationWarning; removed in Python 3.13). Pre-existing; replace before any 3.13 bump.
+- **DB password still needed** to build the app's `DATABASE_URL` (for gitignored `.env`); the MCP cannot expose it. Without it the app can't yet connect to Supabase (the 2 DB-integration tests stay red). Schema work proceeds via MCP without it.
+- **Migration-history reconciliation:** the foundation schema was applied to staging via MCP `execute_sql` (not the CLI), and the matching `supabase/migrations/*.sql` file is hand-written. When the CLI is linked (needs DB password), reconcile via `supabase migration repair --status applied 20260602000001` (or `db push`; SQL is idempotent).
+- **Leaked-password protection disabled** (Supabase Auth dashboard toggle). Low priority (OAuth/magic-link focused) but enable before any password auth.
 
 ## Next step
 
-Supabase migration plan (`docs/ai/current-plan.md`): **issue 2 — provision a staging Supabase project + wire `DATABASE_URL`/keys** (also unblocks the 2 DB-integration tests), or first route to `issue-writer` to generate the full GitHub-ready issue set. Awaiting user direction.
+Continue building the Supabase schema (remaining data tables — `project_revisions`, `workspace_settings`, `user_settings`, `announcements`, `songs`, `templates`, `fonts` — following the verified `projects` pattern: `workspace_id` + RLS via `private.is_workspace_member` + grants). Then app wiring (plan issue 3/7: `db.py` per-request `SET LOCAL request.jwt.claims`, needs the DB password for `.env`) and Supabase Auth (issues 9–12). Tenancy foundation + isolation are proven on `projects`.
 
 ## Recent coding-agent runs
 
