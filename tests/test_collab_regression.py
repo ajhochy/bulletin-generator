@@ -274,20 +274,15 @@ class TestUnauthenticatedServerMode:
             handler._handle_api_me()
         assert _status(handler) == 401, "/api/me must return 401, not 500 or 200"
 
-    # ── /auth/google/login — redirect, not 401 ───────────────────────────────
+    # ── /auth/google/login — disabled on Supabase branch ─────────────────────
 
-    def test_auth_google_login_redirects(self):
-        """GET /auth/google/login must issue a redirect (302), not a 401 error."""
+    def test_auth_google_login_is_disabled(self):
+        """GET /auth/google/login must not re-enable collab-v1 cookie auth."""
         handler = _make_handler("/auth/google/login")
-        import auth as _auth_module
-        with patch.object(server, "IS_DESKTOP", False), \
-             patch("auth.build_auth_login_url", return_value="https://accounts.google.com/o/oauth2/auth?foo=bar"):
+        with patch.object(server, "IS_DESKTOP", False):
             handler._handle_auth_google_login()
-        # Must have called send_response(302), never _send_json with a 401
-        handler.send_response.assert_called_once_with(302)
-        # _send_json should NOT have been called (or must not be 401)
-        if handler._send_json.called:
-            assert _status(handler) != 401, "/auth/google/login must redirect, not error"
+        handler._send_json.assert_called_once()
+        assert _status(handler) == 404
 
 
 # ===========================================================================

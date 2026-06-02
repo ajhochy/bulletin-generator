@@ -1590,7 +1590,12 @@ def can_delete_project(project: dict, user_id: str) -> bool:
 # Factory
 # ---------------------------------------------------------------------------
 
-def get_storage(data_dir: Path | None = None) -> StorageBackend:
+def get_storage(
+    data_dir: Path | None = None,
+    *,
+    workspace_id: str | None = None,
+    user_claims: dict | None = None,
+) -> StorageBackend:
     """Return the appropriate storage backend for the current APP_MODE.
 
     ``data_dir`` is required when ``APP_MODE=desktop`` (or when the default
@@ -1598,7 +1603,9 @@ def get_storage(data_dir: Path | None = None) -> StorageBackend:
     ``DATA_DIR`` from the environment / standard platform paths to match
     server.py behaviour.
 
-    When ``APP_MODE=server`` a ``PostgresStorageBackend`` is returned.
+    When ``APP_MODE=server`` a ``PostgresStorageBackend`` is returned. Supplying
+    ``workspace_id`` and ``user_claims`` scopes queries to the authenticated
+    request and lets Postgres RLS see the verified Supabase JWT claims.
     """
     app_mode = os.environ.get("APP_MODE", "desktop").strip().lower()
     is_desktop = app_mode == "desktop"
@@ -1618,4 +1625,4 @@ def get_storage(data_dir: Path | None = None) -> StorageBackend:
                 data_dir = Path(os.path.dirname(os.path.abspath(__file__))) / "data"
         return JsonStorageBackend(Path(data_dir))
 
-    return PostgresStorageBackend()
+    return PostgresStorageBackend(workspace_id=workspace_id, user_claims=user_claims)

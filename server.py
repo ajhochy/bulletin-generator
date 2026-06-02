@@ -1150,19 +1150,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """Return the current user dict.
 
         In desktop mode returns a synthetic desktop user so route handlers don't
-        need to special-case IS_DESKTOP.  In server mode parses the ``bg_session``
-        cookie via auth.get_request_user(); returns None if missing/expired.
+        need to special-case IS_DESKTOP. In server mode verifies the Supabase
+        Bearer token and resolves workspace membership.
         """
         if IS_DESKTOP:
             return {
                 "id": None,
+                "user_id": None,
                 "email": "desktop",
                 "display_name": "Desktop User",
                 "domain": "local",
+                "workspace_id": None,
+                "role": "desktop",
+                "claims": None,
             }
         import auth as _auth  # noqa: PLC0415 — deferred; db not available in desktop
-        cookie = self.headers.get("Cookie", "")
-        return _auth.get_request_user(cookie)
+        status, user = _auth.authenticate_authorization_header(self.headers.get("Authorization", ""))
+        if user is None and status == 401:
+            user = _auth.get_request_user(self.headers.get("Cookie", ""))
+            if user is not None:
+                user.setdefault("user_id", user.get("id"))
+                user.setdefault("workspace_id", None)
+                user.setdefault("role", "")
+                user.setdefault("claims", {"sub": user.get("id")} if user.get("id") else None)
+                self._auth_error_status = None
+                return user
+        self._auth_error_status = status if user is None else None
+        return user
 
     def _require_auth(self) -> "dict | None":
         """Return the authenticated user, or send 401 and return None.
@@ -1175,9 +1189,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         """
         user = self._get_authenticated_user()
         if user is None:
-            self._send_json({"error": "Authentication required"}, 401)
+            status = getattr(self, "_auth_error_status", None) or 401
+            message = "Workspace membership required" if status == 403 else "Authentication required"
+            self._send_json({"error": message}, status)
             return None
         return user
+
+    def _storage_for_user(self, user):
+        from storage import get_storage  # noqa: PLC0415
+        if IS_DESKTOP:
+            return get_storage(DATA_DIR)
+        return get_storage(
+            workspace_id=user.get("workspace_id"),
+            user_claims=user.get("claims"),
+        )
 
     # ── Routing ────────────────────────────────────────────────────────────────
 
@@ -1328,8 +1353,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if IS_DESKTOP:
             self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
         else:
-            from storage import get_storage, can_read_project  # noqa: PLC0415
-            store = get_storage()
+            from storage import can_read_project  # noqa: PLC0415
+            store = self._storage_for_user(user)
             # Check if a specific project id was requested via query string.
             qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
             project_id = (qs.get("id") or [None])[0]
@@ -1347,16 +1372,20 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_get_project_revisions(self):
         """Lightweight poll target: project metadata without heavy `state`."""
-        # TODO(supabase-migration): route revisions summary through storage so
-        # Postgres mode returns only projects visible to the authenticated user.
-        self._send_json({"projects": _project_revision_summary(_read_json(PROJECTS_FILE, []))})
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            projects = _read_json(PROJECTS_FILE, [])
+        else:
+            projects = self._storage_for_user(user).list_projects(user_id=user["id"])
+        self._send_json({"projects": _project_revision_summary(projects)})
 
     def _handle_get_announcements(self):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         self._send_json(store.list_announcements())
 
     def _handle_get_volunteer_roles(self):
@@ -1366,24 +1395,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         self._send_json(store.get_settings())
 
     def _handle_get_songs(self):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         self._send_json(store.list_songs())
 
     def _handle_bootstrap(self):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         self._send_json({
             "settings": store.get_settings(),
             "songDb":   store.list_songs(),
@@ -1415,8 +1441,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if not IS_DESKTOP:
             # ── Server mode: delegate to storage layer with user attribution ──
-            from storage import get_storage, ConflictError  # noqa: PLC0415
-            store = get_storage()
+            from storage import ConflictError  # noqa: PLC0415
+            store = self._storage_for_user(user)
 
             # Detect new vs existing project before popping _clientRevision.
             is_new_project = not project.get("id") or store.get_project(project["id"]) is None
@@ -1549,8 +1575,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "missing project id"}, 400)
             return
 
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage()
+        store = self._storage_for_user(user)
         project = store.get_project(project_id)
         if project is None:
             self._send_json({"error": "project not found"}, 404)
@@ -1602,8 +1627,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if user is None:
             return
 
-        from storage import get_storage, can_read_project  # noqa: PLC0415
-        store = get_storage()
+        from storage import can_read_project  # noqa: PLC0415
+        store = self._storage_for_user(user)
         project = store.get_project(project_id)
         if project is None:
             self._send_json({"error": "project not found"}, 404)
@@ -1632,8 +1657,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if user is None:
             return
 
-        from storage import get_storage, can_read_project  # noqa: PLC0415
-        store = get_storage()
+        from storage import can_read_project  # noqa: PLC0415
+        store = self._storage_for_user(user)
         project = store.get_project(project_id)
         if project is None:
             self._send_json({"error": "project not found"}, 404)
@@ -1693,8 +1718,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "revision must be an integer"}, 400)
             return
 
-        from storage import get_storage, can_write_project, ConflictError  # noqa: PLC0415
-        store = get_storage()
+        from storage import can_write_project, ConflictError  # noqa: PLC0415
+        store = self._storage_for_user(user)
         project = store.get_project(project_id)
         if project is None:
             self._send_json({"error": "project not found"}, 404)
@@ -1749,8 +1774,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(anns, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         store.save_announcements(anns)
         self._send_json({"ok": True})
 
@@ -1779,8 +1803,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(partial, dict):
             self._send_json({"error": "body must be an object"}, 400)
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         # Merge the partial update with existing settings.
         existing = store.get_settings()
         for key, value in partial.items():
@@ -1803,8 +1826,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(songs, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         store.save_songs(songs)
         self._send_json({"ok": True})
 
@@ -1812,8 +1834,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         settings = store.get_settings()
         settings.pop('pcoAccessToken', None)
         settings.pop('pcoRefreshToken', None)
@@ -1824,8 +1845,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         settings = store.get_settings()
         settings.pop('googleAccessToken', None)
         settings.pop('googleRefreshToken', None)
@@ -1848,8 +1868,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         if not IS_DESKTOP:
-            from storage import get_storage, can_delete_project  # noqa: PLC0415
-            store = get_storage()
+            from storage import can_delete_project  # noqa: PLC0415
+            store = self._storage_for_user(user)
             project = store.get_project(project_id)
             if project is None:
                 self._send_json({"error": "project not found"}, 404)
@@ -1873,8 +1893,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         self._send_json(store.list_templates())
 
     def _validate_template(self, template):
@@ -1915,8 +1934,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         template["id"] = _slugify(template["id"])
         template["builtIn"] = False
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         templates = store.list_templates()
         idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
         if idx >= 0:
@@ -1939,8 +1957,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not template_id:
             self._send_json({"error": "missing template id"}, 400)
             return
-        from storage import get_storage  # noqa: PLC0415
-        store = get_storage(DATA_DIR)
+        store = self._storage_for_user(user)
         templates = store.list_templates()
         target = next((t for t in templates if t.get("id") == template_id), None)
         if target and (target.get("builtIn") or target.get("built_in")):
@@ -1989,8 +2006,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if IS_DESKTOP:
             self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
         else:
-            from storage import get_storage  # noqa: PLC0415
-            store = get_storage(DATA_DIR)
+            store = self._storage_for_user(user)
             all_fonts = store.list_fonts()
             user_fonts = [f for f in all_fonts if f.get("source") == "user"]
             cached_fonts = [f for f in all_fonts if f.get("source") != "user"]
@@ -2329,177 +2345,46 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── App-login Google OAuth (identity only) ─────────────────────────────────
 
     def _handle_auth_google_login(self):
-        """
-        Start the Google app-login flow.
-
-        Server mode only.  Generates a random CSRF state token, stores it in
-        the in-memory ``_auth_login_states`` dict, then redirects the browser
-        to Google's consent page requesting identity scopes only.
-        """
-        if IS_DESKTOP:
-            self._send_json({'error': 'Not found'}, 404)
-            return
-
-        import secrets as _secrets
-        import auth as _auth
-
-        state = _secrets.token_urlsafe(32)
-        _auth_login_states[state] = True
-
-        try:
-            url = _auth.build_auth_login_url(state)
-        except Exception as e:
-            print(f'  [auth] Failed to build login URL: {e}')
-            detail = urllib.parse.quote(str(e)[:200])
-            self.send_response(302)
-            self.send_header('Location', f'/?auth_error=config&detail={detail}')
-            self.end_headers()
-            return
-
-        self.send_response(302)
-        self.send_header('Location', url)
-        self.end_headers()
+        """Legacy collab-v1 Google app-login is disabled on this branch."""
+        self._send_json({'error': 'Supabase Auth login is handled by the client'}, 404)
 
     def _handle_auth_google_callback(self):
-        """
-        Handle the Google app-login OAuth callback.
-
-        Server mode only.  Validates the CSRF state, exchanges the code for an
-        ID token, upserts the user record, sets a placeholder session cookie
-        (``user_id=<uuid>``; proper signed sessions will be added in #205), then
-        redirects to ``/``.
-        """
-        if IS_DESKTOP:
-            self._send_json({'error': 'Not found'}, 404)
-            return
-
-        import auth as _auth
-
-        qs     = urllib.parse.urlparse(self.path).query
-        params = urllib.parse.parse_qs(qs)
-
-        error = params.get('error', [None])[0]
-        code  = params.get('code',  [None])[0]
-        state = params.get('state', [None])[0]
-
-        # User denied consent or other OAuth error
-        if error or not code:
-            self.send_response(302)
-            self.send_header('Location', '/?auth_error=denied')
-            self.end_headers()
-            return
-
-        # Validate CSRF state
-        if not state or not _auth_login_states.pop(state, False):
-            self.send_response(302)
-            self.send_header('Location', '/?auth_error=state_mismatch')
-            self.end_headers()
-            return
-
-        try:
-            claims = _auth.exchange_auth_code(code)
-            user   = _auth.upsert_user(claims)
-        except ValueError as e:
-            print(f'  [auth] App-login rejected: {e}')
-            allowed_domain = getattr(_auth, 'ALLOWED_DOMAIN', 'visaliacrc.com')
-            body = (
-                '<!DOCTYPE html><html><head><title>Access Denied</title></head><body>'
-                '<h1>Access denied</h1>'
-                f'<p>Only @{allowed_domain} Google accounts may sign in.</p>'
-                '<p><a href="/auth/google/login">Try a different account</a></p>'
-                '</body></html>'
-            ).encode('utf-8')
-            self.send_response(403)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_header('Content-Length', str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-            return
-        except Exception as e:
-            print(f'  [auth] App-login failed: {e}')
-            detail = urllib.parse.quote(str(e)[:200])
-            self.send_response(302)
-            self.send_header('Location', f'/?auth_error=token&detail={detail}')
-            self.end_headers()
-            return
-
-        user_id = user['id']
-        print(f'  [auth] App-login success: {user["email"]} (id={user_id})')
-
-        token = _auth.create_session(user_id)
-        secure_flag = '; Secure' if os.environ.get('HTTPS', '').lower() == 'true' else ''
-        self.send_response(302)
-        self.send_header(
-            'Set-Cookie',
-            f'bg_session={token}; Path=/; HttpOnly; SameSite=Lax{secure_flag}',
-        )
-        self.send_header('Location', '/')
-        self.end_headers()
+        """Legacy collab-v1 Google app-login is disabled on this branch."""
+        self._send_json({'error': 'Supabase Auth login is handled by the client'}, 404)
 
     def _handle_api_me(self):
         """
         Return the currently authenticated user.
 
         In desktop mode returns ``{"mode": "desktop", "user": null}``.
-        In server mode parses the ``bg_session`` cookie, returns the user dict
-        on success, or 401 if the session is missing/expired.
+        In server mode verifies the Supabase Bearer token and returns the
+        authenticated user and workspace identity.
         """
         if IS_DESKTOP:
             self._send_json({'mode': 'desktop', 'user': None})
             return
 
-        import auth as _auth
-
-        cookie_header = self.headers.get('Cookie', '')
-        user = _auth.get_request_user(cookie_header)
+        user = self._require_auth()
         if user is None:
-            self._send_json({'error': 'Unauthenticated'}, 401)
             return
 
         self._send_json({
             'mode': 'server',
-            'user': {
-                'id':          user['id'],
-                'email':       user['email'],
-                'displayName': user['display_name'],
-                'avatarUrl':   user['avatar_url'],
-                'domain':      user['domain'],
-            },
+            'user_id': user['id'],
+            'email': user.get('email') or '',
+            'workspace_id': user.get('workspace_id'),
+            'role': user.get('role') or '',
         })
 
     def _handle_auth_logout(self):
         """
-        Log out the current user by deleting their server-side session.
+        Acknowledge logout requests.
 
-        Parses the ``bg_session`` cookie, calls ``delete_session``, clears the
-        cookie, and returns ``{"ok": true}``.  Always returns 200 (idempotent).
+        Supabase Auth owns client session state on this branch, so the server
+        has no session row or cookie to delete. Always returns 200.
         """
-        import auth as _auth
-
-        cookie_header = self.headers.get('Cookie', '')
-        token = None
-        for part in cookie_header.split(';'):
-            part = part.strip()
-            if '=' not in part:
-                continue
-            name, _, value = part.partition('=')
-            if name.strip() == 'bg_session':
-                token = value.strip()
-                break
-
-        if token:
-            try:
-                _auth.delete_session(token)
-            except Exception as e:
-                print(f'  [auth] Logout session delete error (ignored): {e}')
-
-        # Clear the cookie by setting an expired date
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
-        self.send_header(
-            'Set-Cookie',
-            'bg_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
-        )
         self._cors_headers()
         body = b'{"ok": true}'
         self.send_header('Content-Length', str(len(body)))

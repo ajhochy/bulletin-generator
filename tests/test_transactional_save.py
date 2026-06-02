@@ -469,6 +469,9 @@ class TestPostProjectsServerMode:
         handler._handle_post_projects = _types.MethodType(
             Handler._handle_post_projects, handler
         )
+        handler._storage_for_user = _types.MethodType(
+            Handler._storage_for_user, handler
+        )
         return handler, responses
 
     def _existing_project(self, revision: int) -> dict:
