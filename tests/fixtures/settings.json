@@ -1,0 +1,16 @@
+{
+  "churchName": "Visalia CRC",
+  "staffData": [],
+  "servingTeamFilter": "",
+  "typeFormats": {},
+  "docTemplate": "Classic",
+  "giveOnlineUrl": "https://example.com/give",
+  "calUrls": [],
+  "calExclude": [],
+  "googleDriveFolderId": "",
+  "editorDisplayName": "Test User",
+  "pcoAccessToken": "tok_abc",
+  "pcoRefreshToken": "ref_abc",
+  "googleAccessToken": "goog_abc",
+  "googleRefreshToken": "gref_abc"
+}

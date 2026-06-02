@@ -315,6 +315,11 @@ function initAppShell() {
 }
 
 async function startApp() {
+  // Auth gate: show login screen if unauthenticated in server mode.
+  // initAuth() returns false when the user must log in first.
+  const authenticated = await initAuth();
+  if (!authenticated) return;
+
   initAppShell();
   initFormattingControls();
   initStaffEditor();

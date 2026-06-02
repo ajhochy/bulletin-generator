@@ -122,26 +122,131 @@ If that conversion cannot run, the build falls back to `Bulletin Generator.icns`
 
 Users sign in with their own Planning Center and Google accounts through the packaged app. They do not need to create or paste their own API keys or OAuth client credentials.
 
-### Docker
+### Docker (server mode)
 
-Run with Docker Compose:
+Server mode requires Postgres and Google Workspace for user authentication.
+
+#### Environment variables
+
+Copy the example env file and set all required values before starting:
 
 ```bash
-docker compose up --build
+cp .env.example .env
 ```
 
-Then open:
+**Required for server mode:**
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Full Postgres connection URL (auto-built from `POSTGRES_*` vars by default) |
+| `POSTGRES_DB` | Postgres database name (default: `bulletindb`) |
+| `POSTGRES_USER` | Postgres username (default: `bulletin`) |
+| `POSTGRES_PASSWORD` | Postgres password — **change before deploying** |
+| `APP_URL` | Public URL of your deployment, e.g. `https://bulletin.yourchurch.org` |
+| `AUTH_GOOGLE_CLIENT_ID` | OAuth client ID for app login (Google Workspace identity) |
+| `AUTH_GOOGLE_CLIENT_SECRET` | OAuth client secret for app login |
+| `AUTH_GOOGLE_REDIRECT_URI` | Must be `APP_URL/auth/google/callback` |
+| `GOOGLE_WORKSPACE_DOMAIN` | Domain to restrict logins, e.g. `yourchurch.org` |
+
+**Two separate Google OAuth flows — do not mix them up:**
+
+- **App login** (`AUTH_GOOGLE_*`): authenticates users into the app itself. Uses identity scopes only (`openid email profile`). Redirect URI: `APP_URL/auth/google/callback`.
+- **Calendar/Drive integration** (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`): connects the shared Google Calendar feed. Uses calendar+drive scopes. Redirect URI: `APP_URL/oauth/google/callback`.
+
+These may point to the same Google OAuth client or to separate ones. Set them separately.
+
+**Also required (PCO):**
+
+| Variable | Purpose |
+|----------|---------|
+| `PCO_CLIENT_ID` | Planning Center OAuth client ID |
+| `PCO_CLIENT_SECRET` | Planning Center OAuth client secret |
+
+#### First-run steps
+
+1. Copy and edit the env file:
+
+```bash
+cp .env.example .env
+# Set POSTGRES_PASSWORD, APP_URL, AUTH_GOOGLE_*, GOOGLE_WORKSPACE_DOMAIN,
+# GOOGLE_CLIENT_ID/SECRET, PCO_CLIENT_ID/SECRET
+```
+
+2. Register OAuth redirect URIs in Google Cloud Console:
+   - App login callback: `APP_URL/auth/google/callback`
+   - Calendar/Drive callback: `APP_URL/oauth/google/callback`
+
+3. Register the PCO redirect URI in Planning Center:
+   - `APP_URL/oauth/pco/callback`
+
+4. Start all services:
+
+```bash
+docker compose up -d
+```
+
+5. Run the one-time data migration (only needed when upgrading from a pre-Postgres deployment with existing JSON data):
+
+```bash
+# Preview what will be migrated (no writes):
+docker compose exec app python -m migrations.run_all_migrations --dry-run
+
+# Migrate (creates a timestamped backup first):
+docker compose exec app python -m migrations.run_all_migrations
+```
+
+The migration creates a backup at `data/backups/TIMESTAMP/` before writing anything to Postgres. On a fresh deployment with no legacy JSON data, skip this step.
+
+6. Open the app:
 
 ```text
 http://localhost:8080/
 ```
 
-The Compose setup mounts `./data` into the container so working data survives container rebuilds.
-The Docker build now also runs the frontend `vite` build, so JS bundle regressions fail during image creation instead of only at runtime.
+#### Postgres storage
+
+The `postgres` service uses a named Docker volume (`postgres_data`) for durable database storage. Do not run `docker compose down -v` — the `-v` flag removes named volumes and will destroy your database.
+
+To back up the database:
+
+```bash
+docker compose exec postgres pg_dump -U bulletin bulletindb > backup.sql
+```
+
+To restore:
+
+```bash
+docker compose exec -T postgres psql -U bulletin bulletindb < backup.sql
+```
+
+#### What is stored in Postgres (server mode)
+
+- Projects, project revision history
+- Settings (shared deployment-wide)
+- Announcements, songs, templates
+- Font file metadata (binary font files remain on disk)
+- Users and sessions (auth)
+
+#### What stays on disk
+
+- Font binary files: `data/fonts/` (mounted into the container via `./data`)
+- Migration backups: `data/backups/`
+
+If `DATABASE_URL` is missing when `APP_MODE=server`, the server exits immediately with a clear error message pointing to `.env.example`.
+
+The Docker build runs the frontend `vite` build during image creation, so JS bundle regressions fail at build time rather than at runtime.
+
+#### Rollback
+
+1. Restore Postgres from a `pg_dump` backup.
+2. Restore JSON source files from `data/backups/TIMESTAMP/` if needed.
+3. Restart the container: `docker compose up -d`.
 
 ## Data and storage
 
-The app uses JSON-backed local state for most editable content.
+### Desktop mode
+
+The app uses JSON-backed local state for all editable content.
 
 Common local files include:
 
@@ -157,6 +262,18 @@ Committed example files are included as safe templates:
 - `data/settings.example.json`
 
 In packaged desktop mode, the server stores writable data in the application support directory on macOS (`~/Library/Application Support/BulletinGenerator/`).
+
+### Server mode
+
+In server mode (`APP_MODE=server`), editable content is stored in Postgres:
+
+- Projects (with full revision history)
+- Announcements, songs, templates
+- Settings (shared deployment-wide)
+- Font file metadata (binary files remain on disk at `data/fonts/`)
+- Users and sessions
+
+JSON files in `data/` are only used during the one-time migration from a legacy JSON-backed deployment. Font binary files at `data/fonts/` are always read from disk regardless of mode.
 
 ## CI and releases
 

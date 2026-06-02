@@ -4,9 +4,155 @@ function _updateFileDirtyDot() {
   if (!dot) return;
   const stale = document.getElementById('stale-banner');
   const conflict = document.getElementById('conflict-banner');
+  const conflictDialog = document.getElementById('conflict-dialog');
   const active = (stale && stale.style.display !== 'none' && stale.textContent.trim()) ||
-                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim());
+                 (conflict && conflict.style.display !== 'none' && conflict.textContent.trim()) ||
+                 (conflictDialog && conflictDialog.style.display !== 'none');
   dot.style.display = active ? 'inline-block' : 'none';
+}
+
+// ─── Conflict summary helper ──────────────────────────────────────────────────
+// Returns a short plain-text summary comparing local and server state.
+// Used inside the conflict dialog to give the user context before deciding.
+function buildConflictSummary(local, server) {
+  const localItems  = Array.isArray(local  && local.items)  ? local.items  : [];
+  const serverItems = Array.isArray(server && server.items) ? server.items : [];
+
+  const localCount  = localItems.length;
+  const serverCount = serverItems.length;
+
+  let itemMsg;
+  if (serverCount === localCount) {
+    itemMsg = `Both versions have ${localCount} item${localCount !== 1 ? 's' : ''}.`;
+  } else {
+    itemMsg = `Server has ${serverCount} item${serverCount !== 1 ? 's' : ''} (you have ${localCount}).`;
+  }
+
+  const serverDate = (server && server.svcDate) || '';
+  const localDate  = (local  && local.svcDate)  || '';
+  let dateMsg = '';
+  if (serverDate) {
+    dateMsg = serverDate === localDate
+      ? ` Service date: ${serverDate}.`
+      : ` Server service date: ${serverDate}${localDate ? ` (yours: ${localDate})` : ''}.`;
+  }
+
+  return itemMsg + dateMsg;
+}
+
+// ─── Conflict dialog ──────────────────────────────────────────────────────────
+// Shows a modal letting the user resolve a 409 conflict without losing work.
+// localSnapshot  — result of collectCurrentProjectState() captured before the failing save
+// serverInfo     — 409 response body: { serverRevision, serverUpdatedAt, serverUpdatedBy }
+// project        — the project object that was being saved (has .id, .name)
+function showConflictDialog(localSnapshot, serverInfo, project) {
+  const dialog       = document.getElementById('conflict-dialog');
+  const whoEl        = document.getElementById('conflict-dialog-who');
+  const summaryEl    = document.getElementById('conflict-dialog-summary');
+  const reviewResult = document.getElementById('conflict-dialog-review-result');
+  const btnReview    = document.getElementById('conflict-btn-review');
+  const btnCopy      = document.getElementById('conflict-btn-copy');
+  const btnReplace   = document.getElementById('conflict-btn-replace');
+
+  if (!dialog) return; // guard against missing HTML
+
+  // Reset dialog state
+  summaryEl.style.display   = 'none';
+  summaryEl.textContent     = '';
+  reviewResult.style.display = 'none';
+  reviewResult.innerHTML    = '';
+
+  // Who / when line
+  const by   = serverInfo && serverInfo.serverUpdatedBy ? serverInfo.serverUpdatedBy : null;
+  const when = serverInfo && serverInfo.serverUpdatedAt ? shortTimestamp(serverInfo.serverUpdatedAt) : null;
+  whoEl.textContent = [by ? `Saved by ${by}` : null, when ? `at ${when}` : null].filter(Boolean).join(' ') || '';
+
+  // ── "Review latest" button ─────────────────────────────────────────────────
+  const onReview = () => {
+    btnReview.disabled = true;
+    btnReview.textContent = 'Loading…';
+    apiFetch('/api/projects').then(d => {
+      const fresh = (d.projects || []).find(p => p.id === project.id);
+      if (!fresh || !fresh.state) {
+        reviewResult.textContent = 'Could not load server version.';
+        reviewResult.style.display = '';
+        return;
+      }
+      const summary = buildConflictSummary(localSnapshot, fresh.state);
+      const serverTitle = fresh.state.svcTitle || fresh.name || '(untitled)';
+      reviewResult.innerHTML = `<strong>Server version:</strong> ${esc(serverTitle)}<br>${esc(summary)}`;
+      reviewResult.style.display = '';
+    }).catch(() => {
+      reviewResult.textContent = 'Could not load server version.';
+      reviewResult.style.display = '';
+    }).finally(() => {
+      btnReview.disabled = false;
+      btnReview.textContent = 'Review latest';
+    });
+  };
+
+  // ── "Save as my copy" button ───────────────────────────────────────────────
+  const onCopy = () => {
+    const ts = nowIso();
+    const originalName = project.name || suggestedProjectName();
+    const copyName = 'Copy of ' + originalName;
+    const copyProject = {
+      id: generateProjectId(),
+      name: copyName,
+      createdAt: ts,
+      updatedAt: ts,
+      visibility: 'private',
+      state: localSnapshot,
+    };
+    projects.unshift(copyProject);
+    _loadedRevision = null; // reset so the copy saves cleanly
+    // Switch active project to the copy so the user keeps editing their work
+    activeProjectId = copyProject.id;
+    bulletinTitleInput.value = copyName;
+    storeActiveProjectId();
+    saveProjectToServer(copyProject);
+    renderProjectSelect();
+    setStatus(`Saved as "${copyName}".`, 'success');
+    _closeConflictDialog();
+  };
+
+  // ── "Replace with latest" button ───────────────────────────────────────────
+  const onReplace = () => {
+    if (!confirm('Replace your local changes with the server version? Your local edits will be lost.')) return;
+    apiFetch('/api/projects').then(d => {
+      const fresh = (d.projects || []).find(p => p.id === project.id);
+      if (!fresh) { loadProjectById(project.id); _closeConflictDialog(); return; }
+      projects = projects.map(p => p.id === fresh.id ? fresh : p);
+      loadProjectById(fresh.id);
+      _closeConflictDialog();
+    }).catch(() => {
+      loadProjectById(project.id);
+      _closeConflictDialog();
+    });
+  };
+
+  // Clone buttons to remove old listeners, then re-attach
+  const freshReview  = btnReview.cloneNode(true);
+  const freshCopy    = btnCopy.cloneNode(true);
+  const freshReplace = btnReplace.cloneNode(true);
+  btnReview.replaceWith(freshReview);
+  btnCopy.replaceWith(freshCopy);
+  btnReplace.replaceWith(freshReplace);
+  freshReview.addEventListener('click', onReview);
+  freshCopy.addEventListener('click', onCopy);
+  freshReplace.addEventListener('click', onReplace);
+
+  dialog.style.display = 'flex';
+  _updateFileDirtyDot();
+}
+
+function _closeConflictDialog() {
+  const dialog = document.getElementById('conflict-dialog');
+  if (dialog) dialog.style.display = 'none';
+  // Also hide legacy conflict-banner if it's still in DOM
+  const banner = document.getElementById('conflict-banner');
+  if (banner) banner.style.display = 'none';
+  _updateFileDirtyDot();
 }
 
 // ─── Sync diff helper ─────────────────────────────────────────────────────────
@@ -170,6 +316,11 @@ async function saveProjectToServer(project) {
     return;
   }
   _saveInFlight = true;
+  // Capture local state before the network round-trip so that if a 409 is
+  // returned, the conflict dialog has an accurate snapshot of what the user
+  // had at the moment of conflict (not whatever the editor state is after the
+  // async await returns, which may have drifted).
+  const localSnapshot = collectCurrentProjectState();
   try {
     const requestProject = buildProjectSaveRequestCore(project, {
       isServerMode: isServerMode(),
@@ -187,7 +338,7 @@ async function saveProjectToServer(project) {
     _loadedRevision = saveState.loadedRevision;
     if (stored && saveState.storedRevision !== null) stored.revision = saveState.storedRevision;
     if (saveState.hideStaleBanner) document.getElementById('stale-banner').style.display = 'none';
-    if (saveState.hideConflictBanner) document.getElementById('conflict-banner').style.display = 'none';
+    if (saveState.hideConflictBanner) _closeConflictDialog();
     _updateFileDirtyDot();
   } catch (err) {
     const failure = deriveProjectSaveFailureCore({
@@ -195,29 +346,11 @@ async function saveProjectToServer(project) {
       isDesktopMode: isDesktopMode(),
     });
     if (failure.type === 'conflict') {
-      const banner = document.getElementById('conflict-banner');
-      banner.innerHTML = '';
-      const bannerText = document.createTextNode(failure.message);
-      banner.appendChild(bannerText);
-      banner.style.display = '';
-      const reloadLink = document.createElement('a');
-      reloadLink.href = '#';
-      reloadLink.textContent = ' Reload latest';
-      reloadLink.style.marginLeft = '0.4rem';
-      reloadLink.addEventListener('click', e => {
-        e.preventDefault();
-        // Fetch fresh state from server (local cache may be stale — stale check only
-        // updates metadata, not the full project state) then show a diff before applying.
-        apiFetch('/api/projects').then(d => {
-          const fresh = (d.projects || []).find(p => p.id === project.id);
-          if (!fresh) { loadProjectById(project.id); return; }
-          if (!confirm(buildSyncDiffMessage(fresh))) return;
-          projects = projects.map(p => p.id === fresh.id ? fresh : p);
-          loadProjectById(fresh.id);
-        }).catch(() => loadProjectById(project.id));
-      });
-      banner.appendChild(reloadLink);
-      _updateFileDirtyDot();
+      // Parse 409 response body if available
+      let serverInfo = {};
+      try { serverInfo = (err.responseBody && typeof err.responseBody === 'object') ? err.responseBody : {}; } catch (_) {}
+      showConflictDialog(localSnapshot, serverInfo, project);
+      // Do not re-throw — the dialog handles all recovery paths
     } else {
       setStatus(failure.message, 'error');
     }
@@ -343,7 +476,8 @@ function saveCurrentProject(saveAs = false) {
       name: nameToUse,
       createdAt: ts,
       updatedAt: ts,
-      createdBy: isServerMode() ? (_editorDisplayName || '') : undefined,
+      // createdBy is intentionally omitted: in server mode the server derives
+      // owner and visibility from the authenticated session, not the client payload.
       state,
     };
     _loadedRevision = null;
@@ -465,6 +599,37 @@ function loadProjectById(id) {
   startStaleCheck();
 }
 
+// ─── Relative time formatter ─────────────────────────────────────────────────
+// Returns a short human-readable relative time string, e.g. "just now", "3m ago".
+// Pure function — kept in sync with src/js/modules/stale-poll-core.js (which is
+// the testable version of the same logic).
+function _staleRelativeTime(isoString, nowMs = Date.now()) {
+  if (!isoString) return '';
+  const then = new Date(isoString);
+  if (isNaN(then.getTime())) return '';
+  const diffMs = nowMs - then.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  return `${diffDay}d ago`;
+}
+
+// ─── Stale banner message builder ────────────────────────────────────────────
+// Builds the display string shown in the stale banner, e.g.:
+//   "Updated by alice@example.com · 3m ago"
+// Pure function — kept in sync with src/js/modules/stale-poll-core.js.
+function _buildStaleBannerWho(updatedByEmail, updatedByName, updatedAt) {
+  const who = updatedByEmail || updatedByName || 'Someone';
+  const when = _staleRelativeTime(updatedAt);
+  let msg = `Updated by ${who}`;
+  if (when) msg += ` · ${when}`;
+  return msg;
+}
+
 function startStaleCheck() {
   if (!isServerMode()) return;
   clearInterval(_staleCheckTimer);
@@ -472,28 +637,39 @@ function startStaleCheck() {
     if (!activeProjectId) return;
     try {
       const staleBanner = document.getElementById('stale-banner');
-      // Poll lightweight metadata only — the full /api/projects payload embeds
-      // base64 images and is multi-megabyte. We only need revision/updatedAt here.
-      const data = await apiFetch('/api/projects/revisions');
-      const serverProject = (data.projects || []).find(p => p.id === activeProjectId);
-      if (!serverProject) {
-        staleBanner.style.display = 'none';
-        _updateFileDirtyDot();
+
+      // Use the lightweight per-project revision endpoint — no state JSONB transferred.
+      // (The bulk /api/projects/revisions endpoint remains available on the server
+      // but the per-project endpoint provides auth gating and per-project targeting.)
+      let revData;
+      try {
+        revData = await apiFetch(`/api/projects/${activeProjectId}/revision`);
+      } catch (pollErr) {
+        // 403/404: project is gone or inaccessible — stop polling.
+        if (pollErr.status === 403 || pollErr.status === 404) {
+          clearInterval(_staleCheckTimer);
+          _staleCheckTimer = null;
+          setStatus('Project is no longer accessible.', 'info');
+        }
+        // Any other error: silently skip this tick.
         return;
       }
-      // Update local copy with latest metadata
-      const local = projectById(activeProjectId);
-      if (local) {
-        local.updatedAt = serverProject.updatedAt;
-        local.updatedBy = serverProject.updatedBy;
-        local.revision  = serverProject.revision;
-      }
-      const serverRev = serverProject.revision;
+
+      const serverRev = revData.revision;
       if (typeof serverRev === 'number' && _loadedRevision !== null && serverRev > _loadedRevision) {
-        const by = serverProject.updatedBy ? ` by ${serverProject.updatedBy}` : '';
-        const when = shortTimestamp(serverProject.updatedAt) || '';
-        staleBanner.innerHTML = `This bulletin was updated${by}${when ? ' at ' + when : ''}. <a href="#" style="color:inherit">Reload latest</a>`;
-        staleBanner.querySelector('a').addEventListener('click', e => {
+        const whoMsg = _buildStaleBannerWho(
+          revData.updated_by_email,
+          revData.updated_by_name,
+          revData.updated_at,
+        );
+        staleBanner.innerHTML = '';
+        const textSpan = document.createElement('span');
+        textSpan.textContent = `${whoMsg}. `;
+        const reloadLink = document.createElement('a');
+        reloadLink.href = '#';
+        reloadLink.style.color = 'inherit';
+        reloadLink.textContent = 'Reload latest';
+        reloadLink.addEventListener('click', e => {
           e.preventDefault();
           apiFetch('/api/projects').then(d => {
             const fresh = (d.projects || []).find(p => p.id === activeProjectId);
@@ -503,13 +679,27 @@ function startStaleCheck() {
             loadProjectById(fresh.id);
           }).catch(err => setStatus('Reload failed: ' + (err.message || err), 'error'));
         });
+        const dismissLink = document.createElement('a');
+        dismissLink.href = '#';
+        dismissLink.style.cssText = 'color:inherit;margin-left:0.75em';
+        dismissLink.textContent = 'Dismiss';
+        dismissLink.addEventListener('click', e => {
+          e.preventDefault();
+          staleBanner.style.display = 'none';
+          _updateFileDirtyDot();
+        });
+        staleBanner.appendChild(textSpan);
+        staleBanner.appendChild(reloadLink);
+        staleBanner.appendChild(dismissLink);
         staleBanner.style.display = '';
         _updateFileDirtyDot();
+        // NOTE: do NOT update _loadedRevision here — only update it when the
+        // user explicitly reloads the project via loadProjectById().
       } else {
         staleBanner.style.display = 'none';
         _updateFileDirtyDot();
       }
-    } catch (e) { /* ignore poll errors */ }
+    } catch (e) { /* ignore unexpected poll errors */ }
   }, 30000);
 }
 
@@ -594,35 +784,36 @@ async function restoreOnStartup() {
 
   let restored = false;
 
-  // 1. Try the project that was last active (stored in localStorage by this browser)
-  const rememberedActive = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
-  if (rememberedActive) {
-    const activeProject = projectById(rememberedActive);
-    if (activeProject) {
-      activeProjectId = activeProject.id;
-      _loadedRevision = typeof activeProject.revision === 'number' ? activeProject.revision : null;
-      applyProjectState(activeProject.state || {});
-      restored = true;
-      setStatus(`Loaded "${activeProject.name}".`, 'success');
-      startStaleCheck();
-    }
-  }
+  const rememberedId = (() => {
+    try { return localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || ''; } catch (_) { return ''; }
+  })();
 
-  // 2. If no remembered project (fresh browser / different machine), auto-load
-  //    the most recently updated server project so work is never invisible.
-  if (!restored && projects.length > 0) {
-    const newest = projects
-      .slice()
-      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
-    activeProjectId = newest.id;
-    _loadedRevision = typeof newest.revision === 'number' ? newest.revision : null;
-    applyProjectState(newest.state || {});
+  // Decide what to do based on remembered project ID and deployment mode.
+  // deriveStartupRestore() encodes the safety rule: in server mode we never
+  // auto-load the newest workspace project for a fresh browser session, because
+  // that project may belong to a different user.
+  const decision = deriveStartupRestoreCore({ rememberedId, projects, isServerMode: isServerMode() });
+
+  if (decision.action === 'load' || decision.action === 'load-newest') {
+    const project = decision.project;
+    activeProjectId = project.id;
+    _loadedRevision = typeof project.revision === 'number' ? project.revision : null;
+    applyProjectState(project.state || {});
+    bulletinTitleInput.value = project.name;
     restored = true;
-    setStatus(`Loaded "${newest.name}".`, 'success');
+    setStatus(`Loaded "${project.name}".`, 'success');
+    storeActiveProjectId();
     startStaleCheck();
+  } else if (decision.action === 'blank' && decision.reason === 'not-found') {
+    // Remembered project is gone or inaccessible — clear the stale reference
+    // and show a non-blocking notice so the user understands what happened.
+    try { localStorage.removeItem(ACTIVE_PROJECT_STORAGE_KEY); } catch (_) {}
+    setStatus(decision.statusMessage, 'info');
+    // Fall through to draft / blank below
   }
+  // decision.action === 'blank' with reason 'none-remembered': just start blank.
 
-  // 3. Fall back to unsaved local draft
+  // Fall back to unsaved local draft if no project was restored
   if (!restored) {
     restored = loadDraftState();
     if (restored) setStatus('Restored unsaved draft.', 'success');
@@ -640,6 +831,8 @@ async function restoreOnStartup() {
 
 let _projectsInitialized = false;
 
+// ─── Files sub-tab state (server mode) ───────────────────────────────────────
+let _filesActiveTab = 'my'; // 'my' | 'workspace'
 
 // ─── Files page ───────────────────────────────────────────────────────────────
 function updateBulkBar() {
@@ -653,12 +846,67 @@ function updateBulkBar() {
   if (selAllBtn) selAllBtn.textContent = (n === projects.length && projects.length > 0) ? 'Deselect All' : 'Select All';
 }
 
+function _initFilesSubtabs() {
+  const subtabsEl = document.getElementById('files-subtabs');
+  if (!subtabsEl) return;
+
+  if (!isServerMode()) {
+    // Desktop: keep sub-tabs hidden
+    subtabsEl.style.setProperty('display', 'none', 'important');
+    return;
+  }
+
+  // Show the sub-tab bar
+  subtabsEl.style.removeProperty('display');
+
+  // Wire buttons (idempotent — avoid double-binding by cloning)
+  subtabsEl.querySelectorAll('.files-subtab-btn').forEach(btn => {
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener('click', () => {
+      _filesActiveTab = fresh.dataset.subtab;
+      _updateSubtabActive();
+      renderFilesList();
+    });
+  });
+
+  _updateSubtabActive();
+}
+
+function _updateSubtabActive() {
+  const subtabsEl = document.getElementById('files-subtabs');
+  if (!subtabsEl) return;
+  subtabsEl.querySelectorAll('.files-subtab-btn').forEach(btn => {
+    const isActive = btn.dataset.subtab === _filesActiveTab;
+    btn.className = 'files-subtab-btn btn btn-sm ' + (isActive ? 'btn-primary' : 'btn-ghost');
+  });
+}
+
 function renderFilesList() {
+  // Ensure sub-tabs are wired up each time the Files page is rendered
+  _initFilesSubtabs();
+
   const list    = document.getElementById('files-list');
   const countEl = document.getElementById('files-count');
   if (!list) return;
 
-  const sorted = projects.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+  const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+
+  // Filter projects for server-mode tabs
+  let displayProjects = projects.slice();
+  if (isServerMode() && currentUser) {
+    if (_filesActiveTab === 'my') {
+      // All projects owned by the current user (private or workspace)
+      displayProjects = displayProjects.filter(p =>
+        !p.owner_user_id || String(p.owner_user_id) === String(currentUser.id)
+      );
+    } else {
+      // Workspace tab: all projects with workspace visibility
+      displayProjects = displayProjects.filter(p => p.visibility === 'workspace');
+    }
+  }
+
+  const sorted = displayProjects.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
   if (countEl) {
     countEl.textContent = sorted.length === 0
@@ -667,13 +915,15 @@ function renderFilesList() {
   }
 
   if (sorted.length === 0) {
+    const emptyMsg = isServerMode() && _filesActiveTab === 'workspace'
+      ? 'No workspace projects yet. Share a private project to make it visible to your team.'
+      : 'No saved projects yet. Use the Booklet Editor to build a bulletin, then save it as a project.';
     list.innerHTML = `
       <div class="files-empty flex flex-col items-center justify-center py-16 text-center">
-        <div class="files-empty-title text-lg font-semibold mb-2">No saved projects yet.</div>
-        <div class="files-empty-sub text-sm text-base-content/60 mb-4">Use the Booklet Editor to build a bulletin, then save it as a project.</div>
-        <button class="btn btn-sm btn-primary files-empty-goto">→ Go to Booklet Editor</button>
+        <div class="files-empty-title text-lg font-semibold mb-2">${esc(emptyMsg)}</div>
+        ${_filesActiveTab !== 'workspace' ? '<button class="btn btn-sm btn-primary files-empty-goto">→ Go to Booklet Editor</button>' : ''}
       </div>`;
-    list.querySelector('.files-empty-goto').addEventListener('click', () => {
+    list.querySelector('.files-empty-goto')?.addEventListener('click', () => {
       document.querySelector('.tab-btn[data-tab="page-editor"]').click();
     });
     return;
@@ -686,11 +936,42 @@ function renderFilesList() {
     const date     = state.svcDate  || '';
     const title    = state.svcTitle || '';
     const count    = Array.isArray(state.items) ? state.items.length : 0;
+
+    // Visibility + ownership
+    const isPrivate = project.visibility !== 'workspace';
+    const isOwnerOrLegacy = !project.owner_user_id
+      || (currentUser && String(project.owner_user_id) === String(currentUser.id));
+
+    // Determine whether to show "Share to Workspace" button:
+    //   - Server mode only
+    //   - Project must be private (visibility !== 'workspace')
+    //   - Current user must be the owner, OR project has no owner (legacy import)
+    const showShareBtn = isServerMode() && isPrivate && isOwnerOrLegacy;
+
+    // Build meta parts
+    const lastEditorEmail = project.updated_by_email || project.updatedBy || null;
+    const lastEditedAt    = project.updated_at || project.updatedAt || null;
+    const relTime         = (typeof formatRelativeTime === 'function') ? formatRelativeTime(lastEditedAt) : shortTimestamp(lastEditedAt);
     const metaParts = [
       date && title ? `${date} · ${title}` : (date || title || null),
       `${count} item${count === 1 ? '' : 's'}`,
-      `updated ${shortTimestamp(project.updatedAt) || '—'}`,
     ].filter(Boolean);
+
+    // Visibility badge
+    const visibilityBadge = isServerMode()
+      ? (isPrivate
+          ? '<span class="badge badge-sm badge-ghost ml-1" title="Only you can see this project">🔒 Private</span>'
+          : '<span class="badge badge-sm badge-info ml-1" title="Visible to everyone in your workspace">Workspace</span>')
+      : '';
+
+    // Last-edited-by line (server mode only)
+    const editorMeta = isServerMode() && (lastEditorEmail || relTime)
+      ? `<div class="file-card-editor text-xs text-base-content/40 truncate mt-0.5">`
+        + (lastEditorEmail ? `edited by ${esc(lastEditorEmail)}` : '')
+        + (lastEditorEmail && relTime ? ' · ' : '')
+        + (relTime ? relTime : '')
+        + `</div>`
+      : '';
 
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
@@ -703,14 +984,17 @@ function renderFilesList() {
         <div class="file-card-name font-medium text-sm truncate">
           ${esc(project.name)}
           ${isActive ? '<span class="file-active-badge badge badge-sm badge-primary ml-1">active</span>' : ''}
+          ${visibilityBadge}
         </div>
         <div class="file-card-meta text-xs text-base-content/50 truncate">${esc(metaParts.join(' · '))}</div>
+        ${editorMeta}
       </div>
       <div class="file-card-actions flex gap-1 shrink-0">
         <button class="btn btn-xs btn-primary" data-fm="load"         data-id="${escAttr(project.id)}">Load</button>
         <button class="btn btn-xs btn-ghost"   data-fm="download-pdf" data-id="${escAttr(project.id)}">↓ PDF</button>
         <button class="btn btn-xs btn-ghost"   data-fm="download-json" data-id="${escAttr(project.id)}">↓ JSON</button>
         <button class="btn btn-xs btn-ghost"   data-fm="rename"       data-id="${escAttr(project.id)}">Rename</button>
+        ${showShareBtn ? `<button class="btn btn-xs btn-ghost" data-fm="share" data-id="${escAttr(project.id)}">Share</button>` : ''}
         <button class="btn btn-xs btn-error"   data-fm="delete"       data-id="${escAttr(project.id)}">Delete</button>
       </div>`;
 
@@ -743,6 +1027,53 @@ function downloadProjectJson(id) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * Share a private project to the workspace so all users can see it.
+ * Server mode only.  Calls POST /api/projects/{id}/share.
+ * Refreshes the project list on success.
+ */
+async function shareProjectToWorkspace(projectId) {
+  const result = await apiFetch(`/api/projects/${projectId}/share`, { method: 'POST' });
+  return result;
+}
+
+/**
+ * Fetch the revision history for a project.
+ *
+ * Returns an array of revision metadata objects:
+ *   { revision, saved_at, saved_by_email, saved_by_name, summary }
+ *
+ * The full state blob is not included — call restoreProjectRevision() to
+ * apply a specific revision.
+ *
+ * @param {string} projectId
+ * @returns {Promise<Array>} revisions array (newest first)
+ */
+async function fetchProjectHistory(projectId) {
+  const result = await apiFetch(`/api/projects/${projectId}/history`);
+  return result.revisions || [];
+}
+
+/**
+ * Restore a prior revision as the new current state.
+ *
+ * Creates a NEW revision on top (history is preserved).  Requires the
+ * caller to supply the current loaded revision so the server can detect
+ * concurrent-edit conflicts (returning 409 when stale).
+ *
+ * @param {string} projectId
+ * @param {number} revisionNumber  The target revision to restore
+ * @param {number|null} clientRevision  The last revision loaded by this client
+ * @returns {Promise<Object>}  { ok: true, project: <updated project dict> }
+ */
+async function restoreProjectRevision(projectId, revisionNumber, clientRevision) {
+  const result = await apiFetch(`/api/projects/${projectId}/restore`, 'POST', {
+    revision: revisionNumber,
+    _clientRevision: clientRevision,
+  });
+  return result;
 }
 
 function bytesToB64(bytes) {
@@ -1038,6 +1369,24 @@ function handleFilesListClick(e) {
     saveProjectToServer(proj);
     renderProjectSelect();
     setStatus(`Renamed to "${proj.name}".`, 'success');
+  } else if (action === 'share') {
+    const proj = projectById(id);
+    if (!proj) return;
+    if (!confirm(`Share "${proj.name}" to the workspace? All users will be able to see it.`)) return;
+    (async () => {
+      try {
+        const result = await shareProjectToWorkspace(id);
+        if (result && result.project) {
+          // Update local copy with new visibility
+          const idx = projects.findIndex(p => p.id === id);
+          if (idx >= 0) projects[idx] = Object.assign(projects[idx], result.project);
+        }
+        renderFilesList();
+        setStatus(`"${proj.name}" shared to workspace.`, 'success');
+      } catch (err) {
+        setStatus(err.message || 'Failed to share project.', 'error');
+      }
+    })();
   } else if (action === 'delete') {
     const proj = projectById(id);
     if (!proj) return;
