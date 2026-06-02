@@ -2,11 +2,15 @@
 db.py — Database connection helper for bulletin-generator (server mode only).
 
 Provides:
-  get_connection()   — open a psycopg3 connection from DATABASE_URL
-  transaction()      — context manager: commit on success, rollback on exception
-  health_check()     — returns {"connected": bool, "error": str|None}
-  to_jsonb(obj)      — Python object → JSON string suitable for JSONB columns
-  from_jsonb(s)      — JSON string / psycopg3 Jsonb → Python object
+  get_connection()      — open a psycopg3 connection from DATABASE_URL
+  transaction(claims)   — context manager; with claims, runs as the RLS
+                          `authenticated` role with request.jwt.claims set so
+                          auth.uid()/auth.jwt() resolve (Supabase RLS, D2)
+  admin_transaction()   — service_role/owner connection that BYPASSES RLS;
+                          seed/migration only, never from a request handler
+  health_check()        — returns {"connected": bool, "error": str|None}
+  to_jsonb(obj)         — Python object → JSON string suitable for JSONB columns
+  from_jsonb(s)         — JSON string / psycopg3 Jsonb → Python object
 
 Desktop mode: DB functions raise RuntimeError immediately rather than crashing
 on import, so the module is always importable.
@@ -68,13 +72,29 @@ def get_connection():
         )
 
     import psycopg  # noqa: PLC0415  (deferred so desktop import stays clean)
-    return psycopg.connect(url)
+    # prepare_threshold=None disables psycopg3 server-side prepared statements.
+    # The Supabase session pooler (5432) can hand the same backend to different
+    # logical sessions; a lingering prepared statement then triggers
+    # "prepared statement already exists". Disabling them avoids that edge case.
+    return psycopg.connect(url, prepare_threshold=None)
 
 
 @contextmanager
-def transaction():
+def transaction(claims=None):
     """
     Context manager that yields an open psycopg3 connection.
+
+    When ``claims`` is provided (a dict of Supabase JWT claims, at minimum
+    ``{"sub": "<user_uuid>"}``), the transaction first runs::
+
+        SET LOCAL role authenticated
+        SELECT set_config('request.jwt.claims', '<json>', true)
+
+    so Postgres RLS policies see ``auth.uid()`` / ``auth.jwt()`` for that user
+    (decision D2). The full claims dict passes through so ``auth.jwt()``-based
+    policies keep working. When ``claims`` is None the connection behaves as a
+    plain transaction (used by existing callers in auth.py / storage.py and by
+    health_check) and runs as whatever role DATABASE_URL authenticates as.
 
     On normal exit:   commits the transaction.
     On any exception: rolls back, then re-raises.
@@ -82,10 +102,67 @@ def transaction():
 
     Usage::
 
-        with transaction() as conn:
+        with transaction({"sub": user_id}) as conn:   # RLS-scoped to the user
             conn.execute("INSERT INTO ...")
+        with transaction() as conn:                    # plain transaction
+            conn.execute("SELECT 1")
     """
     conn = get_connection()
+    try:
+        if claims is not None:
+            # Role name cannot be parameterized; the value is a fixed literal.
+            conn.execute("SET LOCAL role authenticated")
+            conn.execute(
+                "SELECT set_config('request.jwt.claims', %s, true)",
+                (json.dumps(claims),),
+            )
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _admin_url() -> str:
+    """
+    Connection string for the RLS-bypassing admin path.
+
+    Prefers SUPABASE_SERVICE_ROLE_URL (a service_role connection string); falls
+    back to DATABASE_URL, which on this project authenticates as the database
+    owner and therefore also bypasses RLS. Server-side only — never bundle the
+    service_role string into the Electron app or log it.
+    """
+    url = os.environ.get("SUPABASE_SERVICE_ROLE_URL", "").strip()
+    if url:
+        return url
+    return os.environ.get("DATABASE_URL", "").strip()
+
+
+@contextmanager
+def admin_transaction():
+    """
+    Context manager yielding a connection that BYPASSES row-level security.
+
+    No JWT claims and no ``SET LOCAL role authenticated`` are issued, so the
+    connection acts as service_role / the DB owner and sees every row. Use ONLY
+    from seed / migration / admin tooling — never from a request handler in
+    server.py, or you defeat tenant isolation.
+
+    Commit/rollback/close semantics match ``transaction()``.
+    """
+    _require_server_mode()
+
+    url = _admin_url()
+    if not url:
+        raise RuntimeError(
+            "No admin connection string: set SUPABASE_SERVICE_ROLE_URL "
+            "(preferred) or DATABASE_URL."
+        )
+
+    import psycopg  # noqa: PLC0415  (deferred so desktop import stays clean)
+    conn = psycopg.connect(url, prepare_threshold=None)
     try:
         yield conn
         conn.commit()

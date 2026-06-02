@@ -126,7 +126,8 @@ class TestGetConnection:
             with patch.dict("sys.modules", {"psycopg": mock_psycopg}):
                 conn = db.get_connection()
 
-        mock_psycopg.connect.assert_called_once_with(db_url)
+        # prepare_threshold=None disables prepared statements for the pooler.
+        mock_psycopg.connect.assert_called_once_with(db_url, prepare_threshold=None)
         assert conn is mock_conn
 
 
@@ -233,3 +234,68 @@ class TestHealthCheck:
             db.health_check()
 
         mock_conn.execute.assert_called_once_with("SELECT 1")
+
+
+# ── live DB integration (issue 003): RLS claims + admin bypass ────────────────
+# These run only when DATABASE_URL points at a live Supabase project; they skip
+# cleanly otherwise, matching tests/test_migrations.py::TestIntegration and the
+# RLS isolation suite, so CI without a DB stays green.
+
+import uuid  # noqa: E402
+
+_DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+
+@pytest.mark.skipif(
+    not _DATABASE_URL,
+    reason="DATABASE_URL not set; db integration tests require a live Supabase project",
+)
+class TestDbIntegration:
+    """Exercises the real claims/admin transaction helpers against staging."""
+
+    def _db(self):
+        # Import db in server mode so IS_DESKTOP is False for these tests.
+        with patch.dict(os.environ, {"APP_MODE": "server"}):
+            import importlib
+            import db as _dbmod
+            importlib.reload(_dbmod)
+            return _dbmod
+
+    def test_health_check_connects(self):
+        db = self._db()
+        with patch.object(db, "IS_DESKTOP", False):
+            result = db.health_check()
+        assert result["connected"] is True, result
+
+    def test_transaction_sets_auth_uid(self):
+        db = self._db()
+        user_id = str(uuid.uuid4())
+        with patch.object(db, "IS_DESKTOP", False):
+            with db.transaction({"sub": user_id}) as conn:
+                got = conn.execute("select (select auth.uid())::text").fetchone()[0]
+        assert got == user_id, f"auth.uid() should be {user_id}, got {got}"
+
+    def test_admin_transaction_bypasses_rls(self):
+        db = self._db()
+        ws_name = f"db_admin_test_{uuid.uuid4().hex}"
+        with patch.object(db, "IS_DESKTOP", False):
+            # As admin (no claims, no role switch): create + read a workspace row
+            # without being a member — only possible if RLS is bypassed.
+            with db.admin_transaction() as conn:
+                ws_id = conn.execute(
+                    "insert into public.workspaces (id, name) values (gen_random_uuid(), %s) returning id",
+                    (ws_name,),
+                ).fetchone()[0]
+                claims = conn.execute(
+                    "select current_setting('request.jwt.claims', true)"
+                ).fetchone()[0]
+                visible = conn.execute(
+                    "select count(*) from public.workspaces where id = %s", (ws_id,)
+                ).fetchone()[0]
+                # cleanup within the same tx
+                conn.execute("delete from public.workspaces where id = %s", (ws_id,))
+        # Supabase seeds request.jwt.claims with an empty-string default, so an
+        # unset claim reads back as None or '' — either means the admin path set
+        # no JWT claims (it must not).
+        assert not claims, f"admin path must not set request.jwt.claims, got {claims!r}"
+        assert visible == 1, "admin path must see the row it inserted (RLS bypassed)"
