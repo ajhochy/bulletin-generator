@@ -45,6 +45,16 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 Build the remaining Supabase data tables — `project_revisions`, `workspace_settings`, `user_settings`, `announcements`, `songs`, `templates`, `fonts` — following the verified `projects` pattern (`workspace_id` + RLS via `private.is_workspace_member` + grants; `user_settings` is per-user, `project_revisions` append-only). Then Supabase Auth provider config (issues 9–12, needs dashboard setup) and adapting `storage.py`/`db.py` to set per-request `request.jwt.claims` against the new schema (issue 7). Connection + tenancy foundation + isolation are proven.
 
+## Resume in a new session
+
+- **Branch:** `feat/supabase-multitenant-electron` (pushed to `origin`). `main` + production untouched.
+- **Python:** use a 3.11 venv (`python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest`); system `python3` is 3.9 and cannot import `auth.py`.
+- **Supabase:** staging project `dgydekhfzrmeoscpgmvo` (Visalia CRC, us-west-1). `.env` (gitignored) has `DATABASE_URL` via the **session pooler** `aws-1-us-west-1.pooler.supabase.com:5432`. GitHub repo secrets set: `DATABASE_URL`, `SUPABASE_DATABASE_PW`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`. MCP config `.mcp.json` is scoped to the project (re-auth via `/mcp` if `mcp__supabase__*` tools are missing).
+- **Issues:** 19 local files in `docs/ai/generated-issues/` (001–019). To create them on GitHub: `bash scripts/create_migration_issues.sh` (idempotent; milestone "Supabase + Multi-tenant + Electron", label `supabase-migration`). NNN prefixes in titles keep the "Depends on" cross-refs resolvable.
+- **Start here:** issue **001** (critical path 001→004 = finish schema + wire the app to it). Issue 005 (Auth dashboard config) and 011 (Electron scaffold) can run in parallel.
+- **Decide before coding 008:** per-workspace allow-list shape — separate `workspace_invites` table vs JSONB on `workspace_settings`.
+- **Do NOT redo (already done):** branch merge, Supabase provisioning, app↔DB connection, tenancy foundation (`workspaces`/`workspace_members`/`profiles`/`projects` + RLS + cross-tenant isolation proven; captured in `supabase/migrations/20260602000001_tenancy_foundation.sql`).
+
 ## Recent coding-agent runs
 
 ### 2026-06-02 — supabase-integration-merge (issue 1)
