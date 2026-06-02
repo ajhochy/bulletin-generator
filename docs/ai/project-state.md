@@ -1,37 +1,58 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-02_
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
+Supabase multi-tenant + Electron migration. Branch `feat/supabase-multitenant-electron` now holds the integrated union of:
+- main's Volunteer Roles stabilization (PRs #251–#253), lightweight-poll endpoint, and planning docs
+- collab-v1's full Postgres storage layer, auth system, project history/revisions, multi-user conflict UX, and admin tooling
+
+Merge commit: `b16b842` on `feat/supabase-multitenant-electron`.
 
 Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
 
 - #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
 - #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
+- #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Merged.
 
 ## Recently completed
 
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
+- 1.12.12 release tagged.
+- collab-v1 branch merged into `feat/supabase-multitenant-electron` (commit `b16b842`). All 3 content conflicts resolved with UNION strategy.
 
 ## In progress
 
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+- `feat/supabase-multitenant-electron` — integration branch. Post-merge validation passed (939 pytest pass, 2 DB-only failures; 123 vitest pass; vite build clean; server boot 200). Ready for next Supabase migration issue.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- `_handle_get_project_revisions` (the bulk `/api/projects/revisions` endpoint from main's lightweight-poll) still reads directly from JSON file rather than routing through storage. In Postgres mode it would return all projects without auth gating. TODO marker added in server.py. This is safe for desktop mode (single-user) but must be addressed before enabling Postgres mode in production.
+- stale-poll JS now uses `/api/projects/${id}/revision` (collab-v1, per-project, requires auth). This endpoint requires `_require_auth()`. In desktop mode auth is bypassed, so this works fine. In Postgres mode, the stale-poll will now require a valid session cookie.
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through.
+- Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL. They are expected failures without a DB.
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+Continue with Supabase migration plan — next issue in the plan document.
 
 ## Recent coding-agent runs
+
+### 2026-06-02 — supabase-integration-merge (issue 1)
+- Files modified:
+  - `server.py` — resolved route table conflict: kept both `/api/projects/revisions` (exact-match, main's bulk poll endpoint) and `/api/projects/` (prefix-match, collab-v1's history/revision subrouter). Added TODO comment to `_handle_get_project_revisions` noting it should route through storage for Postgres mode.
+  - `src/js/projects.js` — resolved stale-poll conflict: adopted collab-v1's per-project `/api/projects/${id}/revision` endpoint over main's bulk-list approach; endpoint is targeted and handles 403/404 gracefully. "Reload latest" links still fetch full `/api/projects`.
+  - `tests/test_server_utils.py` — resolved test-class conflict: included both `TestProjectRevisionSummary` (5 tests, from main) and `TestValidateServerConfig` (5 tests, from collab-v1).
+- Checks run:
+  - `python3 -c "import server"` → clean
+  - `node --check src/js/projects.js` → clean
+  - `pytest` → 939 passed, 2 DB-dependent failures (test_migrations.py::TestIntegration, no DATABASE_URL)
+  - `npm test` (vitest) → 123 passed
+  - `npm run build` → vite build clean
+  - `APP_MODE=desktop python3 server.py` + `GET /api/bootstrap` → HTTP 200
+- Decisions made: adopted collab-v1's per-project stale-poll endpoint (more targeted, auth-gated) over main's bulk-list approach since the rest of the function body already used the per-project API shape. Left TODO on bulk endpoint for future storage routing.
+- Deviations from spec: none. Merge commit `b16b842`.
+- Concerns: `_handle_get_project_revisions` is not auth-gated (returns all projects' metadata). Safe for desktop-only, must fix before Postgres mode production use.
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:
