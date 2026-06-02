@@ -1,11 +1,130 @@
-# Collab v1 — Manual Steps Required
+# Bulletin Generator — Manual Steps Required
 
 This file collects every human-operator action that cannot be automated.
-Complete these before or during smoke-testing the collab-v1 branch (PR #250).
+Complete these before or during smoke-testing the current migration branch.
 
 ---
 
-## 🔐 Google OAuth Setup (required before any server-mode login works)
+## Supabase Auth Provider Setup (staging project)
+
+Applies to staging project `dgydekhfzrmeoscpgmvo` (`https://dgydekhfzrmeoscpgmvo.supabase.co`).
+This replaces the old app-login `AUTH_GOOGLE_*` flow when issues 006/007 wire
+Supabase JWT verification and frontend token handling. Do not commit provider
+secrets or SMTP credentials.
+
+### 1. Configure Supabase Auth URL settings
+
+In Supabase Dashboard → `bulletin-generator` → Authentication → URL Configuration:
+
+- Set Site URL for the current web smoke target. For local staging before the
+  Electron deep-link work, use the localhost URL that will host the app during
+  issue 007 manual smoke, for example `http://localhost:8766`.
+- Add Redirect URLs for every smoke target that will be passed as
+  `redirectTo` / `emailRedirectTo`:
+  - `http://localhost:8766`
+  - `http://localhost:8766/auth/callback` if issue 007 adds a browser callback route
+  - `bulletingen://auth-callback` only after issue 013 implements the Electron protocol handler
+- Keep production URLs out until the production host is known.
+
+### 2. Enable Google OAuth in Supabase Auth
+
+In Google Cloud Console → APIs & Services → Credentials:
+
+- Create or select an OAuth 2.0 Client ID of type `Web application`.
+- Authorized JavaScript origins:
+  - `https://dgydekhfzrmeoscpgmvo.supabase.co`
+  - the current local smoke origin, for example `http://localhost:8766`
+- Authorized redirect URI:
+  - `https://dgydekhfzrmeoscpgmvo.supabase.co/auth/v1/callback`
+- Save the Client ID and Client Secret.
+
+In Supabase Dashboard → Authentication → Providers → Google:
+
+- Enable Google.
+- Paste the Google Client ID and Client Secret.
+- Save.
+
+Manual validation:
+
+- Start a Google OAuth sign-in from the app or Supabase auth test page.
+- Complete the flow with a test Google account.
+- Confirm a session is issued and the user appears in Authentication → Users.
+
+### 3. Enable email magic links
+
+In Supabase Dashboard → Authentication → Providers → Email:
+
+- Keep Email provider enabled.
+- Use magic-link/passwordless sign-in for this migration phase.
+- Keep the default one-hour OTP expiry unless product requirements change.
+- Confirm the Magic Link email template uses the Supabase confirmation URL while
+  issue 007 uses the implicit browser flow. If issue 007 adopts PKCE, update the
+  template to send a token hash to the app callback route and exchange it there.
+
+Manual validation:
+
+- Request a magic link for a test email address.
+- Click the email link.
+- Confirm a Supabase session is issued and the user appears in Authentication → Users.
+
+### 4. Configure custom SMTP or record staging fallback
+
+Supabase's built-in mailer is a staging fallback only. Without custom SMTP,
+delivery is restricted to project team addresses and rate-limited; this is not
+usable for multi-church testing.
+
+Before broader testing, choose an SMTP provider such as Resend, AWS SES, Postmark,
+SendGrid, ZeptoMail, or Brevo. In Supabase Dashboard → Authentication → SMTP
+Settings, configure:
+
+- SMTP host
+- SMTP port, usually `587`
+- SMTP username
+- SMTP password
+- Sender email, for example `no-reply@auth.<domain>`
+- Sender name, for example `Bulletin Generator`
+
+Operational notes:
+
+- Store SMTP credentials only in the Supabase dashboard or secret manager.
+- Configure SPF, DKIM, and DMARC for the sending domain.
+- Use a dedicated auth-mail domain/address, separate from marketing email.
+- If custom SMTP is not ready, document that staging can test only with project
+  team email addresses and is subject to Supabase built-in-mailer rate limits.
+
+### 5. Enable leaked-password protection
+
+In Supabase Dashboard → Authentication → Security / Password Security:
+
+- Enable leaked-password protection if the project plan supports it.
+- If unavailable on the current Supabase plan, record this as a production
+  blocker before enabling password-based login. Google OAuth and magic links are
+  still the intended v1 login methods, but the security advisor already flagged
+  this toggle.
+
+### 6. Workspace membership strategy for v1
+
+No self-serve workspace UI is planned for v1. Workspace access is seeded manually:
+
+- Existing Visalia CRC users are inserted into `public.workspace_members` for
+  the Visalia workspace by the workspace seed/migration script.
+- New church testers are inserted into their own workspace by the same seed path.
+- Domain allow-list enforcement is deferred to issue 008. The allow-list source
+  should be either a dedicated invite/allow-list table or a documented key in
+  `workspace_settings`; decide before coding issue 008.
+- Never put authorization decisions in user-editable Supabase `user_metadata`.
+  Membership must come from database rows or trusted app metadata.
+
+Issue 005 is complete only after the dashboard validation above succeeds for
+both Google OAuth and email magic links.
+
+---
+
+## Legacy Collab-v1 Google OAuth Setup (pre-Supabase Auth)
+
+This section documents the old `auth.py` app-login flow. It remains useful for
+understanding the branch history, but it is superseded by the Supabase Auth setup
+above for the current migration.
 
 These must be done in [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
 
