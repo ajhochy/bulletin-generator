@@ -221,9 +221,14 @@ class TestAuthenticatedGetRoutes:
 
     def _call_authed(self, handler_method: str, path: str = "/", **read_json_returns):
         handler = _make_handler(cookie="bg_session=valid", path=path)
+        mock_store = MagicMock()
+        mock_store.list_projects.return_value = read_json_returns.get("return_value", [])
+        mock_store.list_songs.return_value = read_json_returns.get("return_value", [])
+        mock_store.get_settings.return_value = read_json_returns.get("return_value", {})
         with patch.object(server, "IS_DESKTOP", False), \
              patch("auth.get_request_user", return_value=_FAKE_USER), \
-             patch("server._read_json", return_value=read_json_returns.get("return_value", [])):
+             patch("server._read_json", return_value=read_json_returns.get("return_value", [])), \
+             patch("storage.get_storage", return_value=mock_store):
             getattr(handler, handler_method)()
         return handler
 

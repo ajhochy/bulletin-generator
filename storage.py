@@ -388,15 +388,38 @@ class ConflictError(Exception):
 
 
 # ---------------------------------------------------------------------------
-# Postgres stub (server mode — filled in by issues #196-#201)
+# Postgres stub (server mode — adapted for multi-tenant schema, issue 004 / #260)
 # ---------------------------------------------------------------------------
 
 class PostgresStorageBackend(StorageBackend):
     """Postgres-backed storage for multi-user server deployments.
 
-    Project methods are fully implemented.  All other methods raise
-    ``NotImplementedError`` until the remaining issues (#197-#201) land.
+    Multi-tenant aware: when *workspace_id* and *user_claims* are supplied,
+    every method scopes its query to that workspace and passes the JWT claims
+    to ``db.transaction(claims)`` so RLS sees ``auth.uid()``.
+
+    Backward-compatible: both arguments default to None.  When None the
+    backend behaves as before (no workspace filter, no claims → un-scoped
+    plain transaction).  This preserves the no-arg ``PostgresStorageBackend()``
+    call used by ``get_storage()`` and the ~87 existing tests.
     """
+
+    def __init__(
+        self,
+        workspace_id: "str | None" = None,
+        user_claims: "dict | None" = None,
+    ) -> None:
+        self.workspace_id = workspace_id
+        self.user_claims = user_claims
+
+    def _transaction(self):
+        """Return ``db.transaction(claims=self.user_claims)``.
+
+        When user_claims is None this is a plain transaction (current behaviour).
+        When user_claims is set, RLS will see auth.uid() from the JWT sub.
+        """
+        from db import transaction  # noqa: PLC0415
+        return transaction(claims=self.user_claims)
 
     # ── Projects ──────────────────────────────────────────────────────────────
 
@@ -409,16 +432,28 @@ class PostgresStorageBackend(StorageBackend):
         """
         if user_id is not None:
             return self.list_projects_for_user(user_id)
-        from db import transaction, from_jsonb  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "WHERE p.workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, name, owner_user_id, visibility, state, revision,
-                       created_at, updated_at, created_by_email, updated_by_email,
-                       imported_from_json
-                FROM projects
-                ORDER BY updated_at DESC
-                """
+                f"""
+                SELECT p.id, p.name, p.owner_user_id, p.visibility, p.state,
+                       p.revision, p.created_at, p.updated_at,
+                       p.created_by_user_id, p.updated_by_user_id,
+                       pc.email AS created_by_email,
+                       pu.email AS updated_by_email,
+                       pc.display_name AS created_by_name,
+                       pu.display_name AS updated_by_name
+                FROM projects p
+                LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
+                LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                {ws_clause}
+                ORDER BY p.updated_at DESC
+                """,
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
@@ -432,38 +467,67 @@ class PostgresStorageBackend(StorageBackend):
           - visibility='private' AND owner_user_id = user_id  (own private project)
           - visibility='private' AND owner_user_id IS NULL  (legacy import, accessible to all)
         """
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {"user_id": user_id}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND p.workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, name, owner_user_id, visibility, state, revision,
-                       created_at, updated_at, created_by_email, updated_by_email,
-                       imported_from_json
-                FROM projects
-                WHERE visibility = 'workspace'
-                   OR owner_user_id = %(user_id)s::uuid
-                   OR (visibility = 'private' AND owner_user_id IS NULL)
-                ORDER BY updated_at DESC
+                f"""
+                SELECT p.id, p.name, p.owner_user_id, p.visibility, p.state,
+                       p.revision, p.created_at, p.updated_at,
+                       p.created_by_user_id, p.updated_by_user_id,
+                       pc.email AS created_by_email,
+                       pu.email AS updated_by_email,
+                       pc.display_name AS created_by_name,
+                       pu.display_name AS updated_by_name
+                FROM projects p
+                LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
+                LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                WHERE (
+                    visibility = 'workspace'
+                    OR owner_user_id = %(user_id)s::uuid
+                    OR (visibility = 'private' AND owner_user_id IS NULL)
+                )
+                {ws_clause}
+                ORDER BY p.updated_at DESC
                 """,
-                {"user_id": user_id},
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
         return [_pg_row_to_project(dict(zip(cols, row))) for row in rows]
 
     def get_project(self, project_id: str) -> dict | None:
-        """Return a single project dict by id, or None if not found."""
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        """Return a single project dict by id, or None if not found.
+
+        Returns None (not raises) when RLS returns 0 rows, so the caller
+        cannot distinguish 'not found' from 'forbidden' (avoids leaking
+        found-vs-forbidden to the frontend).
+        """
+        params: dict = {"id": project_id}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND p.workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, name, owner_user_id, visibility, state, revision,
-                       created_at, updated_at, created_by_email, updated_by_email,
-                       imported_from_json
-                FROM projects
-                WHERE id = %s::uuid
+                f"""
+                SELECT p.id, p.name, p.owner_user_id, p.visibility, p.state,
+                       p.revision, p.created_at, p.updated_at,
+                       p.created_by_user_id, p.updated_by_user_id,
+                       pc.email AS created_by_email,
+                       pu.email AS updated_by_email,
+                       pc.display_name AS created_by_name,
+                       pu.display_name AS updated_by_name
+                FROM projects p
+                LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
+                LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                WHERE p.id = %(id)s
+                {ws_clause}
                 """,
-                (project_id,),
+                params,
             )
             row = cursor.fetchone()
             if row is None:
@@ -474,66 +538,67 @@ class PostgresStorageBackend(StorageBackend):
     def save_project(self, data: dict, *, updated_by_email: str = "", updated_by_user_id: str | None = None) -> dict:
         """Upsert a project and return the persisted dict.
 
-        * On INSERT  — revision defaults to 1; owner_user_id set from ``updated_by_user_id``.
-        * On UPDATE  — revision is incremented by 1; updated_by_email set from caller.
-        ``data`` must contain an ``id`` key (UUID string).
+        * On INSERT  — revision defaults to 1; owner_user_id / created_by_user_id
+                       set from ``updated_by_user_id``; workspace_id from self.workspace_id
+                       (required for INSERT when scoped, else None → DB constraint).
+        * On UPDATE  — revision is incremented by 1; updated_by_user_id set from caller.
+
+        ``data`` must contain an ``id`` key (text string — NOT cast to uuid).
 
         ``updated_by_email`` and ``updated_by_user_id`` are caller-supplied attribution
-        values that override any values embedded in ``data``.
+        values.  The new schema stores user IDs, not emails, so ``updated_by_email``
+        is accepted for backward-compat but only used for the profiles JOIN fallback.
         """
         if "id" not in data:
             raise ValueError("project data must contain an 'id' key")
 
         import json as _json  # noqa: PLC0415
-        from db import transaction  # noqa: PLC0415
 
         project_id = data["id"]
         name = str(data.get("name") or "")
         state_json = _json.dumps(data, ensure_ascii=False)
-        created_by_email = str(data.get("createdBy") or "")
-        # Caller-supplied attribution takes precedence over data payload.
-        resolved_updated_by_email = updated_by_email or str(data.get("updatedBy") or "")
         created_at = data.get("createdAt") or None
-        updated_at = data.get("updatedAt") or None
 
-        with transaction() as conn:
+        with self._transaction() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO projects (
-                    id, name, owner_user_id, visibility, state, revision,
-                    created_at, updated_at, created_by_email, updated_by_email,
-                    imported_from_json
+                    id, workspace_id, name, owner_user_id, visibility, state, revision,
+                    created_at, updated_at, created_by_user_id, updated_by_user_id
                 ) VALUES (
-                    %(id)s::uuid, %(name)s,
+                    %(id)s, %(workspace_id)s::uuid, %(name)s,
                     %(owner_user_id)s::uuid,
-                    'private', %(state)s::jsonb, 1,
+                    'workspace', %(state)s::jsonb, 1,
                     COALESCE(%(created_at)s::timestamptz, now()),
                     now(),
-                    %(created_by_email)s, %(updated_by_email)s, FALSE
+                    %(created_by_user_id)s::uuid, %(updated_by_user_id)s::uuid
                 )
                 ON CONFLICT (id) DO UPDATE SET
-                    name             = EXCLUDED.name,
-                    state            = EXCLUDED.state,
-                    revision         = projects.revision + 1,
-                    updated_at       = now(),
-                    updated_by_email = EXCLUDED.updated_by_email
+                    name                = EXCLUDED.name,
+                    state               = EXCLUDED.state,
+                    revision            = projects.revision + 1,
+                    updated_at          = now(),
+                    updated_by_user_id  = EXCLUDED.updated_by_user_id
                 RETURNING id, name, owner_user_id, visibility, state, revision,
-                          created_at, updated_at, created_by_email, updated_by_email,
-                          imported_from_json
+                          created_at, updated_at, created_by_user_id, updated_by_user_id,
+                          workspace_id
                 """,
                 {
                     "id": project_id,
+                    "workspace_id": self.workspace_id,
                     "name": name,
                     "owner_user_id": updated_by_user_id,
                     "state": state_json,
                     "created_at": created_at,
-                    "updated_by_email": resolved_updated_by_email,
-                    "created_by_email": created_by_email or resolved_updated_by_email,
+                    "created_by_user_id": updated_by_user_id,
+                    "updated_by_user_id": updated_by_user_id,
                 },
             )
             row = cursor.fetchone()
-            cols = [d[0] for d in cursor.description]
-        return _pg_row_to_project(dict(zip(cols, row)))
+            raw_cols = [d[0] for d in cursor.description]
+            raw = dict(zip(raw_cols, row))
+            # JOIN profiles to get attribution emails for the returned dict.
+            return _pg_enrich_project_row(conn, raw)
 
     def save_project_transactional(
         self,
@@ -565,25 +630,30 @@ class PostgresStorageBackend(StorageBackend):
 
         import json as _json  # noqa: PLC0415
         import uuid as _uuid  # noqa: PLC0415
-        from db import transaction, from_jsonb  # noqa: PLC0415
+        from db import from_jsonb  # noqa: PLC0415
         from revisions import generate_summary  # noqa: PLC0415
 
         project_id = data["id"]
         name = str(data.get("name") or "")
         state_json = _json.dumps(data, ensure_ascii=False)
-        resolved_email = updated_by_email or str(data.get("updatedBy") or "")
 
         # Treat a missing client_revision as 0 — will conflict unless the
         # project is brand-new (revision 0 in DB, which should not occur in
         # practice because inserts start at revision 1).
         effective_client_rev = int(client_revision) if client_revision is not None else 0
 
-        with transaction() as conn:
+        ws_clause = ""
+        params_base: dict = {"id": project_id}
+        if self.workspace_id is not None:
+            ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+            params_base["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             # Fetch the previous state BEFORE updating so we can generate a
             # meaningful summary of what changed.
             prev_cursor = conn.execute(
-                "SELECT state FROM projects WHERE id = %(id)s::uuid",
-                {"id": project_id},
+                f"SELECT state FROM projects WHERE id = %(id)s {ws_clause}",
+                params_base,
             )
             prev_row = prev_cursor.fetchone()
             if prev_row is not None:
@@ -594,25 +664,26 @@ class PostgresStorageBackend(StorageBackend):
                 prev_state = None
 
             cursor = conn.execute(
-                """
+                f"""
                 UPDATE projects
                 SET
-                    name             = %(name)s,
-                    state            = %(state)s::jsonb,
-                    revision         = revision + 1,
-                    updated_at       = NOW(),
-                    updated_by_email = %(updated_by_email)s
-                WHERE id = %(id)s::uuid
+                    name               = %(name)s,
+                    state              = %(state)s::jsonb,
+                    revision           = revision + 1,
+                    updated_at         = NOW(),
+                    updated_by_user_id = %(updated_by_user_id)s::uuid
+                WHERE id = %(id)s
                   AND revision = %(client_revision)s
+                  {ws_clause}
                 RETURNING id, name, owner_user_id, visibility, state, revision,
-                          created_at, updated_at, created_by_email, updated_by_email,
-                          imported_from_json
+                          created_at, updated_at, created_by_user_id, updated_by_user_id,
+                          workspace_id
                 """,
                 {
-                    "id": project_id,
+                    **params_base,
                     "name": name,
                     "state": state_json,
-                    "updated_by_email": resolved_email,
+                    "updated_by_user_id": updated_by_user_id,
                     "client_revision": effective_client_rev,
                 },
             )
@@ -622,14 +693,21 @@ class PostgresStorageBackend(StorageBackend):
                 # Either revision mismatch or project does not exist.  Fetch the
                 # current server state so the caller can build a 409 body.
                 cur2 = conn.execute(
-                    """
-                    SELECT id, name, owner_user_id, visibility, state, revision,
-                           created_at, updated_at, created_by_email, updated_by_email,
-                           imported_from_json
-                    FROM projects
-                    WHERE id = %(id)s::uuid
+                    f"""
+                    SELECT p.id, p.name, p.owner_user_id, p.visibility, p.state,
+                           p.revision, p.created_at, p.updated_at,
+                           p.created_by_user_id, p.updated_by_user_id, p.workspace_id,
+                           pc.email AS created_by_email,
+                           pu.email AS updated_by_email,
+                           pc.display_name AS created_by_name,
+                           pu.display_name AS updated_by_name
+                    FROM projects p
+                    LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
+                    LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                    WHERE p.id = %(id)s
+                    {ws_clause}
                     """,
-                    {"id": project_id},
+                    params_base,
                 )
                 server_row = cur2.fetchone()
                 if server_row is not None:
@@ -640,39 +718,40 @@ class PostgresStorageBackend(StorageBackend):
                     server_project = {"id": project_id, "revision": 0}
                 raise ConflictError(server_project)
 
-            cols = [d[0] for d in cursor.description]
-            saved_project = _pg_row_to_project(dict(zip(cols, row)))
+            raw_cols = [d[0] for d in cursor.description]
+            raw = dict(zip(raw_cols, row))
+            saved_project = _pg_enrich_project_row(conn, raw)
             new_revision = saved_project["revision"]
 
             # Generate a human-readable summary of the changes.
             summary = generate_summary(prev_state, data)
 
-            # Insert a revision snapshot.
+            # Insert a revision snapshot (append-only table).
+            # New schema: project_id is TEXT, workspace_id required,
+            # revision_number (not revision), created_by_user_id (not saved_by_*).
             conn.execute(
                 """
                 INSERT INTO project_revisions (
-                    id, project_id, revision, state,
-                    saved_at, saved_by_user_id, saved_by_email, saved_by_name, summary
+                    id, project_id, workspace_id, revision_number, state,
+                    created_at, created_by_user_id, summary
                 ) VALUES (
                     %(snap_id)s::uuid,
-                    %(project_id)s::uuid,
-                    %(revision)s,
+                    %(project_id)s,
+                    %(workspace_id)s::uuid,
+                    %(revision_number)s,
                     %(state)s::jsonb,
                     NOW(),
-                    %(saved_by_user_id)s::uuid,
-                    %(saved_by_email)s,
-                    %(saved_by_name)s,
+                    %(created_by_user_id)s::uuid,
                     %(summary)s
                 )
                 """,
                 {
                     "snap_id": str(_uuid.uuid4()),
                     "project_id": project_id,
-                    "revision": new_revision,
+                    "workspace_id": self.workspace_id,
+                    "revision_number": new_revision,
                     "state": state_json,
-                    "saved_by_user_id": updated_by_user_id,
-                    "saved_by_email": resolved_email,
-                    "saved_by_name": updated_by_name,
+                    "created_by_user_id": updated_by_user_id,
                     "summary": summary,
                 },
             )
@@ -681,11 +760,15 @@ class PostgresStorageBackend(StorageBackend):
 
     def delete_project(self, project_id: str) -> bool:
         """Delete a project by id; return True if it existed."""
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {"id": project_id}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+        with self._transaction() as conn:
             cursor = conn.execute(
-                "DELETE FROM projects WHERE id = %s::uuid",
-                (project_id,),
+                f"DELETE FROM projects WHERE id = %(id)s {ws_clause}",
+                params,
             )
         return cursor.rowcount == 1
 
@@ -694,135 +777,185 @@ class PostgresStorageBackend(StorageBackend):
 
         Returns the updated project dict, or None if the project was not found.
         """
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {"id": project_id}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
+                f"""
                 UPDATE projects
                 SET visibility = 'workspace', updated_at = NOW()
-                WHERE id = %s::uuid
+                WHERE id = %(id)s
+                {ws_clause}
                 RETURNING id, name, owner_user_id, visibility, state, revision,
-                          created_at, updated_at, created_by_email, updated_by_email,
-                          imported_from_json
+                          created_at, updated_at, created_by_user_id, updated_by_user_id,
+                          workspace_id
                 """,
-                (project_id,),
+                params,
             )
             row = cursor.fetchone()
             if row is None:
                 return None
-            cols = [d[0] for d in cursor.description]
-        return _pg_row_to_project(dict(zip(cols, row)))
+            raw_cols = [d[0] for d in cursor.description]
+            raw = dict(zip(raw_cols, row))
+            return _pg_enrich_project_row(conn, raw)
 
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def get_settings(self) -> dict:
-        """Read all org_settings rows and reconstruct a flat settings dict.
+        """Read the workspace_settings row for this workspace and return the
+        settings dict.
 
-        OAuth tokens stored under the ``"oauth_tokens"`` key are unpacked back
-        into top-level keys (pcoAccessToken, pcoRefreshToken, etc.) so callers
-        receive the same flat shape as the legacy settings.json.
+        When workspace_id is None (un-scoped / backward-compat mode), queries
+        workspace_settings without a filter — this will raise RuntimeError in
+        desktop mode (preserving the existing test contract) and return all rows
+        in server mode (admin use).
 
-        User-level keys (e.g. editorDisplayName) are not yet included because
-        the user_settings table requires a known user_id — those will be added
-        once per-user identity is wired in.
+        The settings JSONB blob is returned as-is.  OAuth tokens and other
+        flat keys that were previously stored per-row in org_settings should
+        be migrated into this blob by issue 015 tooling.
         """
-        from db import transaction, from_jsonb  # noqa: PLC0415
+        from db import from_jsonb  # noqa: PLC0415
 
-        with transaction() as conn:
-            cursor = conn.execute("SELECT key, value FROM org_settings")
-            rows = cursor.fetchall()
+        if self.workspace_id is not None:
+            params: dict = {"workspace_id": self.workspace_id}
+            sql = "SELECT settings FROM workspace_settings WHERE workspace_id = %(workspace_id)s::uuid"
+        else:
+            params = {}
+            # Un-scoped: a no-workspace-filter query; raises RuntimeError in
+            # desktop mode (preserving prior contract) and returns first row in server mode.
+            sql = "SELECT settings FROM workspace_settings LIMIT 1"
 
-        result: dict = {}
-        for key, value in rows:
-            parsed = from_jsonb(value)
-            if key == "oauth_tokens" and isinstance(parsed, dict):
-                # Unpack OAuth bundle back to top-level keys for backward compat.
-                result.update(parsed)
-            else:
-                result[key] = parsed
+        with self._transaction() as conn:
+            cursor = conn.execute(sql, params)
+            row = cursor.fetchone()
 
-        return result
+        if row is None:
+            return {}
+        return from_jsonb(row[0]) or {}
 
     def save_settings(self, data: dict) -> dict:
-        """Persist recognised settings keys into org_settings (and user_settings
-        for user-level keys in a future release).
+        """Persist settings dict into workspace_settings for this workspace.
 
-        Each org key is upserted individually.  OAuth tokens are re-bundled
-        under the ``"oauth_tokens"`` key.  Unknown keys are ignored.
+        Uses INSERT ... ON CONFLICT DO UPDATE (upsert) so the row is created
+        on first save.  When workspace_id is None, raises RuntimeError because
+        we cannot upsert without a PK value.
 
-        Returns the full flat settings dict as reconstructed by get_settings().
+        Returns the full settings dict as reconstructed by get_settings().
         """
-        from db import transaction  # noqa: PLC0415
-        from migrations.import_settings import ORG_KEYS, OAUTH_KEYS  # noqa: PLC0415
+        import json as _json  # noqa: PLC0415
 
-        with transaction() as conn:
-            # Upsert individual org keys.
-            for key in ORG_KEYS:
-                if key in data:
-                    _pg_upsert_org_setting(conn, key, data[key])
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "save_settings requires a workspace_id — "
+                "construct PostgresStorageBackend(workspace_id=...) first."
+            )
 
-            # Bundle OAuth tokens under a single row.
-            oauth_bundle = {k: data[k] for k in OAUTH_KEYS if k in data}
-            if oauth_bundle:
-                # Merge with any existing oauth_tokens to preserve tokens not
-                # present in the incoming payload.
-                cursor = conn.execute(
-                    "SELECT value FROM org_settings WHERE key = 'oauth_tokens'"
-                )
-                row = cursor.fetchone()
-                from db import from_jsonb  # noqa: PLC0415
-                existing: dict = from_jsonb(row[0]) if row else {}
-                if not isinstance(existing, dict):
-                    existing = {}
-                existing.update(oauth_bundle)
-                _pg_upsert_org_setting(conn, "oauth_tokens", existing)
+        with self._transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO workspace_settings (workspace_id, settings)
+                VALUES (%(workspace_id)s::uuid, %(settings)s::jsonb)
+                ON CONFLICT (workspace_id) DO UPDATE SET
+                    settings = EXCLUDED.settings
+                """,
+                {
+                    "workspace_id": self.workspace_id,
+                    "settings": _json.dumps(data, ensure_ascii=False),
+                },
+            )
 
         return self.get_settings()
 
     # ── Announcements ─────────────────────────────────────────────────────────
 
     def list_announcements(self) -> list:
-        """Return all announcements ordered by ordering ASC."""
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        """Return all announcements for this workspace, ordered by created_at ASC.
+
+        The new schema stores the full announcement payload in a ``state`` JSONB
+        column (no separate url/ordering columns).  We reconstruct the frontend
+        shape from state + DB-authoritative scalar fields.
+
+        When workspace_id is None, returns all announcements (un-scoped admin use).
+        """
+        from db import from_jsonb  # noqa: PLC0415
+
+        params: dict = {}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "WHERE workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, title, body, url, ordering
+                f"""
+                SELECT id, workspace_id, title, body, state, created_at, updated_at,
+                       created_by_user_id
                 FROM announcements
-                ORDER BY ordering ASC
-                """
+                {ws_clause}
+                ORDER BY created_at ASC
+                """,
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
-        return [dict(zip(cols, row)) for row in rows]
+
+        result = []
+        for row in rows:
+            d = dict(zip(cols, row))
+            state = from_jsonb(d.get("state")) or {}
+            if not isinstance(state, dict):
+                state = {}
+            # Merge DB-authoritative fields over the state blob.
+            state["id"] = str(d["id"])
+            state["title"] = d.get("title") or state.get("title") or ""
+            state["body"] = d.get("body") or state.get("body") or ""
+            state["created_at"] = _ts(d.get("created_at"))
+            state["updated_at"] = _ts(d.get("updated_at"))
+            result.append(state)
+        return result
 
     def save_announcements(self, data: list) -> list:
-        """Replace all announcements: DELETE then INSERT in a single transaction.
+        """Replace all announcements for this workspace: DELETE then INSERT.
 
         Each item in *data* must be a dict with at least a ``title`` key.
-        An ``id`` (UUID string) is required; callers should ensure items
-        carry valid UUIDs before persisting.  ``url`` and ``ordering`` are
-        optional and default to ``''`` / list-index respectively.
+        The full item dict is stored in the ``state`` JSONB column so no
+        data is lost when the schema has fewer columns than the payload.
+
+        When workspace_id is None, raises RuntimeError (cannot insert without
+        workspace_id foreign key).
 
         Returns the saved list as read back from the database.
         """
         import json as _json  # noqa: PLC0415
         import uuid as _uuid  # noqa: PLC0415
-        from db import transaction  # noqa: PLC0415
 
         _ANN_NAMESPACE = _uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 
-        with transaction() as conn:
-            conn.execute("DELETE FROM announcements")
-            for idx, item in enumerate(data):
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "save_announcements requires a workspace_id — "
+                "construct PostgresStorageBackend(workspace_id=...) first."
+            )
+
+        # Extract user_id from claims for created_by_user_id attribution.
+        user_id: "str | None" = None
+        if self.user_claims and isinstance(self.user_claims, dict):
+            user_id = self.user_claims.get("sub") or None
+
+        with self._transaction() as conn:
+            conn.execute(
+                "DELETE FROM announcements WHERE workspace_id = %(workspace_id)s::uuid",
+                {"workspace_id": self.workspace_id},
+            )
+            for item in data:
                 if not isinstance(item, dict):
                     continue
                 title = str(item.get("title") or "")
                 body = str(item.get("body") or "")
-                url = str(item.get("url") or "")
-                ordering = int(
-                    item.get("ordering") if item.get("ordering") is not None else idx
-                )
+
                 # Resolve id → must be a valid UUID.
                 raw_id = item.get("id") or ""
                 if raw_id:
@@ -834,23 +967,31 @@ class PostgresStorageBackend(StorageBackend):
                     fingerprint = f"{title}\x00{body}"
                     ann_id = str(_uuid.uuid5(_ANN_NAMESPACE, fingerprint))
 
+                state_json = _json.dumps(item, ensure_ascii=False)
+
                 conn.execute(
                     """
-                    INSERT INTO announcements (id, title, body, url, ordering)
-                    VALUES (%(id)s::uuid, %(title)s, %(body)s, %(url)s, %(ordering)s)
+                    INSERT INTO announcements (
+                        id, workspace_id, title, body, state, created_by_user_id
+                    ) VALUES (
+                        %(id)s::uuid, %(workspace_id)s::uuid,
+                        %(title)s, %(body)s,
+                        %(state)s::jsonb,
+                        %(created_by_user_id)s::uuid
+                    )
                     ON CONFLICT (id) DO UPDATE SET
-                        title    = EXCLUDED.title,
-                        body     = EXCLUDED.body,
-                        url      = EXCLUDED.url,
-                        ordering = EXCLUDED.ordering,
-                        updated_at = now()
+                        title               = EXCLUDED.title,
+                        body                = EXCLUDED.body,
+                        state               = EXCLUDED.state,
+                        updated_at          = now()
                     """,
                     {
                         "id": ann_id,
+                        "workspace_id": self.workspace_id,
                         "title": title,
                         "body": body,
-                        "url": url,
-                        "ordering": ordering,
+                        "state": state_json,
+                        "created_by_user_id": user_id,
                     },
                 )
 
@@ -859,46 +1000,65 @@ class PostgresStorageBackend(StorageBackend):
     # ── Songs ─────────────────────────────────────────────────────────────────
 
     def list_songs(self) -> list:
-        """Return all songs ordered by title ASC."""
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        """Return all songs for this workspace ordered by title ASC.
+
+        The new schema stores the full song payload in a ``data`` JSONB column
+        (no separate author/lyrics/copyright/source/date_added columns).
+        We reconstruct the frontend shape from data + DB-authoritative fields.
+        """
+        from db import from_jsonb  # noqa: PLC0415
+
+        params: dict = {}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "WHERE workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, title, author, lyrics, copyright, source, date_added, created_at
+                f"""
+                SELECT id, workspace_id, title, data, created_at, updated_at
                 FROM songs
+                {ws_clause}
                 ORDER BY title ASC
-                """
+                """,
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
+
         return [_pg_row_to_song(dict(zip(cols, row))) for row in rows]
 
     def save_songs(self, data: list) -> list:
         """Upsert each song in *data* individually; never deletes existing rows.
 
-        Each item must be a dict.  An ``id`` is required; if the raw id is not a
-        valid UUID a stable UUID5 is generated from title+author+source.
+        The full song dict is stored in the ``data`` JSONB column.
+        An ``id`` is required; if the raw id is not a valid UUID a stable
+        UUID5 is generated from title+author+source.
+
+        When workspace_id is None, raises RuntimeError.
 
         Returns the full songs list as read back from the database (title ASC).
         """
+        import json as _json  # noqa: PLC0415
         import uuid as _uuid  # noqa: PLC0415
-        from db import transaction  # noqa: PLC0415
 
         _SONG_NAMESPACE = _uuid.UUID("c0ffee00-d400-4db0-0000-000000000000")
 
-        with transaction() as conn:
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "save_songs requires a workspace_id — "
+                "construct PostgresStorageBackend(workspace_id=...) first."
+            )
+
+        with self._transaction() as conn:
             for item in data:
                 if not isinstance(item, dict):
                     continue
 
                 title = str(item.get("title") or "")
                 author = str(item.get("author") or "")
-                lyrics = str(item.get("lyrics") or "")
-                copyright_ = str(item.get("copyright") or "")
                 source = str(item.get("source") or "")
-                date_added = str(
-                    item.get("dateAdded") or item.get("date_added") or ""
-                )
 
                 # Resolve id → must be a valid UUID.
                 raw_id = item.get("id") or ""
@@ -912,31 +1072,25 @@ class PostgresStorageBackend(StorageBackend):
                     fingerprint = f"{title}\x00{author}\x00{source}"
                     song_id = str(_uuid.uuid5(_SONG_NAMESPACE, fingerprint))
 
+                data_json = _json.dumps(item, ensure_ascii=False)
+
                 conn.execute(
                     """
-                    INSERT INTO songs (
-                        id, title, author, lyrics, copyright, source, date_added
-                    ) VALUES (
-                        %(id)s::uuid, %(title)s, %(author)s, %(lyrics)s,
-                        %(copyright)s, %(source)s, %(date_added)s
+                    INSERT INTO songs (id, workspace_id, title, data)
+                    VALUES (
+                        %(id)s::uuid, %(workspace_id)s::uuid,
+                        %(title)s, %(data)s::jsonb
                     )
                     ON CONFLICT (id) DO UPDATE SET
                         title      = EXCLUDED.title,
-                        author     = EXCLUDED.author,
-                        lyrics     = EXCLUDED.lyrics,
-                        copyright  = EXCLUDED.copyright,
-                        source     = EXCLUDED.source,
-                        date_added = EXCLUDED.date_added,
+                        data       = EXCLUDED.data,
                         updated_at = now()
                     """,
                     {
                         "id": song_id,
+                        "workspace_id": self.workspace_id,
                         "title": title,
-                        "author": author,
-                        "lyrics": lyrics,
-                        "copyright": copyright_,
-                        "source": source,
-                        "date_added": date_added,
+                        "data": data_json,
                     },
                 )
 
@@ -945,50 +1099,63 @@ class PostgresStorageBackend(StorageBackend):
     # ── Templates ─────────────────────────────────────────────────────────────
 
     def list_templates(self) -> list:
-        """Return all templates ordered by built_in DESC, name ASC.
+        """Return all templates for this workspace ordered by is_default DESC, name ASC.
 
-        Each returned dict has keys: id, name, data, built_in.
-        The ``data`` column holds the full template JSONB object.
+        The new schema uses ``template_data`` (not ``data``) and ``is_default``
+        (not ``built_in``).  We map these to the frontend shape via
+        ``_pg_row_to_template``.
         """
-        from db import transaction, from_jsonb  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "WHERE workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, name, data, built_in
+                f"""
+                SELECT id, name, template_data, is_default
                 FROM templates
-                ORDER BY built_in DESC, name ASC
-                """
+                {ws_clause}
+                ORDER BY is_default DESC, name ASC
+                """,
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
         return [_pg_row_to_template(dict(zip(cols, row))) for row in rows]
 
     def save_templates(self, data: list) -> list:
-        """Upsert each custom template in *data*; built-in templates are never modified.
+        """Upsert each custom template in *data*; default templates are never modified.
 
         For each item in *data*:
-        * If ``built_in`` is True → skip silently (protected).
-        * Otherwise → upsert (INSERT ... ON CONFLICT (id) DO UPDATE SET name, data).
+        * If ``is_default``/``built_in``/``builtIn`` is True → skip silently (protected).
+        * Otherwise → upsert.
 
-        An ``id`` is required on each item; if the raw id is not a valid UUID
-        a stable UUID5 is generated from the template name.
+        The full item dict is stored in ``template_data`` JSONB.
 
-        Returns the full templates list as read back from the database
-        (built_in DESC, name ASC).
+        When workspace_id is None, raises RuntimeError.
+
+        Returns the full templates list as read back from the database.
         """
         import json as _json  # noqa: PLC0415
         import uuid as _uuid  # noqa: PLC0415
-        from db import transaction  # noqa: PLC0415
 
         _TEMPLATE_NAMESPACE = _uuid.UUID("b01e7e00-7e00-4000-8000-000000000000")
 
-        with transaction() as conn:
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "save_templates requires a workspace_id — "
+                "construct PostgresStorageBackend(workspace_id=...) first."
+            )
+
+        with self._transaction() as conn:
             for item in data:
                 if not isinstance(item, dict):
                     continue
 
-                # Built-in templates are protected — never update them.
-                if item.get("built_in") or item.get("builtIn"):
+                # Default/built-in templates are protected — never update them.
+                if item.get("is_default") or item.get("built_in") or item.get("builtIn"):
                     continue
 
                 name = str(item.get("name") or "")
@@ -1007,16 +1174,17 @@ class PostgresStorageBackend(StorageBackend):
 
                 conn.execute(
                     """
-                    INSERT INTO templates (id, name, data, built_in)
-                    VALUES (%(id)s::uuid, %(name)s, %(data)s::jsonb, FALSE)
+                    INSERT INTO templates (id, workspace_id, name, template_data, is_default)
+                    VALUES (%(id)s::uuid, %(workspace_id)s::uuid, %(name)s, %(data)s::jsonb, FALSE)
                     ON CONFLICT (id) DO UPDATE SET
-                        name       = EXCLUDED.name,
-                        data       = EXCLUDED.data,
-                        updated_at = now()
-                    WHERE NOT templates.built_in
+                        name          = EXCLUDED.name,
+                        template_data = EXCLUDED.template_data,
+                        updated_at    = now()
+                    WHERE NOT templates.is_default
                     """,
                     {
                         "id": template_id,
+                        "workspace_id": self.workspace_id,
                         "name": name,
                         "data": data_json,
                     },
@@ -1027,33 +1195,52 @@ class PostgresStorageBackend(StorageBackend):
     # ── Fonts ──────────────────────────────────────────────────────────────────
 
     def list_fonts(self) -> list:
-        """Return all fonts ordered by family ASC."""
-        from db import transaction, from_jsonb  # noqa: PLC0415
-        with transaction() as conn:
+        """Return all fonts for this workspace ordered by name ASC.
+
+        The new schema has: id, workspace_id, name, storage_path, mime_type,
+        created_at.  There is no slug/family/source/css_url/upload_metadata.
+        We map these to a compatible dict shape.
+        """
+        params: dict = {}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "WHERE workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, slug, family, source, css_url, file_path,
-                       upload_metadata, cached_at, created_at
+                f"""
+                SELECT id, workspace_id, name, storage_path, mime_type, created_at
                 FROM fonts
-                ORDER BY family ASC
-                """
+                {ws_clause}
+                ORDER BY name ASC
+                """,
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
         return [_pg_row_to_font(dict(zip(cols, row))) for row in rows]
 
     def get_font(self, slug: str) -> "dict | None":
-        """Return a single font metadata dict by slug, or None if not found."""
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        """Return a single font metadata dict by name (slug), or None if not found.
+
+        In the new schema there is no separate slug column; we match on ``name``.
+        """
+        params: dict = {"name": slug}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, slug, family, source, css_url, file_path,
-                       upload_metadata, cached_at, created_at
+                f"""
+                SELECT id, workspace_id, name, storage_path, mime_type, created_at
                 FROM fonts
-                WHERE slug = %s
+                WHERE name = %(name)s
+                {ws_clause}
                 """,
-                (slug,),
+                params,
             )
             row = cursor.fetchone()
             if row is None:
@@ -1066,32 +1253,47 @@ class PostgresStorageBackend(StorageBackend):
     def get_project_revisions(self, project_id: str) -> list:
         """Return revision metadata for *project_id*, newest first.
 
-        Fetches id, project_id, revision, saved_at, saved_by_email,
-        saved_by_name, and summary — but NOT the full state JSONB, which
-        can be large.  Use ``get_project_revision()`` to fetch a specific
-        snapshot with its state.
+        New schema: revision_number (not revision), created_by_user_id (not
+        saved_by_*).  We JOIN profiles to surface email/display_name and map
+        them to the legacy saved_by_email / saved_by_name keys for API compat.
         """
-        from db import transaction  # noqa: PLC0415
-        with transaction() as conn:
+        params: dict = {"project_id": project_id}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND pr.workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, project_id, revision, saved_at,
-                       saved_by_email, saved_by_name, summary
-                FROM project_revisions
-                WHERE project_id = %s::uuid
-                ORDER BY revision DESC
+                f"""
+                SELECT pr.id, pr.project_id, pr.revision_number, pr.summary,
+                       pr.created_at,
+                       pr.created_by_user_id,
+                       p.email     AS saved_by_email,
+                       p.display_name AS saved_by_name
+                FROM project_revisions pr
+                LEFT JOIN public.profiles p ON p.id = pr.created_by_user_id
+                WHERE pr.project_id = %(project_id)s
+                {ws_clause}
+                ORDER BY pr.revision_number DESC
                 """,
-                (project_id,),
+                params,
             )
             rows = cursor.fetchall()
             cols = [d[0] for d in cursor.description]
+
         result = []
         for row in rows:
             d = dict(zip(cols, row))
-            d["id"] = str(d["id"])
-            d["project_id"] = str(d["project_id"])
-            d["saved_at"] = _ts(d.get("saved_at"))
-            result.append(d)
+            result.append({
+                "id": str(d["id"]),
+                "project_id": str(d["project_id"]),
+                "revision": d["revision_number"],
+                "saved_at": _ts(d.get("created_at")),
+                "saved_by_email": d.get("saved_by_email") or "",
+                "saved_by_name": d.get("saved_by_name") or "",
+                "summary": d.get("summary") or "",
+            })
         return result
 
     def get_project_revision(self, project_id: str, revision: int) -> "dict | None":
@@ -1100,18 +1302,29 @@ class PostgresStorageBackend(StorageBackend):
         Returns a dict with all ``project_revisions`` columns, or ``None``
         if no matching row is found.
         """
-        from db import transaction, from_jsonb  # noqa: PLC0415
-        with transaction() as conn:
+        from db import from_jsonb  # noqa: PLC0415
+
+        params: dict = {"project_id": project_id, "revision_number": revision}
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND pr.workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
             cursor = conn.execute(
-                """
-                SELECT id, project_id, revision, state,
-                       saved_at, saved_by_user_id, saved_by_email,
-                       saved_by_name, summary
-                FROM project_revisions
-                WHERE project_id = %s::uuid
-                  AND revision = %s
+                f"""
+                SELECT pr.id, pr.project_id, pr.revision_number, pr.state,
+                       pr.created_at, pr.created_by_user_id,
+                       p.email        AS saved_by_email,
+                       p.display_name AS saved_by_name,
+                       pr.summary
+                FROM project_revisions pr
+                LEFT JOIN public.profiles p ON p.id = pr.created_by_user_id
+                WHERE pr.project_id = %(project_id)s
+                  AND pr.revision_number = %(revision_number)s
+                {ws_clause}
                 """,
-                (project_id, revision),
+                params,
             )
             row = cursor.fetchone()
             if row is None:
@@ -1121,10 +1334,10 @@ class PostgresStorageBackend(StorageBackend):
         return {
             "id": str(raw["id"]),
             "project_id": str(raw["project_id"]),
-            "revision": raw["revision"],
+            "revision": raw["revision_number"],
             "state": from_jsonb(raw.get("state")),
-            "saved_at": _ts(raw.get("saved_at")),
-            "saved_by_user_id": str(raw["saved_by_user_id"]) if raw.get("saved_by_user_id") else None,
+            "saved_at": _ts(raw.get("created_at")),
+            "saved_by_user_id": str(raw["created_by_user_id"]) if raw.get("created_by_user_id") else None,
             "saved_by_email": raw.get("saved_by_email") or "",
             "saved_by_name": raw.get("saved_by_name") or "",
             "summary": raw.get("summary") or "",
@@ -1132,23 +1345,34 @@ class PostgresStorageBackend(StorageBackend):
 
 
 # ---------------------------------------------------------------------------
-# Postgres settings helper
+# Postgres project row enrichment helper (LEFT JOIN profiles for attribution)
 # ---------------------------------------------------------------------------
 
-def _pg_upsert_org_setting(conn, key: str, value) -> None:
-    """Upsert a single org_settings row (INSERT ... ON CONFLICT DO UPDATE)."""
-    import json as _json  # noqa: PLC0415
+def _pg_enrich_project_row(conn, raw: dict) -> dict:
+    """Given a raw project row (from INSERT/UPDATE RETURNING), JOIN profiles to
+    add created_by_email / updated_by_email / created_by_name / updated_by_name,
+    then delegate to _pg_row_to_project.
 
-    conn.execute(
-        """
-        INSERT INTO org_settings (key, value, updated_at)
-        VALUES (%(key)s, %(value)s::jsonb, now())
-        ON CONFLICT (key) DO UPDATE SET
-            value      = EXCLUDED.value,
-            updated_at = now()
-        """,
-        {"key": key, "value": _json.dumps(value, ensure_ascii=False)},
-    )
+    Used after INSERT/UPDATE RETURNING which does not include a profiles JOIN.
+    """
+    created_uid = raw.get("created_by_user_id")
+    updated_uid = raw.get("updated_by_user_id")
+
+    emails: dict = {}
+    uids_to_fetch = {u for u in (created_uid, updated_uid) if u is not None}
+    if uids_to_fetch:
+        cur = conn.execute(
+            "SELECT id, email, display_name FROM public.profiles WHERE id = ANY(%s)",
+            [list(uids_to_fetch)],
+        )
+        for r in cur.fetchall():
+            emails[str(r[0])] = {"email": r[1] or "", "display_name": r[2] or ""}
+
+    raw["created_by_email"] = emails.get(str(created_uid), {}).get("email") if created_uid else None
+    raw["updated_by_email"] = emails.get(str(updated_uid), {}).get("email") if updated_uid else None
+    raw["created_by_name"] = emails.get(str(created_uid), {}).get("display_name") if created_uid else None
+    raw["updated_by_name"] = emails.get(str(updated_uid), {}).get("display_name") if updated_uid else None
+    return _pg_row_to_project(raw)
 
 
 # ---------------------------------------------------------------------------
@@ -1162,14 +1386,21 @@ def _pg_row_to_project(row: dict) -> dict:
     that payload merged with DB-authoritative fields so callers can trust those
     keys even if the stored state blob is missing them.
 
+    New schema notes:
+      - id is TEXT (not UUID) — stored/returned as-is, no str() cast needed.
+      - No created_by_email / updated_by_email columns directly; these come from
+        a LEFT JOIN to public.profiles on created_by_user_id / updated_by_user_id.
+        Callers that do the JOIN pass ``created_by_email`` / ``updated_by_email``
+        as row keys; callers that skip the JOIN get None (un-scoped / admin).
+      - No imported_from_json column in the new schema.
+
     Metadata fields included (all top-level):
       - id, name, revision  (always present)
       - visibility           ("private" or "workspace")
       - owner_user_id        (UUID string or None)
-      - owner_email          (created_by_email, may be None for legacy imports)
+      - owner_email          (created_by_email from profiles join, may be None)
       - created_at, updated_at (ISO-8601 strings)
-      - created_by_email, updated_by_email
-      - imported_from_json   (bool)
+      - created_by_email, updated_by_email  (from profiles join)
       - createdAt, updatedAt, createdBy, updatedBy  (camelCase for frontend compat)
     """
     from db import from_jsonb  # noqa: PLC0415
@@ -1186,13 +1417,20 @@ def _pg_row_to_project(row: dict) -> dict:
     # ── Ownership & visibility ────────────────────────────────────────────────
     owner_uid = row.get("owner_user_id")
     state["owner_user_id"] = str(owner_uid) if owner_uid is not None else None
+    # owner_email: prefer profiles.email for created_by, fall back to None.
     state["owner_email"] = row.get("created_by_email") or None
     state["visibility"] = row.get("visibility") or "workspace"
-    state["imported_from_json"] = bool(row.get("imported_from_json"))
+    # imported_from_json is not in the new schema; preserve if present in the row
+    # (backward compat with old schema rows / test fixtures) or state blob.
+    if "imported_from_json" in row:
+        state["imported_from_json"] = bool(row["imported_from_json"])
+    else:
+        state.setdefault("imported_from_json", False)
 
     # ── Timestamps & attribution (snake_case for API consumers) ───────────────
     state["created_at"] = _ts(row.get("created_at")) or None
     state["updated_at"] = _ts(row.get("updated_at")) or None
+    # These come from the profiles JOIN; may be None when JOIN is not performed.
     state["created_by_email"] = row.get("created_by_email") or None
     state["updated_by_email"] = row.get("updated_by_email") or None
 
@@ -1201,10 +1439,13 @@ def _pg_row_to_project(row: dict) -> dict:
         state.setdefault("createdAt", _ts(row["created_at"]))
     if row.get("updated_at"):
         state["updatedAt"] = _ts(row["updated_at"])
-    if row.get("created_by_email"):
-        state.setdefault("createdBy", row["created_by_email"])
-    if row.get("updated_by_email"):
-        state["updatedBy"] = row["updated_by_email"]
+    # createdBy / updatedBy: use email if available, fall back to display_name.
+    created_label = row.get("created_by_email") or row.get("created_by_name") or None
+    updated_label = row.get("updated_by_email") or row.get("updated_by_name") or None
+    if created_label:
+        state.setdefault("createdBy", created_label)
+    if updated_label:
+        state["updatedBy"] = updated_label
 
     return state
 
@@ -1212,20 +1453,23 @@ def _pg_row_to_project(row: dict) -> dict:
 def _pg_row_to_template(row: dict) -> dict:
     """Convert a raw Postgres templates row dict into the shape expected by the frontend.
 
-    The ``data`` column holds the full template payload as JSONB.  We return
-    that payload merged with the DB-authoritative fields (id, name, built_in)
-    so callers can trust those keys even if the stored data blob differs.
+    New schema: column is ``template_data`` (not ``data``), ``is_default`` (not
+    ``built_in``).  We map both to the frontend shape (``builtIn`` bool key).
     """
     from db import from_jsonb  # noqa: PLC0415
 
-    data = from_jsonb(row.get("data")) or {}
+    # Support both old column name (data) and new (template_data) for robustness.
+    raw_data = row.get("template_data") if "template_data" in row else row.get("data")
+    data = from_jsonb(raw_data) or {}
     if not isinstance(data, dict):
         data = {}
 
     # Merge DB-authoritative fields on top of the stored data blob.
     data["id"] = str(row["id"])
     data["name"] = row.get("name") or data.get("name") or ""
-    data["builtIn"] = bool(row.get("built_in"))
+    # Support both old (built_in) and new (is_default) column names.
+    is_default = row.get("is_default") if "is_default" in row else row.get("built_in", False)
+    data["builtIn"] = bool(is_default)
 
     return data
 
@@ -1233,16 +1477,28 @@ def _pg_row_to_template(row: dict) -> dict:
 def _pg_row_to_song(row: dict) -> dict:
     """Convert a raw Postgres songs row dict into the shape expected by the frontend.
 
+    New schema: the full song payload is stored in a ``data`` JSONB column.
+    We unpack it and merge with DB-authoritative fields (id, title, created_at).
+    Legacy flat-column rows (author/lyrics/copyright/source/date_added) are also
+    supported so existing import tooling works unchanged.
+
     Returns camelCase keys that match the legacy song_database.json format.
     """
+    from db import from_jsonb  # noqa: PLC0415
+
+    # If the row has a ``data`` JSONB column (new schema), unpack it first.
+    blob = from_jsonb(row.get("data")) if "data" in row else {}
+    if not isinstance(blob, dict):
+        blob = {}
+
     return {
         "id": str(row["id"]),
-        "title": row.get("title") or "",
-        "author": row.get("author") or "",
-        "lyrics": row.get("lyrics") or "",
-        "copyright": row.get("copyright") or "",
-        "source": row.get("source") or "",
-        "dateAdded": row.get("date_added") or "",
+        "title": row.get("title") or blob.get("title") or "",
+        "author": blob.get("author") or row.get("author") or "",
+        "lyrics": blob.get("lyrics") or row.get("lyrics") or "",
+        "copyright": blob.get("copyright") or row.get("copyright") or "",
+        "source": blob.get("source") or row.get("source") or "",
+        "dateAdded": blob.get("dateAdded") or blob.get("date_added") or row.get("date_added") or "",
         "createdAt": _ts(row.get("created_at")),
     }
 
@@ -1250,19 +1506,27 @@ def _pg_row_to_song(row: dict) -> dict:
 def _pg_row_to_font(row: dict) -> dict:
     """Convert a raw Postgres fonts row dict into a font metadata dict.
 
-    Returns snake_case keys that match the fonts table columns and the
-    dict shape used by ``scan_font_directory`` in ``migrations/import_fonts.py``.
-    """
-    from db import from_jsonb  # noqa: PLC0415
+    New schema columns: id, workspace_id, name, storage_path, mime_type, created_at.
+    No slug/family/source/css_url/upload_metadata/cached_at in the new schema.
 
+    We map ``name`` → ``slug`` and ``name`` → ``family`` as best-effort for
+    backward compatibility with frontend consumers that expect these keys.
+    The ``storage_path`` is surfaced as ``file_path`` for the same reason.
+    """
+    # Support both old and new column shapes.
+    name = row.get("name") or ""
+    slug = row.get("slug") or name
+    family = row.get("family") or name
     return {
         "id": str(row["id"]),
-        "slug": row.get("slug") or "",
-        "family": row.get("family") or "",
-        "source": row.get("source") or "",
+        "slug": slug,
+        "family": family,
+        "source": row.get("source") or "user",
         "css_url": row.get("css_url") or "",
-        "file_path": row.get("file_path") or "",
-        "upload_metadata": from_jsonb(row.get("upload_metadata")) or {},
+        "file_path": row.get("file_path") or row.get("storage_path") or "",
+        "storage_path": row.get("storage_path") or row.get("file_path") or "",
+        "mime_type": row.get("mime_type") or "",
+        "upload_metadata": {},
         "cached_at": _ts(row.get("cached_at")),
         "created_at": _ts(row.get("created_at")),
     }

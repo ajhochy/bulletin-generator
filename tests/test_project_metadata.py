@@ -200,43 +200,60 @@ class TestPgRowToProject:
 # ---------------------------------------------------------------------------
 
 def _make_pg_save_mock(returned_row: dict):
-    """Return a mock transaction context manager that returns *returned_row* from RETURNING."""
-    mock_cursor = MagicMock()
-    mock_cursor.fetchone.return_value = tuple(returned_row.values())
-    mock_cursor.description = [(col, None) for col in returned_row.keys()]
+    """Return a mock (transaction, conn) for save_project().
+
+    save_project() calls _pg_enrich_project_row() after RETURNING, which
+    issues a second conn.execute() to fetch profiles.  We return two cursors:
+    the first for the INSERT RETURNING, the second (profiles) returns no rows.
+    """
+    mock_returning_cursor = MagicMock()
+    mock_returning_cursor.fetchone.return_value = tuple(returned_row.values())
+    mock_returning_cursor.description = [(col, None) for col in returned_row.keys()]
+
+    mock_profiles_cursor = MagicMock()
+    mock_profiles_cursor.fetchall.return_value = []  # no profiles rows in test
 
     mock_conn = MagicMock()
-    mock_conn.execute.return_value = mock_cursor
+    mock_conn.execute.side_effect = [mock_returning_cursor, mock_profiles_cursor]
 
-    mock_tx = MagicMock()
-    mock_tx.__enter__ = MagicMock(return_value=mock_conn)
-    mock_tx.__exit__ = MagicMock(return_value=False)
+    from contextlib import contextmanager
 
-    return mock_tx, mock_conn
+    @contextmanager
+    def fake_tx(claims=None):
+        yield mock_conn
+
+    return fake_tx, mock_conn
 
 
 class TestPostgresSaveProjectAttribution:
-    """save_project() wires caller-supplied attribution into the SQL params."""
+    """save_project() wires caller-supplied attribution into the SQL params.
+
+    New multi-tenant schema (issue 004 / #260): attribution is stored as
+    user IDs (created_by_user_id / updated_by_user_id), NOT as email strings.
+    The updated_by_email kwarg is still accepted for backward-compat but is not
+    written to any column directly — it's a no-op on the new schema.
+    """
 
     def _saved_params(self, extra_kwargs=None):
         """Call save_project() with a mock DB; return the SQL params dict used."""
         project_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
+        # Returned row uses NEW schema column names
         returned_row = {
             "id": project_id,
             "name": "Test",
             "owner_user_id": None,
-            "visibility": "private",
+            "visibility": "workspace",
             "state": json.dumps({"id": project_id, "name": "Test"}),
             "revision": 1,
             "created_at": now,
             "updated_at": now,
-            "created_by_email": "alice@example.com",
-            "updated_by_email": "alice@example.com",
-            "imported_from_json": False,
+            "created_by_user_id": None,
+            "updated_by_user_id": None,
+            "workspace_id": None,
         }
 
-        mock_tx, mock_conn = _make_pg_save_mock(returned_row)
+        fake_tx, mock_conn = _make_pg_save_mock(returned_row)
 
         def fake_from_jsonb(value):
             if isinstance(value, str):
@@ -246,26 +263,37 @@ class TestPostgresSaveProjectAttribution:
                     return {}
             return value or {}
 
-        mock_db = MagicMock()
-        mock_db.transaction.return_value = mock_tx
-        mock_db.from_jsonb = fake_from_jsonb
-
-        with patch.dict("sys.modules", {"db": mock_db}):
+        with patch("db.transaction", fake_tx), \
+             patch("db.from_jsonb", fake_from_jsonb):
             backend = PostgresStorageBackend()
             kwargs = extra_kwargs or {}
             backend.save_project({"id": project_id, "name": "Test"}, **kwargs)
 
-        # Extract the params dict passed to conn.execute().
-        call_args = mock_conn.execute.call_args
+        # Extract the params dict passed to the first conn.execute() (INSERT RETURNING).
+        call_args = mock_conn.execute.call_args_list[0]
         return call_args[0][1]  # positional arg 1 = params dict
 
+    def test_updated_by_user_id_from_kwarg(self):
+        """New schema: updated_by_user_id is stored as updated_by_user_id param."""
+        user_id = str(uuid.uuid4())
+        params = self._saved_params({"updated_by_user_id": user_id})
+        assert params["updated_by_user_id"] == user_id
+
     def test_updated_by_email_from_kwarg(self):
+        """updated_by_email kwarg is accepted for backward-compat (no-op on new schema).
+
+        The new schema stores user IDs not emails; the email kwarg is silently
+        accepted but not written to the INSERT params.
+        """
+        # Should not raise; check that the accepted kwarg doesn't break anything.
         params = self._saved_params({"updated_by_email": "alice@example.com"})
-        assert params["updated_by_email"] == "alice@example.com"
+        # New schema: no updated_by_email column — param key is updated_by_user_id
+        assert "updated_by_user_id" in params
 
     def test_updated_by_email_empty_by_default(self):
+        """When no attribution is supplied, updated_by_user_id defaults to None."""
         params = self._saved_params()
-        assert params["updated_by_email"] == ""
+        assert params["updated_by_user_id"] is None
 
     def test_owner_user_id_from_kwarg(self):
         owner_id = str(uuid.uuid4())
@@ -277,10 +305,14 @@ class TestPostgresSaveProjectAttribution:
         assert params["owner_user_id"] is None
 
     def test_created_by_email_falls_back_to_updated_by_email(self):
-        """When data has no createdBy, created_by_email should fall back to updated_by_email."""
-        params = self._saved_params({"updated_by_email": "carol@example.com"})
-        # created_by_email should be carol@example.com since data has no createdBy
-        assert params["created_by_email"] == "carol@example.com"
+        """Backward-compat note: new schema has no created_by_email column.
+
+        The INSERT uses created_by_user_id (FK to auth.users) instead.
+        This test verifies no KeyError is raised and the param is present.
+        """
+        params = self._saved_params({"updated_by_user_id": None})
+        # New schema: created_by_user_id replaces created_by_email
+        assert "created_by_user_id" in params
 
 
 # ---------------------------------------------------------------------------

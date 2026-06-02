@@ -91,11 +91,20 @@ class TestSaveProjectTransactionalUnit:
 
     _PROJECT_ID = str(uuid.uuid4())
 
+    _ALICE_ID = str(uuid.uuid4())
+
     def _pg_row(self, revision: int) -> dict:
-        """Build a minimal Postgres row dict for _pg_row_to_project()."""
-        now_str = "2026-05-20T10:00:00+00:00"
+        """Build a minimal Postgres RETURNING row dict for the new multi-tenant schema.
+
+        New schema (issue 004 / #260): id is TEXT, no created_by_email /
+        updated_by_email / imported_from_json; has created_by_user_id /
+        updated_by_user_id / workspace_id instead.
+
+        Non-None user IDs ensure _pg_enrich_project_row() issues a profiles query
+        (the 3rd execute call in save_project_transactional success path).
+        """
         return {
-            "id": uuid.UUID(self._PROJECT_ID),
+            "id": self._PROJECT_ID,  # TEXT PK in new schema
             "name": "Sunday Service",
             "owner_user_id": None,
             "visibility": "workspace",
@@ -103,9 +112,9 @@ class TestSaveProjectTransactionalUnit:
             "revision": revision,
             "created_at": None,
             "updated_at": None,
-            "created_by_email": "alice@example.com",
-            "updated_by_email": "alice@example.com",
-            "imported_from_json": False,
+            "created_by_user_id": self._ALICE_ID,  # non-None so enrichment query fires
+            "updated_by_user_id": self._ALICE_ID,
+            "workspace_id": None,
         }
 
     def _make_cursor(self, row_dict: dict | None, *, rowcount: int = 1):
@@ -129,14 +138,27 @@ class TestSaveProjectTransactionalUnit:
         cursor.fetchone.return_value = (prev_json,)
         return cursor
 
+    def _make_profiles_cursor(self):
+        """Return an empty cursor for the profiles enrichment SELECT.
+
+        _pg_enrich_project_row() queries public.profiles after UPDATE RETURNING.
+        Tests have no real users so return an empty result.
+        """
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+        return cursor
+
     def _make_conn(self, update_row, *, conflict_server_row=None):
         """Build a mock connection where execute() returns different cursors per call.
 
-        execute() call order in save_project_transactional:
+        execute() call order in save_project_transactional (new multi-tenant schema):
           1. SELECT state FROM projects  (prev-state fetch for summary generation)
           2. UPDATE projects ... RETURNING  (the main transactional save)
-          3a. INSERT INTO project_revisions  (success path)
-          3b. SELECT ... FROM projects  (conflict path — fetch server state)
+          Success path:
+            3. SELECT ... FROM public.profiles  (_pg_enrich_project_row attribution)
+            4. INSERT INTO project_revisions
+          Conflict path:
+            3. SELECT ... FROM projects JOIN profiles  (fetch server state for 409 body)
         """
         conn = MagicMock()
         prev_cursor = self._make_prev_cursor()
@@ -149,8 +171,9 @@ class TestSaveProjectTransactionalUnit:
             # prev state SELECT + UPDATE (None) + SELECT server state
             conn.execute.side_effect = [prev_cursor, update_cursor, server_cursor]
         else:
-            # prev state SELECT + UPDATE + INSERT snapshot
-            conn.execute.side_effect = [prev_cursor, update_cursor, snapshot_cursor]
+            # prev state SELECT + UPDATE + SELECT profiles (enrichment) + INSERT snapshot
+            profiles_cursor = self._make_profiles_cursor()
+            conn.execute.side_effect = [prev_cursor, update_cursor, profiles_cursor, snapshot_cursor]
         return conn
 
     def _patch_transaction(self, conn):
@@ -158,7 +181,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_transaction():
+        def _fake_transaction(claims=None):
             yield conn
 
         return patch("storage.PostgresStorageBackend.save_project_transactional.__wrapped__", None), \
@@ -176,7 +199,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -202,7 +225,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -213,24 +236,26 @@ class TestSaveProjectTransactionalUnit:
                 updated_by_email="bob@example.com",
             )
 
-        # conn.execute should have been called three times:
-        # SELECT prev state + UPDATE + INSERT snapshot
-        assert conn.execute.call_count == 3
-        # The third call should insert into project_revisions
-        third_call_sql = conn.execute.call_args_list[2][0][0]
-        assert "project_revisions" in third_call_sql
+        # conn.execute should have been called four times:
+        # SELECT prev state + UPDATE + SELECT profiles (enrichment) + INSERT snapshot
+        assert conn.execute.call_count == 4
+        # The fourth call should insert into project_revisions
+        fourth_call_sql = conn.execute.call_args_list[3][0][0]
+        assert "project_revisions" in fourth_call_sql
 
     def test_successful_save_snapshot_uses_new_revision(self):
+        """Snapshot must use revision_number (new schema) and created_by_user_id."""
         from storage import PostgresStorageBackend
 
         project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
         updated_row = self._pg_row(revision=10)
         conn = self._make_conn(update_row=updated_row)
+        user_id = str(uuid.uuid4())
 
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -238,14 +263,14 @@ class TestSaveProjectTransactionalUnit:
             backend.save_project_transactional(
                 project_data,
                 client_revision=9,
-                updated_by_email="carol@example.com",
+                updated_by_user_id=user_id,
                 updated_by_name="Carol",
             )
 
-        snapshot_params = conn.execute.call_args_list[2][0][1]
-        assert snapshot_params["revision"] == 10
-        assert snapshot_params["saved_by_email"] == "carol@example.com"
-        assert snapshot_params["saved_by_name"] == "Carol"
+        # New schema: revision_number (not revision), created_by_user_id (not saved_by_email)
+        snapshot_params = conn.execute.call_args_list[3][0][1]
+        assert snapshot_params["revision_number"] == 10
+        assert snapshot_params["created_by_user_id"] == user_id
 
     # -- Stale revision --------------------------------------------------------
 
@@ -259,7 +284,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -282,7 +307,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -305,7 +330,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()
@@ -345,7 +370,7 @@ class TestSaveProjectTransactionalUnit:
         from contextlib import contextmanager
 
         @contextmanager
-        def _fake_tx():
+        def _fake_tx(claims=None):
             yield conn
 
         backend = PostgresStorageBackend()

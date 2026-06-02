@@ -44,10 +44,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "migrations"))
 # Helpers
 # ---------------------------------------------------------------------------
 
+_ALICE_USER_ID = str(uuid.uuid4())
+
+
 def _pg_project_row(project_id: str, revision: int) -> dict:
-    """Build a minimal Postgres row dict for a project RETURNING clause."""
+    """Build a minimal Postgres row dict for a project RETURNING clause.
+
+    Uses the NEW multi-tenant schema column names (issue 004 / #260):
+    created_by_user_id / updated_by_user_id instead of created_by_email etc.,
+    id is TEXT (not UUID), workspace_id present.
+
+    Non-None user IDs are used so _pg_enrich_project_row() issues a profiles
+    query (the 3rd execute() call), giving 4 total calls in save_project_transactional.
+    """
     return {
-        "id": uuid.UUID(project_id),
+        "id": project_id,  # TEXT PK in new schema
         "name": "Sunday Service",
         "owner_user_id": None,
         "visibility": "workspace",
@@ -55,9 +66,9 @@ def _pg_project_row(project_id: str, revision: int) -> dict:
         "revision": revision,
         "created_at": None,
         "updated_at": None,
-        "created_by_email": "alice@example.com",
-        "updated_by_email": "alice@example.com",
-        "imported_from_json": False,
+        "created_by_user_id": _ALICE_USER_ID,  # non-None so enrichment query fires
+        "updated_by_user_id": _ALICE_USER_ID,
+        "workspace_id": None,
     }
 
 
@@ -81,21 +92,34 @@ def _make_prev_state_cursor(project_id: str):
     return cursor
 
 
+def _make_profiles_cursor():
+    """Return a mock cursor for the profiles enrichment SELECT (after RETURNING).
+
+    _pg_enrich_project_row() SELECTs from public.profiles to get attribution
+    emails.  In tests there are no real users so return an empty result.
+    """
+    cursor = MagicMock()
+    cursor.fetchall.return_value = []
+    return cursor
+
+
 def _make_conn_for_save(project_row: dict):
     """Build a mock connection for a successful save_project_transactional call.
 
-    execute() is called three times in order:
+    execute() is called four times in order (new multi-tenant schema, issue 004):
       1. SELECT state FROM projects  (fetch prev state for summary generation)
       2. UPDATE projects ... RETURNING  (the main transactional save)
-      3. INSERT INTO project_revisions  (revision snapshot)
+      3. SELECT ... FROM public.profiles  (_pg_enrich_project_row attribution lookup)
+      4. INSERT INTO project_revisions  (revision snapshot)
     """
     conn = MagicMock()
     project_id = str(project_row.get("id", ""))
     prev_cursor = _make_prev_state_cursor(project_id)
     update_cursor = _make_update_cursor(project_row)
+    profiles_cursor = _make_profiles_cursor()
     snapshot_cursor = MagicMock()
     snapshot_cursor.rowcount = 1
-    conn.execute.side_effect = [prev_cursor, update_cursor, snapshot_cursor]
+    conn.execute.side_effect = [prev_cursor, update_cursor, profiles_cursor, snapshot_cursor]
     return conn
 
 
@@ -122,7 +146,7 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data,
                 client_revision=1,
@@ -131,9 +155,10 @@ class TestSaveProjectTransactionalRevisionSnapshot:
                 updated_by_name="Alice",
             )
 
-        # Three execute calls: SELECT prev state + UPDATE project + INSERT project_revisions
-        assert conn.execute.call_count == 3
-        snapshot_sql = conn.execute.call_args_list[2][0][0]
+        # Four execute calls: SELECT prev state + UPDATE project +
+        # SELECT profiles (enrichment) + INSERT project_revisions
+        assert conn.execute.call_count == 4
+        snapshot_sql = conn.execute.call_args_list[3][0][0]
         assert "project_revisions" in snapshot_sql
 
     def test_snapshot_includes_uuid_id(self):
@@ -145,14 +170,15 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data,
                 client_revision=2,
                 updated_by_email="alice@example.com",
             )
 
-        params = conn.execute.call_args_list[2][0][1]
+        # Call index 3: INSERT project_revisions (after SELECT prev + UPDATE + SELECT profiles)
+        params = conn.execute.call_args_list[3][0][1]
         snap_id = params["snap_id"]
         # Must be parseable as a UUID
         uuid.UUID(snap_id)
@@ -165,16 +191,16 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data, client_revision=3, updated_by_email="x@example.com"
             )
 
-        params = conn.execute.call_args_list[2][0][1]
+        params = conn.execute.call_args_list[3][0][1]
         assert params["project_id"] == self._PROJECT_ID
 
     def test_snapshot_uses_new_incremented_revision(self):
-        """The snapshot revision must match the DB-returned (incremented) revision."""
+        """The snapshot revision_number must match the DB-returned (incremented) revision."""
         from storage import PostgresStorageBackend
 
         project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
@@ -182,13 +208,14 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data, client_revision=6, updated_by_email="bob@example.com"
             )
 
-        params = conn.execute.call_args_list[2][0][1]
-        assert params["revision"] == 7  # new revision, not client's 6
+        # New schema: column is revision_number (not revision)
+        params = conn.execute.call_args_list[3][0][1]
+        assert params["revision_number"] == 7  # new revision, not client's 6
 
     def test_snapshot_includes_full_state_json(self):
         """The state param must be the full JSON-serialised project."""
@@ -199,35 +226,41 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data, client_revision=1, updated_by_email="c@example.com"
             )
 
-        params = conn.execute.call_args_list[2][0][1]
+        params = conn.execute.call_args_list[3][0][1]
         state = json.loads(params["state"])
         assert state["id"] == self._PROJECT_ID
         assert state["items"] == [1, 2]
 
-    def test_snapshot_includes_saved_by_email(self):
+    def test_snapshot_includes_created_by_user_id(self):
+        """Snapshot INSERT params use created_by_user_id (new schema, issue 004).
+
+        The new project_revisions schema has no saved_by_email / saved_by_name
+        columns; attribution is via created_by_user_id FK → profiles.
+        """
         from storage import PostgresStorageBackend
 
         project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
         project_row = _pg_project_row(self._PROJECT_ID, revision=5)
         conn = _make_conn_for_save(project_row)
+        user_id = str(uuid.uuid4())
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.save_project_transactional(
                 project_data,
                 client_revision=4,
-                updated_by_email="carol@example.com",
+                updated_by_user_id=user_id,
                 updated_by_name="Carol",
             )
 
-        params = conn.execute.call_args_list[2][0][1]
-        assert params["saved_by_email"] == "carol@example.com"
-        assert params["saved_by_name"] == "Carol"
+        # New schema: created_by_user_id (not saved_by_email / saved_by_name)
+        params = conn.execute.call_args_list[3][0][1]
+        assert params["created_by_user_id"] == user_id
 
     def test_snapshot_summary_is_non_empty_string(self):
         """The summary parameter must be a non-empty string (generated by revisions.py)."""
@@ -238,14 +271,14 @@ class TestSaveProjectTransactionalRevisionSnapshot:
         conn = _make_conn_for_save(project_row)
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: json.loads(v) if isinstance(v, str) else v):
             backend.save_project_transactional(
                 project_data, client_revision=1, updated_by_email="d@example.com"
             )
 
-        # Summary is now passed as a parameter, not a SQL literal.
-        params = conn.execute.call_args_list[2][0][1]
+        # Summary is passed as a parameter in the snapshot INSERT (4th call, index 3).
+        params = conn.execute.call_args_list[3][0][1]
         summary = params["summary"]
         assert isinstance(summary, str)
         assert summary  # non-empty
@@ -267,23 +300,24 @@ class TestSaveProjectTransactionalRevisionSnapshot:
 
         backend = PostgresStorageBackend()
 
-        with patch("db.transaction", lambda: _fake_tx(conn1)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn1)):
             backend.save_project_transactional(
                 project_data, client_revision=1, updated_by_email="a@example.com"
             )
 
-        with patch("db.transaction", lambda: _fake_tx(conn2)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn2)):
             backend.save_project_transactional(
                 project_data, client_revision=2, updated_by_email="a@example.com"
             )
 
-        # Each connection should see exactly 3 execute calls:
-        # SELECT prev state + UPDATE project + INSERT project_revisions.
-        assert conn1.execute.call_count == 3
-        assert conn2.execute.call_count == 3
+        # Each connection should see exactly 4 execute calls:
+        # SELECT prev state + UPDATE project + SELECT profiles + INSERT project_revisions.
+        assert conn1.execute.call_count == 4
+        assert conn2.execute.call_count == 4
 
-        rev1 = conn1.execute.call_args_list[2][0][1]["revision"]
-        rev2 = conn2.execute.call_args_list[2][0][1]["revision"]
+        # New schema: revision_number (not revision) in project_revisions INSERT
+        rev1 = conn1.execute.call_args_list[3][0][1]["revision_number"]
+        rev2 = conn2.execute.call_args_list[3][0][1]["revision_number"]
         assert rev1 == 2
         assert rev2 == 3
         assert rev1 != rev2
@@ -297,13 +331,19 @@ class TestGetProjectRevisions:
     _PROJECT_ID = str(uuid.uuid4())
 
     def _make_revisions_cursor(self, rows: list[dict]):
-        """Return a mock cursor for the revisions SELECT."""
+        """Return a mock cursor for the revisions SELECT.
+
+        New schema (issue 004): column is revision_number (not revision),
+        created_at (not saved_at), created_by_user_id, saved_by_email and
+        saved_by_name come from the profiles LEFT JOIN.
+        """
         if not rows:
             cursor = MagicMock()
             cursor.fetchall.return_value = []
             cursor.description = [
-                ("id",), ("project_id",), ("revision",), ("saved_at",),
-                ("saved_by_email",), ("saved_by_name",), ("summary",),
+                ("id",), ("project_id",), ("revision_number",), ("summary",),
+                ("created_at",), ("created_by_user_id",),
+                ("saved_by_email",), ("saved_by_name",),
             ]
             return cursor
 
@@ -314,14 +354,16 @@ class TestGetProjectRevisions:
         return cursor
 
     def _raw_revision_row(self, revision: int) -> dict:
+        """Build a raw revision row in the NEW schema column shape (issue 004)."""
         return {
             "id": uuid.uuid4(),
-            "project_id": uuid.UUID(self._PROJECT_ID),
-            "revision": revision,
-            "saved_at": None,
-            "saved_by_email": "alice@example.com",
-            "saved_by_name": "Alice",
+            "project_id": self._PROJECT_ID,  # TEXT in new schema
+            "revision_number": revision,  # new column name
             "summary": "",
+            "created_at": None,  # new: created_at (not saved_at)
+            "created_by_user_id": None,  # new: user FK (not saved_by_email)
+            "saved_by_email": "alice@example.com",  # from profiles JOIN
+            "saved_by_name": "Alice",  # from profiles JOIN
         }
 
     def test_returns_list_desc_by_revision(self):
@@ -337,7 +379,7 @@ class TestGetProjectRevisions:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             result = backend.get_project_revisions(self._PROJECT_ID)
 
         assert len(result) == 3
@@ -354,7 +396,7 @@ class TestGetProjectRevisions:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             result = backend.get_project_revisions(self._PROJECT_ID)
 
         assert isinstance(result[0]["id"], str)
@@ -368,7 +410,7 @@ class TestGetProjectRevisions:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             result = backend.get_project_revisions(self._PROJECT_ID)
 
         assert result == []
@@ -383,7 +425,7 @@ class TestGetProjectRevisions:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             result = backend.get_project_revisions(self._PROJECT_ID)
 
         assert "state" not in result[0]
@@ -397,7 +439,7 @@ class TestGetProjectRevisions:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)):
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
             backend.get_project_revisions(self._PROJECT_ID)
 
         sql = conn.execute.call_args[0][0]
@@ -414,15 +456,21 @@ class TestGetProjectRevision:
     _PROJECT_ID = str(uuid.uuid4())
 
     def _raw_full_row(self, revision: int, state: dict) -> dict:
+        """Build a raw full revision row in the NEW schema column shape (issue 004).
+
+        New schema: revision_number (not revision), created_at (not saved_at),
+        created_by_user_id (not saved_by_user_id).
+        saved_by_email / saved_by_name come from the LEFT JOIN on profiles.
+        """
         return {
             "id": uuid.uuid4(),
-            "project_id": uuid.UUID(self._PROJECT_ID),
-            "revision": revision,
+            "project_id": self._PROJECT_ID,  # TEXT in new schema
+            "revision_number": revision,  # new column name
             "state": json.dumps(state),
-            "saved_at": None,
-            "saved_by_user_id": None,
-            "saved_by_email": "alice@example.com",
-            "saved_by_name": "Alice",
+            "created_at": None,  # new: created_at (not saved_at)
+            "created_by_user_id": None,  # new: user FK
+            "saved_by_email": "alice@example.com",  # from profiles JOIN
+            "saved_by_name": "Alice",  # from profiles JOIN
             "summary": "saved from UI",
         }
 
@@ -434,8 +482,8 @@ class TestGetProjectRevision:
         else:
             cursor.fetchone.return_value = None
             cursor.description = [
-                ("id",), ("project_id",), ("revision",), ("state",),
-                ("saved_at",), ("saved_by_user_id",), ("saved_by_email",),
+                ("id",), ("project_id",), ("revision_number",), ("state",),
+                ("created_at",), ("created_by_user_id",), ("saved_by_email",),
                 ("saved_by_name",), ("summary",),
             ]
         return cursor
@@ -450,7 +498,7 @@ class TestGetProjectRevision:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: json.loads(v) if isinstance(v, str) else v):
             result = backend.get_project_revision(self._PROJECT_ID, 3)
 
@@ -466,7 +514,7 @@ class TestGetProjectRevision:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: json.loads(v) if isinstance(v, str) else v):
             result = backend.get_project_revision(self._PROJECT_ID, 999)
 
@@ -481,7 +529,7 @@ class TestGetProjectRevision:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: json.loads(v) if isinstance(v, str) else v):
             result = backend.get_project_revision(self._PROJECT_ID, 1)
 
@@ -497,7 +545,7 @@ class TestGetProjectRevision:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: json.loads(v) if isinstance(v, str) else v):
             result = backend.get_project_revision(self._PROJECT_ID, 2)
 
@@ -513,7 +561,7 @@ class TestGetProjectRevision:
         conn.execute.return_value = cursor
 
         backend = PostgresStorageBackend()
-        with patch("db.transaction", lambda: _fake_tx(conn)), \
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)), \
              patch("db.from_jsonb", side_effect=lambda v: v):
             backend.get_project_revision(self._PROJECT_ID, 5)
 
@@ -521,7 +569,9 @@ class TestGetProjectRevision:
         assert "project_revisions" in sql
         assert "project_id" in sql
         assert "revision" in sql
-        assert params[1] == 5
+        # New schema uses named params (dict), not positional tuple
+        assert isinstance(params, dict)
+        assert params["revision_number"] == 5
 
 
 # =============================================================================

@@ -207,7 +207,7 @@ class TestListProjectsForUser:
         from contextlib import contextmanager
 
         @contextmanager
-        def fake_transaction():
+        def fake_transaction(claims=None):
             yield mock_conn
 
         backend = storage.PostgresStorageBackend()
