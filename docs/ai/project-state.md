@@ -23,6 +23,7 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 - **Supabase MCP installed** (`.mcp.json`, scoped to `?project_ref=dgydekhfzrmeoscpgmvo`, browser-OAuth, no secret committed).
 - **Staging Supabase project provisioned:** `bulletin-generator` · ref `dgydekhfzrmeoscpgmvo` · org Visalia CRC · region us-west-1 · Postgres 17. API URL `https://dgydekhfzrmeoscpgmvo.supabase.co`; publishable key `sb_publishable_qrAHj2Kj5yKeWxeqy5vifA_ufX6rOzJ` (RLS-protected, not secret).
 - **Tenancy foundation + RLS applied to staging** and captured at `supabase/migrations/20260602000001_tenancy_foundation.sql`: `public.profiles` (+ `handle_new_user` signup trigger, EXECUTE revoked from API roles), `workspaces`, `workspace_members`, `projects` (central), `private.is_workspace_member()` / `private.shares_workspace_with()` SECURITY DEFINER helpers, RLS policies on all four, indexes, and `authenticated` grants (anon denied). **Cross-tenant read AND write isolation verified** via simulated-JWT tests (user A/B each see only their workspace; cross-tenant read=0, write=0 rows). Security advisor clean except the leaked-password Auth toggle. This satisfies the security-critical core of plan issue 8 on the central table.
+- **App ↔ Supabase connection verified (plan issue 3):** `DATABASE_URL` wired in gitignored `.env` using the **session pooler** `aws-1-us-west-1.pooler.supabase.com:5432` (the IPv6 direct host has no route from this machine; `aws-0` is the wrong pooler prefix). `db.health_check()` → `{connected: True}` and the app's psycopg stack read the new schema (APP_MODE=server). Session mode chosen per D2 for `SET LOCAL` JWT claims.
 
 ## In progress
 
@@ -42,7 +43,7 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Next step
 
-Continue building the Supabase schema (remaining data tables — `project_revisions`, `workspace_settings`, `user_settings`, `announcements`, `songs`, `templates`, `fonts` — following the verified `projects` pattern: `workspace_id` + RLS via `private.is_workspace_member` + grants). Then app wiring (plan issue 3/7: `db.py` per-request `SET LOCAL request.jwt.claims`, needs the DB password for `.env`) and Supabase Auth (issues 9–12). Tenancy foundation + isolation are proven on `projects`.
+Build the remaining Supabase data tables — `project_revisions`, `workspace_settings`, `user_settings`, `announcements`, `songs`, `templates`, `fonts` — following the verified `projects` pattern (`workspace_id` + RLS via `private.is_workspace_member` + grants; `user_settings` is per-user, `project_revisions` append-only). Then Supabase Auth provider config (issues 9–12, needs dashboard setup) and adapting `storage.py`/`db.py` to set per-request `request.jwt.claims` against the new schema (issue 7). Connection + tenancy foundation + isolation are proven.
 
 ## Recent coding-agent runs
 
