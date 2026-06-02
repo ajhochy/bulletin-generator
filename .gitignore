@@ -34,3 +34,9 @@ __MACOSX/
 *.tmp
 output/
 tmp/
+
+# Python virtualenv for AI-workflow checks (3.11)
+.venv/
+.agent-stack/
+.agents/
+skills-lock.json
