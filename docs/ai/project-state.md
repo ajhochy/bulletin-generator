@@ -23,18 +23,20 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## In progress
 
-- `feat/supabase-multitenant-electron` — integration branch. Post-merge validation passed (939 pytest pass, 2 DB-only failures; 123 vitest pass; vite build clean; server boot 200). Ready for next Supabase migration issue.
+- `feat/supabase-multitenant-electron` — integration branch. Merge independently re-verified by verification-gate in a **Python 3.11 venv** (HEAD `0feb5e0`): 939 pytest pass / 2 DB-only failures; 123 vitest pass; vite build clean; `/api/bootstrap` 200; zero conflict markers; union confirmed (collab tip is an ancestor of HEAD). **Supported interpreter is Python 3.11+** — the repo's system `python3` is 3.9 and cannot import `auth.py`; use a 3.11 venv (`pip install -r requirements.txt pytest`). Ready for the next Supabase migration issue.
 
 ## Open risks
 
 - `_handle_get_project_revisions` (the bulk `/api/projects/revisions` endpoint from main's lightweight-poll) still reads directly from JSON file rather than routing through storage. In Postgres mode it would return all projects without auth gating. TODO marker added in server.py. This is safe for desktop mode (single-user) but must be addressed before enabling Postgres mode in production.
 - stale-poll JS now uses `/api/projects/${id}/revision` (collab-v1, per-project, requires auth). This endpoint requires `_require_auth()`. In desktop mode auth is bypassed, so this works fine. In Postgres mode, the stale-poll will now require a valid session cookie.
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through.
-- Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL. They are expected failures without a DB.
+- Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL. Expected failures without a DB (provisioned in plan issue 2/3).
+- `auth.py` (from collab-v1) uses `dict | None` annotations without `from __future__ import annotations`, so it hard-requires Python 3.10+ at import time. Matches the documented 3.11+ requirement but breaks on the system 3.9. Candidate one-line follow-up: add the future import for resilience.
+- Minor: `server.py` imports the `cgi` module (DeprecationWarning; removed in Python 3.13). Pre-existing; replace before any 3.13 bump.
 
 ## Next step
 
-Continue with Supabase migration plan — next issue in the plan document.
+Supabase migration plan (`docs/ai/current-plan.md`): **issue 2 — provision a staging Supabase project + wire `DATABASE_URL`/keys** (also unblocks the 2 DB-integration tests), or first route to `issue-writer` to generate the full GitHub-ready issue set. Awaiting user direction.
 
 ## Recent coding-agent runs
 

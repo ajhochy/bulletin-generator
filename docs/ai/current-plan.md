@@ -57,7 +57,7 @@ Ship a desktop (Electron) client whose existing UI is unchanged, backed by Supab
 
 ## Cheapest version that proves the idea (spike first)
 
-Before any multi-tenancy or Electron work: **rebase `collab-v1`, point `DATABASE_URL` at a Supabase project, and run the app in server mode against Supabase with `collab-v1`'s existing auth.** If projects/settings/songs round-trip to Supabase Postgres unchanged, the core thesis ("Supabase is a `DATABASE_URL` swap for the data layer") is proven. Everything else (RLS, Supabase Auth, Storage, Electron) layers on top. This is Milestone 0 (issues 1–3).
+Before any multi-tenancy or Electron work: **merge `collab-v1` into the integration branch (done — issue 1), point `DATABASE_URL` at a Supabase project, and run the app in server mode against Supabase with `collab-v1`'s existing auth.** If projects/settings/songs round-trip to Supabase Postgres unchanged, the core thesis ("Supabase is a `DATABASE_URL` swap for the data layer") is proven. Everything else (RLS, Supabase Auth, Storage, Electron) layers on top. This is Milestone 0 (issues 1–3).
 
 ## Prior Art
 
@@ -122,7 +122,7 @@ Before any multi-tenancy or Electron work: **rebase `collab-v1`, point `DATABASE
 | Order | Title | Goal | Likely files | Tests / evaluation | Dependencies |
 |---|---|---|---|---|---|
 | **M0 — Foundation & spike** ||||||
-| 1 | Rebase collab-v1 onto integration branch | Bring 37 collab-v1 commits onto `feat/supabase-multitenant-electron`, resolving conflicts with volunteer-roles + lightweight-poll work that landed on main since 2026-04-27 | `server.py`, `src/js/projects.js`, `src/js/volunteer-roles.js`, `storage.py`, `db.py`, `migrations/`, `docs/ai/*` | Full pytest + vitest + `vite build` green; `python3 -c "import server"`; app boots in desktop mode (JSON) unchanged | — |
+| 1 | ✅ **DONE** (b16b842) — Merge collab-v1 into integration branch | Brought 37 collab-v1 commits in via `git merge --no-ff` (not rebase — both branches had wanted work; rebase would fight collab-v1's deletions of post-fork files). Only 3 content conflicts (`server.py`, `src/js/projects.js`, `tests/test_server_utils.py`), resolved as union; no deletion conflicts | `server.py`, `src/js/projects.js`, `tests/test_server_utils.py` | verification-gate PASS (py3.11 venv): pytest 939 / 2-DB-only, vitest 123, vite build, `/api/bootstrap` 200, 0 conflict markers | — |
 | 2 | Provision Supabase project + env wiring | Create staging Supabase project; set `DATABASE_URL` + keys; remove postgres service from `docker-compose.yml` on this branch; document env | `.env.example`, `docker-compose.yml`, `README.md`, `MANUAL-STEPS.md` | `db.health_check()` connects to Supabase; document-only otherwise | 1 |
 | 3 | Adapt `db.py` for Supabase + prove round-trip | SSL, pooler vs session decision (D2), psycopg3 prepared-stmt handling; run app in server mode against Supabase with collab-v1 auth; CRUD round-trips | `db.py` | New `tests/test_db.py` cases hit Supabase test DB; manual: create/edit/load a project persists in Supabase | 2 |
 | **M1 — Multi-tenant schema + RLS** ||||||
@@ -178,4 +178,4 @@ Completed via the upfront-alignment round earlier this session (4 questions: sco
 
 ## Next in chain
 
-Hand off to **`issue-writer`** to convert this table into GitHub-ready issues (with per-issue acceptance criteria + likely files + tests) under `docs/ai/generated-issues/`, in dependency order, starting with issue 1 (rebase). Do **not** create remote GitHub issues until the user asks. Issue 1 (rebase) and issues touching RLS (6–8) and auth (10) warrant `acceptance-contract` before `coding-agent`.
+Issue 1 (the merge) is complete and verified. Hand off to **`issue-writer`** to convert the remaining rows into GitHub-ready issues (with per-issue acceptance criteria + likely files + tests) under `docs/ai/generated-issues/`, in dependency order, **starting with issue 2**. Do **not** create remote GitHub issues until the user asks. Issues touching RLS (6–8) and auth (10) warrant `acceptance-contract` before `coding-agent`.
