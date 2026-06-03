@@ -17,7 +17,7 @@ _Created: 2026-06-03 (issue 016)_
   cutover-readiness session and initial the checkbox.
 - A cross-tenant **read or write leak in any Security surface item is a hard blocker**.
   Do not cut over until all Security items are green.
-- Collaboration and Electron items are regression-blockers; if any fail, file a follow-up
+- Ownership model and Electron items are regression-blockers; if any fail, file a follow-up
   issue before merging.
 
 ---
@@ -42,13 +42,18 @@ All tests must pass (currently: 3x7 + 1 RLS class + 6 auth_middleware + 3 first-
 
 ---
 
-## Collaboration surface
+## Ownership model surface
+
+> **Note:** Conflict detection (409 on stale `_clientRevision`) was removed in issue 021.
+> Items C1-C3 previously covered conflict detection; they have been replaced with
+> ownership model checks reflecting the owner-only write policy (issues 020-021).
 
 | # | Item | Type | Steps | Pass criteria | Status |
 |---|------|------|-------|---------------|--------|
-| C1 | Two users, same workspace project — conflict detection | Manual | 1. Open the same project in two browser tabs as two different workspace members. 2. Edit project in tab A, save. 3. Edit project in tab B (without reloading), save. | Tab B shows the 409 conflict banner ("Another editor saved...") with diff and "Reload latest" link | [ ] |
-| C2 | Stale-check banner appears within 30 s | Manual | 1. Open the project in tab A and tab B. 2. Save in tab A. 3. Wait up to 30 s without touching tab B. | Tab B shows the stale banner within 30 s of tab A's save (driven by the 30 s poll hitting `/api/projects/revisions`) | [ ] |
-| C3 | Revision history preserved across saves | Manual | 1. Save the same project 3 times with distinct edits. 2. In the Supabase dashboard, query `project_revisions` for that project_id. | At least 3 revision rows exist with distinct `revision_number` values; `state` column reflects each edit | [ ] |
+| C1 | Owner can save their own project | Manual | 1. Sign in as `ajh@visaliacrc.com`. 2. Open any project. 3. Make an edit and save. | Save succeeds (HTTP 200); project state persists on reload | [ ] |
+| C2 | Non-owner sees read-only indication | Manual | 1. Sign in as a second `@visaliacrc.com` workspace member account that does not own the project. 2. Open a project owned by `ajh@visaliacrc.com`. 3. Attempt to save. | Save attempt returns HTTP 403; UI surfaces an error message (e.g. "You do not have permission to save this project") | [ ] |
+| C3 | Transfer ownership works | Manual | 1. Sign in as the current owner (`ajh@visaliacrc.com`). 2. Call `POST /api/projects/{id}/transfer` with `{ "to_user_id": "<second-user-id>" }`. 3. Sign in as the second user and save. 4. Attempt to save as the original owner. | Transfer returns HTTP 200; second user can save; original owner receives 403 on subsequent saves | [ ] |
+| C4 | Presence badge appears for workspace viewers | Manual | 1. Open the same project in two browser tabs under different workspace accounts simultaneously. | A presence indicator (avatar or badge) appears showing both users are viewing the project | [ ] |
 
 ---
 
@@ -112,7 +117,7 @@ python scripts/migrate_to_supabase.py \
 Before switching production traffic to the Supabase backend, all items below must be checked:
 
 - [ ] All Security surface items (S1-S6) green
-- [ ] All Collaboration surface items (C1-C3) green
+- [ ] All Ownership model surface items (C1-C4) green
 - [ ] Electron items E1-E3 green (E4 deferred)
 - [ ] Data migration D1 green; D2 completed on a rehearsal run
 - [ ] `npm install` run and `package-lock.json` committed (electron-updater in lock file)
