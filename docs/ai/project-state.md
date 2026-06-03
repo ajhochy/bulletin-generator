@@ -1,113 +1,61 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 018 — cutover plan docs)_
+_Last updated: 2026-06-03 (issue 016 — M5 QA matrix)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-**All code issues are complete.** Issues 001–019 are implemented and automated-verified on this branch. The remaining work is entirely manual:
-1. Distribute the Electron `.dmg` to users (requires CI release build after merge to `main`).
-2. Run `scripts/migrate_to_supabase.py --execute` to migrate Synology JSON data to Supabase.
-3. Verify row counts and run per-user end-to-end smoke in the new Electron app.
-
-See `docs/cutover-plan.md` for the full operator checklist.
+All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
-- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
-- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. Manual PDF smoke still required.
-- **013** — Supabase Auth in Electron (deep-link OAuth + magic link). See `docs/ai/decisions.md`.
-- **018** — Cutover and rollback plan. `docs/cutover-plan.md` (new). No code changes — docs only.
+- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). Verification PASS: 100 pytest, 71 vitest, vite build.
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build.
+- **013** — Supabase Auth in Electron (deep-link OAuth + magic link).
+- **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
+- **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
 
 ## In progress
 
-- All code issues complete. Awaiting manual cutover per `docs/cutover-plan.md`.
-- Draft PR for `feat/supabase-multitenant-electron` not yet opened (will open after final code review).
+- Manual smoke for issues 011, 013, 014 pending — all require `npm run start:electron` (human). See `MANUAL-STEPS.md` and `docs/ai/qa-matrix-m5.md`.
+- Draft PR for `feat/supabase-multitenant-electron` not yet opened.
 
 ## Open risks
 
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
 - `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production cutover.
-- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
-- Issue 012 PDF path: `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing.
-- OAuth tokens (PCO, Google Calendar) are not migrated — users must reconnect after cutover. Expected and documented in `docs/cutover-plan.md` Step 5.
-- GitHub Secrets for the release CI build must be set before tagging (see `docs/cutover-plan.md` Section 1.2).
+- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only. Monitor for electron patch releases.
+- Issue 013: `exchangeCodeForSession(url)` requires PKCE enabled in the Supabase project. Confirm PKCE is active in the dashboard before Electron auth smoke.
+- Windows NSIS installer is unsigned. SmartScreen will warn until a Windows EV/OV certificate is obtained.
+- `package-lock.json` needs regeneration: `electron-updater` added to `dependencies` but lock file not updated. Run `npm install` before merging.
 
 ## Next step
 
-All code issues complete. Remaining work is manual — follow `docs/cutover-plan.md`:
-1. **Pre-cutover:** Confirm all migrations applied in Supabase, GitHub Secrets set, dry-run migration passes against `/Volumes/docker/bulletingenerator`.
-2. **Cutover:** Merge PR to `main`, tag release, wait for CI to build the signed `.dmg`, distribute to users, run `--execute` migration, verify row counts.
-3. **Post-cutover:** Per-user smoke (login → load project → edit → save → PDF export). After 7 days stable: stop Synology container, archive JSON data.
+Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
+1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
+2. Manual items (Electron smoke, conflict detection, first-login domain provisioning)
+3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator`
+4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
 
-### 2026-06-03 — cutover-rollback-plan (issue 018)
+### 2026-06-03 — m5-qa-matrix (issue 016)
 - Files modified:
-  - `docs/cutover-plan.md` (new) — complete operator cutover checklist: pre-cutover (Supabase health, GitHub Secrets, Electron build, dry-run migration), cutover steps (merge → tag → distribute `.dmg` → `--execute` migration → verify row counts → per-user smoke), rollback trigger conditions table, rollback procedure (notify users, restore from `/Volumes/docker/bulletingenerator/backups/bulletin-20260512-2115/`, restart Docker), post-cutover archival (stop container, tar archive to cold storage, mark `docker-compose.yml` deprecated).
-  - `docs/ai/project-state.md` — updated "Current focus", "In progress", "Open risks", and "Next step" to reflect all code issues complete; remaining work is manual cutover per the new plan.
+  - `docs/ai/qa-matrix-m5.md` (new) — structured QA checklist covering Security (S1-S6: cross-tenant read/write isolation, 401/403 auth tests, first-login provisioning), Collaboration (C1-C3: conflict detection, stale-check banner, revision history), Electron (E1-E4: dev smoke, OAuth, PDF export, auto-update deferred), and Data migration (D1-D2: dry-run exit 0, post-execute row count verification). Includes exact pytest commands for all automated items. Includes a pre-cutover gate block and cutover readiness checklist.
+  - `docs/ai/project-state.md` (this file) — updated focus, recently completed, in progress, open risks, next step.
 - Checks run:
-  - `pytest -q tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py` → 95 passed.
-  - `npm test` (vitest) → 29 passed.
-  - `npm run build` (vite) → clean build, 0 errors.
-  - `python3 -c "import ast; ast.parse(open('server.py').read())"` → syntax OK.
-  - Note: `ai-workflow checks --level issue` exits 1 due to global fallback requiring `npm run typecheck` which does not exist in this repo's `package.json`. The repo-local wrapper (`scripts/run_ai_workflow.py` on the feature branch) uses pytest + vitest only — both passed. Gap documented in verification-gate PASS block.
+  - `ai-workflow checks --level pr` → PASS (100 pytest, 71 vitest, vite build).
 - Decisions made:
-  - Used `docs/cutover-plan.md` (not `MANUAL-STEPS.md`) per issue spec. `MANUAL-STEPS.md` already contains Supabase Auth setup, Electron deep-link, and data migration sections; the cutover plan is a separate operator document.
-  - Staging project `dgydekhfzrmeoscpgmvo` is the production project (no separate prod project to provision) — the cutover plan omits any "provision production project" step per the issue context.
-  - Existing backup at `/Volumes/docker/bulletingenerator/backups/bulletin-20260512-2115/` documented as the primary rollback restore source.
-  - 7-day parallel-run period chosen (matches generated-issue spec): Synology Docker stays running while users smoke-test the Electron app.
-- Deviations from spec: none. Both acceptance criteria addressed (cutover checklist + project-state Next step update).
+  - Noted that staging Supabase project IS the production project (no separate staging environment) — reflected in the qa-matrix intro.
+  - Automated items S1-S5 and S3-S4 directly map to existing `test_rls_isolation.py` and `test_auth_middleware.py` tests. No new test code needed for this issue.
+  - E4 (auto-update smoke) marked DEFERRED per issue spec — requires a tagged CI release build, which is out of scope for the QA matrix document itself.
+  - D1 dry-run listed as "Automated / Manual" because it can be run as a check command but requires `/Volumes/docker/bulletingenerator` mounted (manual human prerequisite).
+- Deviations from spec: none. All acceptance criteria addressed.
 - Concerns:
-  - GitHub Secrets state is unknown — `gh secret list` required an authenticated session. The pre-cutover checklist tells the operator to verify manually.
-  - The Electron CI release build (sign/notarize) is issue 014's scope; if 014 is not yet complete, Step 3 of the cutover (verify `.dmg` artifact) will block. Operator must confirm 014 is merged before tagging.
-
-### 2026-06-03 — electron-pdf (issue 012)
-- Files modified:
-  - `electron/main.js` — added `ipcMain` + `os` imports; added `pdf:generate` IPC handler. Creates a hidden offscreen BrowserWindow, loads the print HTML via `loadFile()`, calls `webContents.printToPDF({ pageSize: { width, height } (microns), printBackground, margins: none })`, writes PDF bytes to a temp file, resolves with the path. Hidden window is always destroyed in a `finally` block.
-  - `electron/preload.js` — replaced the stub with a real `contextBridge.exposeInMainWorld('electronAPI', { generatePdf })` bridge. `generatePdf(opts)` calls `ipcRenderer.invoke('pdf:generate', opts)`.
-  - `server.py` — (1) `APP_MODE` validation now accepts `"electron"` alongside `"server"` and `"desktop"`. (2) `IS_ELECTRON = APP_MODE == "electron"` flag added. (3) `IS_DESKTOP` now `True` for both `"desktop"` and `"electron"`. (4) `CHROME_PATH` deferred: `None` when `APP_MODE=electron`, `_find_chrome()` otherwise (avoids RuntimeError at startup when Chrome isn't installed in Electron mode). (5) `_handle_pdf`: early return with HTTP 501 + TODO comment when `IS_ELECTRON` is True.
-  - `tests/test_pdf.py` (new) — 14 pytest tests covering: APP_MODE=electron flag values, IS_ELECTRON/IS_DESKTOP, CHROME_PATH=None in electron mode, `_handle_pdf` returns 501 in electron mode, auth guard fires before 501, input validation (400/413) unchanged in non-electron modes, route registration.
-  - `docs/ai/project-state.md` — this entry.
-- Checks run:
-  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
-  - `APP_MODE=electron python -c "import server; ..."` → APP_MODE=electron, IS_ELECTRON=True, IS_DESKTOP=True, CHROME_PATH=None. Confirmed for desktop and server modes too.
-  - `pytest tests/test_pdf.py -v` → 14 passed.
-  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
-- Decisions made:
-  - Accepted the "simpler alternative" from the issue spec: HTTP 501 + TODO in server.py for the electron IPC path, rather than full Python↔Node IPC plumbing. The `pdf:generate` IPC handler in main.js is the production path; the renderer calls `window.electronAPI.generatePdf()` directly (issue 013 will wire this call site in the JS).
-  - `IS_DESKTOP` kept True for `APP_MODE=electron` — electron is a desktop variant; all single-user guards and desktop-only code paths should apply.
-  - Page dimensions for `printToPDF` converted from inches to microns (Electron API requires microns): `Math.round(pageW * 25400)`. The existing server.py defaults of 5.5 × 8.5 in are preserved.
-  - Offscreen BrowserWindow destroyed in `finally` to prevent leaks even on `printToPDF` rejection.
-  - Preload: migrated from the comment-stub to a real `contextBridge.exposeInMainWorld` using ESM `import` (matches the file's existing style; root `package.json` has `"type": "module"`).
-- Deviations from spec: none. All three acceptance criteria addressed (IPC handler, server.py detection, tests).
-- Concerns:
-  - PDF quality/pagination can only be confirmed by manual smoke — `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing issue 012.
-  - The renderer call site (`window.electronAPI.generatePdf()`) is wired in preload but not yet called from the JS UI — that wiring is issue 013's scope. Until then the new IPC handler is present but unreachable from the running app.
-  - Temp directory created by `fs.mkdtempSync` is not cleaned up after the caller reads the PDF file. Issue 013 should add cleanup after the save-dialog resolves.
-
-### 2026-06-03 — electron-scaffold (issue 011)
-- Files modified:
-  - `electron/main.js` (new) — Electron main process. Spawns `server.py` sidecar on port 8765 (`python3 server.py 8765` in dev; `<resourcesPath>/server` in packaged mode). `waitForServer()` polls http://localhost:8765/ up to 20 s. Opens BrowserWindow (1280×900, contextIsolation on, nodeIntegration off, preload wired). Creates tray icon from `menubar-icon.png` with "Open Bulletin Generator" + separator + "Quit". Kills sidecar on `before-quit`; shows error dialog if sidecar crashes.
-  - `electron/preload.js` (new) — Intentionally minimal. contextIsolation boundary. No APIs exposed to renderer (app talks to Python sidecar directly over HTTP). Comments scaffold the `contextBridge.exposeInMainWorld` extension point.
-  - `package.json` — Added `"main": "electron/main.js"`, `"start:electron": "electron ."` script, `"electron": "^28.3.3"` devDependency.
-  - `docs/ai/testing-guide.md` — Added "Electron desktop (dev mode)" section: `npm run start:electron`, expected behaviors, packaged-mode path note.
-- Checks run:
-  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
-  - `./node_modules/.bin/electron --version` → v28.3.3.
-  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
-- Decisions made:
-  - Used ESM `import` syntax in `main.js` (root package.json has `"type": "module"`). Electron 28 supports ESM main entry points.
-  - Dev-mode sidecar command: `python3 server.py 8765` (passes port as argv, matching server.py's existing `sys.argv[1]` port override). Packaged-mode path probes `process.resourcesPath/server` — scaffolded now, binary doesn't exist until issue 014.
-  - `sidecarExited` boolean prevents double-kill races between `before-quit` and the `exit` handler.
-  - Tray keeps app alive on macOS when BrowserWindow is closed (standard macOS convention).
-- Deviations from spec: none.
-- Concerns:
-  - Dev smoke (`npm run start:electron`) requires Python 3 in PATH and `server.py` dependencies installed. Full end-to-end smoke is manual only — not automated.
-  - `launcher.py` NOT deleted per spec — deprecation deferred to issue 014.
-  - Vulnerabilities reported by `npm audit` are in electron's own transitive deps; none are in the runtime app surface. Not blocking for a devDependency-only install.
+  - The manual items (S6, C1-C3, E1-E3, D2) require live human testing. They are documented but not yet executed. The project-state marks issue 016 DONE with the note that automated items pass and manual items are documented for the cutover session — per the issue spec.
+  - `package-lock.json` still needs `npm install` before merging (noted in Open risks, carried from issue 014).
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:
