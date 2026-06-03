@@ -116,15 +116,10 @@ async function _fetchIdentityWithSession(session) {
   return data.user || session.user || null;
 }
 
-async function _isDesktopModeWithoutAuth() {
-  try {
-    const res = await fetch('/api/me');
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.mode === 'desktop';
-  } catch (_) {
-    return false;
-  }
+function _isDesktopMode() {
+  // Desktop mode has no Supabase config served by the server.
+  // Avoids an unauthenticated /api/me probe that always 401s in server mode.
+  return !_authConfig().url;
 }
 
 async function signInWithGoogle() {
@@ -200,7 +195,7 @@ function _wireLoginControls() {
 async function initAuth() {
   _wireLoginControls();
 
-  if (await _isDesktopModeWithoutAuth()) {
+  if (_isDesktopMode()) {
     showApp(null);
     return true;
   }
