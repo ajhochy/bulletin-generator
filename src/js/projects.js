@@ -701,7 +701,9 @@ function renderFilesList() {
   const countEl = document.getElementById('files-count');
   if (!list) return;
 
-  // Stamp when the list was last rendered so "new to you" badges work.
+  // Read the previous check timestamp BEFORE overwriting it, so cards
+  // rendered in this pass can compare against the last visit.
+  const _prevCheck = (() => { try { return Number(localStorage.getItem('_projectsLastCheck') || 0); } catch(_){return 0;} })();
   try { localStorage.setItem('_projectsLastCheck', String(Date.now())); } catch(_) {}
 
   const sorted = projects.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
@@ -745,11 +747,13 @@ function renderFilesList() {
     const currentUserId = currentUser?.id || currentUser?.user_id || null;
     const isOwner = !isServerMode() || !project.owner_user_id ||
                     (currentUserId && String(project.owner_user_id) === String(currentUserId));
-    // "New to you" badge: project is owned by current user and was updated recently
-    // (within the last 2 minutes, from someone else doing a hand-off).
-    const lastCheck = (() => { try { return Number(localStorage.getItem('_projectsLastCheck') || 0); } catch(_){return 0;} })();
+    // "New to you" badge: owned by current user, updated after the previous
+    // list render (i.e. handed off since we last looked), and recent enough
+    // to be meaningful (within the last 10 minutes).
     const updatedMs = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
-    const isNewToYou = isOwner && !isActive && updatedMs > lastCheck && (Date.now() - updatedMs) < 120_000;
+    const isNewToYou = isOwner && !isActive && _prevCheck > 0
+                       && updatedMs > _prevCheck
+                       && (Date.now() - updatedMs) < 600_000;
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
     card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
