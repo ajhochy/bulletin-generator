@@ -44,6 +44,14 @@ function handleTabClick(btn) {
     const flt = document.getElementById('fmt-filter');
     if (flt) flt.value = '';
   }
+  // Start/stop files-tab auto-refresh based on which tab is active.
+  if (typeof startFilesAutoRefresh === 'function') {
+    if (btn.dataset.tab === 'page-files') {
+      startFilesAutoRefresh();
+    } else {
+      stopFilesAutoRefresh();
+    }
+  }
 }
 
 function openTabById(tabId) {

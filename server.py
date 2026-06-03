@@ -530,6 +530,34 @@ CHROME_PATH = None if os.environ.get("APP_MODE", "").strip().lower() == "electro
 
 _lock = threading.Lock()
 
+# ─── Project list cache (server mode only) ─────────────────────────────────────
+# Caches the project metadata list per workspace to avoid a full Supabase
+# round-trip on every load.  Invalidated on every save, delete, or transfer.
+# TTL is a safety net in case invalidation is missed; 30 s is sufficient.
+_PROJECTS_CACHE: dict = {}   # workspace_id -> {"ts": float, "projects": list}
+_PROJECTS_CACHE_TTL = 30.0   # seconds
+
+def _projects_cache_get(workspace_id: str, user_id: str):
+    import time as _time
+    key = f"{workspace_id}:{user_id}"
+    entry = _PROJECTS_CACHE.get(key)
+    if entry and (_time.time() - entry["ts"]) < _PROJECTS_CACHE_TTL:
+        return entry["projects"]
+    return None
+
+def _projects_cache_set(workspace_id: str, user_id: str, projects: list):
+    import time as _time
+    key = f"{workspace_id}:{user_id}"
+    _PROJECTS_CACHE[key] = {"ts": _time.time(), "projects": projects}
+
+def _projects_cache_invalidate(workspace_id: str | None = None):
+    """Invalidate cache entries for a workspace, or all entries if workspace_id is None."""
+    if workspace_id is None:
+        _PROJECTS_CACHE.clear()
+    else:
+        for key in [k for k in _PROJECTS_CACHE if k.startswith(f"{workspace_id}:")]:
+            del _PROJECTS_CACHE[key]
+
 
 # ─── JSON file helpers ─────────────────────────────────────────────────────────
 
@@ -1412,7 +1440,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     return
                 self._send_json({"project": project})
             else:
-                self._send_json({"projects": store.list_projects(user_id=user["id"])})
+                ws_id = user.get("workspace_id")
+                uid   = user.get("id") or user.get("user_id")
+                cached = _projects_cache_get(ws_id, uid)
+                if cached is not None:
+                    self._send_json({"projects": cached})
+                else:
+                    projects = store.list_projects(user_id=uid)
+                    _projects_cache_set(ws_id, uid, projects)
+                    self._send_json({"projects": projects})
 
     def _handle_get_project_revisions(self):
         """Lightweight poll target: project metadata without heavy `state`."""
@@ -1515,6 +1551,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 updated_by_email=user.get("email") or "",
                 updated_by_user_id=user.get("id") or None,
             )
+            _projects_cache_invalidate(user.get("workspace_id"))
             self._send_json({"ok": True, "revision": saved.get("revision")})
             return
 
@@ -1706,6 +1743,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "transfer failed — project not found or not owner"}, 404)
             return
 
+        _projects_cache_invalidate(workspace_id)
         self._send_json({"ok": True, "new_owner": str(to_user_id)})
 
     # ── GET sub-route dispatcher for /api/projects/{id}/... ───────────────────
@@ -2015,6 +2053,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self._send_json({"error": "forbidden"}, 403)
                 return
             store.delete_project(project_id)
+            _projects_cache_invalidate(user.get("workspace_id"))
             self._send_json({"ok": True})
             return
 

@@ -676,10 +676,33 @@ function updateBulkBar() {
   if (selAllBtn) selAllBtn.textContent = (n === projects.length && projects.length > 0) ? 'Deselect All' : 'Select All';
 }
 
+// ─── Files tab auto-refresh ───────────────────────────────────────────────────
+let _filesRefreshTimer = null;
+
+function startFilesAutoRefresh() {
+  stopFilesAutoRefresh();
+  if (!isServerMode()) return;
+  _filesRefreshTimer = setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/projects');
+      setProjects(res.projects || []);
+      renderProjectSelect();
+      renderFilesList();
+    } catch (_) { /* silent */ }
+  }, 30_000);
+}
+
+function stopFilesAutoRefresh() {
+  if (_filesRefreshTimer) { clearInterval(_filesRefreshTimer); _filesRefreshTimer = null; }
+}
+
 function renderFilesList() {
   const list    = document.getElementById('files-list');
   const countEl = document.getElementById('files-count');
   if (!list) return;
+
+  // Stamp when the list was last rendered so "new to you" badges work.
+  try { localStorage.setItem('_projectsLastCheck', String(Date.now())); } catch(_) {}
 
   const sorted = projects.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
@@ -722,6 +745,11 @@ function renderFilesList() {
     const currentUserId = currentUser?.id || currentUser?.user_id || null;
     const isOwner = !isServerMode() || !project.owner_user_id ||
                     (currentUserId && String(project.owner_user_id) === String(currentUserId));
+    // "New to you" badge: project is owned by current user and was updated recently
+    // (within the last 2 minutes, from someone else doing a hand-off).
+    const lastCheck = (() => { try { return Number(localStorage.getItem('_projectsLastCheck') || 0); } catch(_){return 0;} })();
+    const updatedMs = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
+    const isNewToYou = isOwner && !isActive && updatedMs > lastCheck && (Date.now() - updatedMs) < 120_000;
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
     card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
@@ -733,6 +761,7 @@ function renderFilesList() {
         <div class="file-card-name font-medium text-sm truncate">
           ${esc(project.name)}
           ${isActive ? '<span class="file-active-badge badge badge-sm badge-primary ml-1">active</span>' : ''}
+          ${isNewToYou ? '<span class="badge badge-sm badge-warning ml-1">handed off to you ↗</span>' : ''}
         </div>
         <div class="file-card-meta text-xs text-base-content/50 truncate">${esc(metaParts.join(' · '))}</div>
       </div>
