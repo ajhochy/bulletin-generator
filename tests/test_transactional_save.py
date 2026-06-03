@@ -482,15 +482,16 @@ class TestPostProjectsServerMode:
             owner_user_id=self._USER["id"],
         )
 
-    # -- Successful save -------------------------------------------------------
+    # -- Successful save (issue 021: uses save_project for all writes) -----------
 
     def test_successful_save_returns_ok_and_revision(self, monkeypatch):
+        """Owner saving existing project gets 200 ok; save_project is called."""
         import server as server_module
 
         project_payload = {
             "id": self._PROJECT_ID,
             "name": "Sunday Service",
-            "_clientRevision": 4,
+            "_clientRevision": 4,  # ignored by server (issue 021)
         }
         body = json.dumps(project_payload).encode()
         handler, responses = self._make_handler(body, monkeypatch)
@@ -500,10 +501,9 @@ class TestPostProjectsServerMode:
 
         mock_store = MagicMock()
         mock_store.get_project.return_value = existing
-        mock_store.save_project_transactional.return_value = saved
+        mock_store.save_project.return_value = saved
 
         with patch("storage.get_storage", return_value=mock_store), \
-             patch("storage.ConflictError", __import__("storage").ConflictError), \
              patch.object(server_module, "IS_DESKTOP", False):
             handler._handle_post_projects()
 
@@ -513,13 +513,14 @@ class TestPostProjectsServerMode:
         assert data["ok"] is True
         assert data["revision"] == 5
 
-    def test_successful_save_calls_transactional_with_client_revision(self, monkeypatch):
+    def test_successful_save_calls_save_project_not_transactional(self, monkeypatch):
+        """save_project is called (not save_project_transactional) for existing projects."""
         import server as server_module
 
         project_payload = {
             "id": self._PROJECT_ID,
             "name": "Sunday Service",
-            "_clientRevision": 7,
+            "_clientRevision": 7,  # ignored
         }
         body = json.dumps(project_payload).encode()
         handler, responses = self._make_handler(body, monkeypatch)
@@ -529,77 +530,77 @@ class TestPostProjectsServerMode:
 
         mock_store = MagicMock()
         mock_store.get_project.return_value = existing
-        mock_store.save_project_transactional.return_value = saved
+        mock_store.save_project.return_value = saved
 
         with patch("storage.get_storage", return_value=mock_store), \
-             patch("storage.ConflictError", __import__("storage").ConflictError), \
              patch.object(server_module, "IS_DESKTOP", False):
             handler._handle_post_projects()
 
-        call_kwargs = mock_store.save_project_transactional.call_args
-        assert call_kwargs.kwargs.get("client_revision") == 7 or \
-               (call_kwargs.args and call_kwargs.args[1] == 7)
+        mock_store.save_project.assert_called_once()
+        mock_store.save_project_transactional.assert_not_called()
 
-    # -- Conflict (stale revision) ─────────────────────────────────────────────
-
-    def test_conflict_returns_409(self, monkeypatch):
+    def test_client_revision_is_ignored(self, monkeypatch):
+        """_clientRevision in the payload is discarded; save proceeds regardless."""
         import server as server_module
-        from storage import ConflictError
 
         project_payload = {
             "id": self._PROJECT_ID,
             "name": "Sunday Service",
-            "_clientRevision": 3,
+            "_clientRevision": 99,  # stale — but ignored since issue 021
         }
         body = json.dumps(project_payload).encode()
         handler, responses = self._make_handler(body, monkeypatch)
 
         existing = self._existing_project(revision=5)
-        server_project = self._existing_project(revision=5)
+        saved = {**existing, "revision": 6}
 
         mock_store = MagicMock()
         mock_store.get_project.return_value = existing
-        mock_store.save_project_transactional.side_effect = ConflictError(server_project)
+        mock_store.save_project.return_value = saved
 
         with patch("storage.get_storage", return_value=mock_store), \
-             patch("storage.ConflictError", ConflictError), \
              patch.object(server_module, "IS_DESKTOP", False):
             handler._handle_post_projects()
 
-        assert len(responses) == 1
         status, data = responses[0]
-        assert status == 409
+        assert status == 200
+        assert data["ok"] is True
+        # _clientRevision must not appear in the data passed to save_project
+        saved_data = mock_store.save_project.call_args[0][0]
+        assert "_clientRevision" not in saved_data
 
-    def test_conflict_response_contains_metadata(self, monkeypatch):
+    # -- Conflict (removed in issue 021 — no 409 from POST /api/projects) ------
+    # test_conflict_returns_409 and test_conflict_response_contains_metadata are
+    # intentionally removed: conflict detection via _clientRevision is no longer
+    # part of the save flow. The storage-layer save_project_transactional and
+    # ConflictError remain as dead code for tests/test_transactional_save.py
+    # storage-unit tests only.
+
+    # -- Missing _clientRevision: now silently ignored ─────────────────────────
+
+    def test_missing_client_revision_is_ignored(self, monkeypatch):
+        """Absent _clientRevision is silently ignored; save proceeds via save_project."""
         import server as server_module
-        from storage import ConflictError
 
-        project_payload = {
-            "id": self._PROJECT_ID,
-            "name": "Sunday Service",
-            "_clientRevision": 3,
-        }
+        project_payload = {"id": self._PROJECT_ID, "name": "Sunday Service"}
         body = json.dumps(project_payload).encode()
         handler, responses = self._make_handler(body, monkeypatch)
 
-        server_project = self._existing_project(revision=7)
-        existing = self._existing_project(revision=7)
-
+        existing = self._existing_project(revision=3)
+        saved = {**existing, "revision": 4}
         mock_store = MagicMock()
         mock_store.get_project.return_value = existing
-        mock_store.save_project_transactional.side_effect = ConflictError(server_project)
+        mock_store.save_project.return_value = saved
 
         with patch("storage.get_storage", return_value=mock_store), \
-             patch("storage.ConflictError", ConflictError), \
              patch.object(server_module, "IS_DESKTOP", False):
             handler._handle_post_projects()
 
         status, data = responses[0]
-        assert status == 409
-        assert data["conflict"] is True
-        assert data["serverRevision"] == 7
-        assert "serverUpdatedAt" in data
-        assert "serverUpdatedBy" in data
+        assert status == 200
+        assert data["ok"] is True
+        mock_store.save_project.assert_called_once()
+        mock_store.save_project_transactional.assert_not_called()
 
     # -- New project: non-transactional path ───────────────────────────────────
 
@@ -629,36 +630,8 @@ class TestPostProjectsServerMode:
         assert status == 200
         assert data["ok"] is True
 
-    # -- Missing _clientRevision ───────────────────────────────────────────────
-
-    def test_missing_client_revision_passed_as_none(self, monkeypatch):
-        """When _clientRevision is absent from payload, None is passed to transactional save."""
-        import server as server_module
-        from storage import ConflictError
-
-        project_payload = {"id": self._PROJECT_ID, "name": "Sunday Service"}
-        body = json.dumps(project_payload).encode()
-        handler, responses = self._make_handler(body, monkeypatch)
-
-        existing = self._existing_project(revision=3)
-        # Simulate that the missing revision triggers a conflict
-        mock_store = MagicMock()
-        mock_store.get_project.return_value = existing
-        mock_store.save_project_transactional.side_effect = ConflictError(existing)
-
-        with patch("storage.get_storage", return_value=mock_store), \
-             patch("storage.ConflictError", ConflictError), \
-             patch.object(server_module, "IS_DESKTOP", False):
-            handler._handle_post_projects()
-
-        # Verify None was passed as client_revision
-        call_kwargs = mock_store.save_project_transactional.call_args
-        passed_rev = call_kwargs.kwargs.get("client_revision") or \
-                     (call_kwargs.args[1] if len(call_kwargs.args) > 1 else None)
-        assert passed_rev is None
-
-        status, _ = responses[0]
-        assert status == 409
+    # (test_missing_client_revision_passed_as_none removed — _clientRevision
+    # is now silently discarded; see test_missing_client_revision_is_ignored above)
 
 
 # =============================================================================

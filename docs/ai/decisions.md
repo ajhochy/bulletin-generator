@@ -4,6 +4,26 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-03 — Owner-only write policy replaces workspace-member write access (issue 021)
+
+**Context.** Issue 020 tightened RLS so only owners can UPDATE. Issue 021 wires the application layer to match, and removes the old `_clientRevision`-based conflict detection.
+
+**Decisions:**
+
+- **Owner-only writes in `_handle_post_projects`.** The old check (`can_write_project`, which allowed any workspace member to write workspace-visibility projects) is replaced by a direct `owner_user_id == caller.id` check. Projects with `owner_user_id = NULL` (legacy imports) retain the prior permissive behavior — any authenticated user may save them. This matches the `_handle_share_project` precedent.
+
+- **`save_project_transactional` removed from `POST /api/projects` handler.** The handler now calls `save_project` (upsert) for both new and existing projects. `_clientRevision` in the request body is silently discarded. `save_project_transactional` and `ConflictError` remain in `storage.py` as dead code (storage-unit tests reference them). The `_handle_project_restore` handler still uses `save_project_transactional` (unchanged — restore needs revision-lock semantics).
+
+- **Transfer membership validation via `admin_transaction()`.** The `POST /api/projects/{id}/transfer` handler validates `to_user_id` by querying `workspace_members` directly with an admin-role connection (same pattern as `resolve_workspace_membership`), rather than going through the full `resolve_workspace_membership` function. Rationale: `resolve_workspace_membership` fetches the first workspace for a user_id and returns profile data — overkill here. The transfer just needs a boolean membership check for a specific (workspace_id, user_id) pair.
+
+- **Conflict detection UI note.** The `GET /api/projects/revisions` stale-poll (30s) and the stale banner UI still work after this change — they use a different endpoint and don't depend on 409 from saves. The frontend `_clientRevision` append code in `projects.js` is now dead; safe to remove in a follow-up. QA matrix item C1 ("conflict detection") in `docs/ai/qa-matrix-m5.md` is obsolete — should be removed before cutover.
+
+**Consequences.**
+- Three test files (`test_project_visibility.py`, `test_transactional_save.py`, `test_collab_regression.py`) had to be updated: they asserted old workspace-member write access and `save_project_transactional` call sites, both of which are removed.
+- Future: if workspace-member collaborative editing is re-introduced, the ownership check in `_handle_post_projects` will need to be relaxed (and a new conflict strategy designed — `_clientRevision` alone is insufficient for concurrent multi-user edits).
+
+---
+
 ## 2026-06-03 — M4/M5 deferred items confirmed: custom SMTP, Windows signing, staging=production
 
 **Context.** Issue 017 (operator runbook) required documenting the current deployment posture to avoid confusion between staging and production and to record items that are explicitly deferred rather than forgotten.

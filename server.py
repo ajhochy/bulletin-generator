@@ -1484,58 +1484,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
         if not IS_DESKTOP:
             # ── Server mode: delegate to storage layer with user attribution ──
-            from storage import ConflictError  # noqa: PLC0415
             store = self._storage_for_user(user)
 
-            # Detect new vs existing project before popping _clientRevision.
-            is_new_project = not project.get("id") or store.get_project(project["id"]) is None
+            # Ignore _clientRevision — conflict detection is replaced by
+            # owner-only write enforcement (issue 021).
+            project.pop("_clientRevision", None)
 
-            # Extract client revision before passing data to the storage layer.
-            client_rev = project.pop("_clientRevision", None)
+            # Detect new vs existing project.
+            existing = store.get_project(project["id"]) if project.get("id") else None
+            is_new_project = existing is None
 
             if is_new_project:
                 # Never trust client-supplied ownership fields for new projects.
                 # Server always sets owner and visibility from the authenticated session.
                 project.pop("owner_user_id", None)
                 project.pop("visibility", None)
-                # New projects: use the non-transactional upsert path.
-                saved = store.save_project(
-                    project,
-                    updated_by_email=user.get("email") or "",
-                    updated_by_user_id=user.get("id") or None,
-                )
-                self._send_json({"ok": True, "revision": saved.get("revision")})
-                return
-
-            # Existing project: check write access before attempting the save.
-            existing = store.get_project(project["id"])
-            if existing is not None:
-                from storage import can_write_project  # noqa: PLC0415
-                if not can_write_project(existing, user["id"]):
-                    self._send_json({"error": "forbidden"}, 403)
+            else:
+                # Existing project: only the owner may save.
+                owner_user_id = existing.get("owner_user_id")
+                if owner_user_id is not None and str(owner_user_id) != str(user.get("id", "")):
+                    self._send_json(
+                        {"error": "Only the project owner can save this project."},
+                        403,
+                    )
                     return
 
-            # Transactional save: UPDATE WHERE revision=client_rev.
-            # ConflictError is raised when the revision does not match.
-            try:
-                saved = store.save_project_transactional(
-                    project,
-                    client_revision=client_rev,
-                    updated_by_email=user.get("email") or "",
-                    updated_by_user_id=user.get("id") or None,
-                    updated_by_name=user.get("display_name") or "",
-                )
-            except ConflictError as e:
-                srv = e.project
-                self._send_json({
-                    "conflict": True,
-                    "error": "conflict",
-                    "projectId": project["id"],
-                    "serverRevision": srv.get("revision"),
-                    "serverUpdatedAt": srv.get("updated_at") or srv.get("updatedAt"),
-                    "serverUpdatedBy": srv.get("updated_by_email") or srv.get("updatedBy") or "",
-                }, 409)
-                return
+            saved = store.save_project(
+                project,
+                updated_by_email=user.get("email") or "",
+                updated_by_user_id=user.get("id") or None,
+            )
             self._send_json({"ok": True, "revision": saved.get("revision")})
             return
 
@@ -1577,7 +1555,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "revision": saved.get("revision")})
 
     def _handle_post_projects_sub(self):
-        """Dispatch POST /api/projects/{id}/share|restore and any future sub-routes."""
+        """Dispatch POST /api/projects/{id}/share|restore|transfer and any future sub-routes."""
         path = self.path.split("?")[0]
         # Strip the /api/projects/ prefix to get the remainder: "{id}/share"
         remainder = path[len("/api/projects/"):]
@@ -1586,6 +1564,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif remainder.endswith("/restore"):
             project_id = remainder[: -len("/restore")]
             self._handle_project_restore(project_id)
+        elif remainder.endswith("/transfer"):
+            project_id = remainder[: -len("/transfer")]
+            self._handle_post_transfer_project(project_id)
         else:
             self._send_json({"error": "not found"}, 404)
 
@@ -1638,6 +1619,93 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
 
         self._send_json({"ok": True, "project": updated})
+
+    def _handle_post_transfer_project(self, project_id: str):
+        """POST /api/projects/{id}/transfer — transfer project ownership to another workspace member.
+
+        Server mode only.  Auth required.  Caller must be the current owner.
+
+        Body: {"to_user_id": "<uuid>"}
+
+        Returns:
+            200  {"ok": True, "new_owner": "<uuid>"}
+            400  if to_user_id is missing or not a workspace member
+            401  if unauthenticated
+            403  if caller is not the current project owner
+            404  if project not found, or in desktop mode
+        """
+        if IS_DESKTOP:
+            self._send_json({"error": "not found"}, 404)
+            return
+
+        user = self._require_auth()
+        if user is None:
+            return
+
+        if not project_id:
+            self._send_json({"error": "missing project id"}, 400)
+            return
+
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+
+        to_user_id = body.get("to_user_id")
+        if not to_user_id:
+            self._send_json({"error": "missing required field: to_user_id"}, 400)
+            return
+
+        store = self._storage_for_user(user)
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        # Only the current owner may transfer.
+        owner_user_id = project.get("owner_user_id")
+        if owner_user_id is None or str(owner_user_id) != str(user.get("id", "")):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        # Validate that to_user_id is a member of the same workspace.
+        workspace_id = user.get("workspace_id")
+        if workspace_id is None:
+            self._send_json({"error": "workspace not resolved"}, 400)
+            return
+
+        from db import admin_transaction  # noqa: PLC0415
+
+        with admin_transaction() as conn:
+            row = conn.execute(
+                """
+                SELECT user_id FROM public.workspace_members
+                WHERE workspace_id = %s::uuid AND user_id = %s::uuid
+                LIMIT 1
+                """,
+                (workspace_id, to_user_id),
+            ).fetchone()
+
+        if row is None:
+            self._send_json({"error": "to_user_id is not a workspace member"}, 400)
+            return
+
+        updated = store.transfer_project_owner(
+            project_id,
+            from_user_id=str(user["id"]),
+            to_user_id=str(to_user_id),
+        )
+        if updated is None:
+            # Raced with another transfer or the project disappeared.
+            self._send_json({"error": "transfer failed — project not found or not owner"}, 404)
+            return
+
+        self._send_json({"ok": True, "new_owner": str(to_user_id)})
 
     # ── GET sub-route dispatcher for /api/projects/{id}/... ───────────────────
 

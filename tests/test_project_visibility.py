@@ -330,7 +330,13 @@ class TestGetProjectSingle:
 # ===========================================================================
 
 class TestPostProjectsSave:
-    """Save enforces can_write_project for existing projects."""
+    """Save enforces owner-only writes for existing projects (issue 021).
+
+    Only the project owner may update an existing project.  Workspace
+    visibility no longer grants write access to non-owners.
+    _clientRevision is silently discarded; save_project (upsert) is used
+    for both new and existing projects.
+    """
 
     def _call_save(self, user, project_id, existing_project, client_rev=1):
         payload = {
@@ -342,12 +348,11 @@ class TestPostProjectsSave:
         handler = _make_handler("/api/projects", body=body)
         mock_store = MagicMock()
         mock_store.get_project.return_value = existing_project
-        if existing_project is not None:
-            saved = dict(existing_project, revision=(existing_project.get("revision", 1) + 1))
-            # Existing projects use the transactional save path.
-            mock_store.save_project_transactional.return_value = saved
-        else:
-            mock_store.save_project.return_value = {"id": project_id, "revision": 1}
+        saved = dict(
+            existing_project or {"id": project_id},
+            revision=(existing_project.get("revision", 1) + 1 if existing_project else 1),
+        )
+        mock_store.save_project.return_value = saved
         with patch.object(server, "IS_DESKTOP", False), \
              patch("auth.get_request_user", return_value=user), \
              patch("storage.get_storage", return_value=mock_store):
@@ -359,23 +364,27 @@ class TestPostProjectsSave:
         prj = _project(pid, _USER_ALICE["id"], "private")
         handler, store = self._call_save(_USER_ALICE, pid, prj)
         assert _status(handler) == 200
-        store.save_project_transactional.assert_called_once()
+        store.save_project.assert_called_once()
 
     def test_non_owner_cannot_save_private_project(self):
         pid = str(uuid.uuid4())
         prj = _project(pid, _USER_ALICE["id"], "private")
         handler, store = self._call_save(_USER_BOB, pid, prj)
         assert _status(handler) == 403
-        store.save_project_transactional.assert_not_called()
         store.save_project.assert_not_called()
 
-    def test_both_users_can_save_workspace_project(self):
+    def test_only_owner_can_save_workspace_project(self):
+        """Workspace visibility does not grant write access to non-owners (issue 021)."""
         pid = str(uuid.uuid4())
         prj = _project(pid, _USER_ALICE["id"], "workspace")
-        for user in (_USER_ALICE, _USER_BOB):
-            handler, store = self._call_save(user, pid, prj)
-            assert _status(handler) == 200, f"Expected 200 for {user['email']}"
-            store.save_project_transactional.assert_called_once()
+        # Alice (owner) can save.
+        handler_a, store_a = self._call_save(_USER_ALICE, pid, prj)
+        assert _status(handler_a) == 200, "Owner must be able to save workspace project"
+        store_a.save_project.assert_called_once()
+        # Bob (non-owner) cannot save, even though visibility=workspace.
+        handler_b, store_b = self._call_save(_USER_BOB, pid, prj)
+        assert _status(handler_b) == 403, "Non-owner must not save workspace project"
+        store_b.save_project.assert_not_called()
 
     def test_new_project_always_allowed(self):
         """A brand-new project (not yet in DB) is always allowed for any user."""
@@ -390,9 +399,7 @@ class TestPostProjectsSave:
              patch("storage.get_storage", return_value=mock_store):
             handler._handle_post_projects()
         assert _status(handler) == 200
-        # New projects use the non-transactional path
         mock_store.save_project.assert_called_once()
-        mock_store.save_project_transactional.assert_not_called()
 
     def test_unauthenticated_save_returns_401(self):
         pid = str(uuid.uuid4())
@@ -404,11 +411,12 @@ class TestPostProjectsSave:
         assert _status(handler) == 401
 
     def test_legacy_no_owner_private_writable_by_all(self):
+        """Projects with owner_user_id=None (legacy import) allow any authenticated user."""
         pid = str(uuid.uuid4())
         prj = _project(pid, None, "private")
         handler, store = self._call_save(_USER_BOB, pid, prj)
         assert _status(handler) == 200
-        store.save_project_transactional.assert_called_once()
+        store.save_project.assert_called_once()
 
 
 # ===========================================================================

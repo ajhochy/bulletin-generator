@@ -881,6 +881,54 @@ class PostgresStorageBackend(StorageBackend):
             raw = dict(zip(raw_cols, row))
             return _pg_enrich_project_row(conn, raw)
 
+    def transfer_project_owner(
+        self,
+        project_id: str,
+        from_user_id: str,
+        to_user_id: str,
+    ) -> "dict | None":
+        """Transfer ownership of a project to another workspace member.
+
+        Uses ``UPDATE ... WHERE id=? AND workspace_id=? AND owner_user_id=from_user_id``
+        so that only the current owner may transfer.  Returns the updated project
+        dict on success, or ``None`` if no matching row was updated (project not
+        found, wrong workspace, or caller is not the current owner).
+
+        ``to_user_id`` must be validated as a workspace member by the caller
+        *before* calling this method.
+        """
+        params: dict = {
+            "id": project_id,
+            "from": from_user_id,
+            "to": to_user_id,
+        }
+        ws_clause = ""
+        if self.workspace_id is not None:
+            ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+            params["workspace_id"] = self.workspace_id
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE projects
+                SET owner_user_id = %(to)s::uuid,
+                    updated_at = NOW()
+                WHERE id = %(id)s
+                  AND owner_user_id = %(from)s::uuid
+                  {ws_clause}
+                RETURNING id, name, owner_user_id, visibility, state, revision,
+                          created_at, updated_at, created_by_user_id, updated_by_user_id,
+                          workspace_id
+                """,
+                params,
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            raw_cols = [d[0] for d in cursor.description]
+            raw = dict(zip(raw_cols, row))
+            return _pg_enrich_project_row(conn, raw)
+
     # ── Settings ──────────────────────────────────────────────────────────────
 
     def get_settings(self) -> dict:
