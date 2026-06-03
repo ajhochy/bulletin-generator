@@ -14,7 +14,8 @@ Tables written:
     project_revisions  — one initial revision per newly inserted project
     announcements      — one row per announcement (ON CONFLICT (id) DO NOTHING)
     songs              — one row per song (ON CONFLICT (id) DO NOTHING)
-    workspace_settings — one upsert for the whole settings blob
+    workspace_settings — one upsert for the whole settings blob (includes
+                         volunteerRoles migrated from volunteer-roles.json)
 
 Usage::
 
@@ -238,7 +239,9 @@ def _print_dry_run_summary(
     print(f"  songs             : {len(songs):>6} rows would be inserted")
 
     settings_row = 1 if settings else 0
-    print(f"  workspace_settings: {settings_row:>6} row would be upserted")
+    volunteer_roles_count = len(settings.get('volunteerRoles', []))
+    print(f"  workspace_settings: {settings_row:>6} row would be upserted"
+          + (f"  (volunteerRoles: {volunteer_roles_count} entries)" if volunteer_roles_count else ""))
     print()
 
     if projects:
@@ -484,6 +487,11 @@ def migrate(source_dir: str, execute: bool = False) -> int:
         errors.append(err)
         settings_raw = {}
 
+    volunteer_roles_raw, err = _read_json(src / "volunteer-roles.json", list)
+    if err:
+        errors.append(err)
+        volunteer_roles_raw = []
+
     # ── 2. Parse rows ─────────────────────────────────────────────────────────
     projects: list[dict] = []
     for idx, item in enumerate(projects_raw):
@@ -507,6 +515,12 @@ def migrate(source_dir: str, execute: bool = False) -> int:
             errors.append(f"songs[{idx}]: {exc}")
 
     settings = _extract_settings(settings_raw) if settings_raw else {}
+
+    # Merge volunteerRoles from volunteer-roles.json into the settings blob.
+    # This is idempotent: the upsert uses JSONB || merge, so re-running with
+    # the same data is safe.
+    if volunteer_roles_raw:
+        settings['volunteerRoles'] = volunteer_roles_raw
 
     # ── 3. Dry-run: print and exit ────────────────────────────────────────────
     if not execute:
