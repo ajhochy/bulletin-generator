@@ -1,37 +1,38 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 012 coding-agent run complete)_
+_Last updated: 2026-06-03 (issue 012 verification PASS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issue 012 (PDF via Electron printToPDF) coding-agent run complete; awaiting verification-gate. Manual dev smoke (`npm run start:electron` + PDF export round-trip) required before closing.
+Issues 011 and 012 are code-complete and verified (automated checks). Both await manual dev smoke and draft PRs.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
 - **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
-- **012** — PDF via Electron printToPDF. `electron/main.js`: `pdf:generate` IPC handler. `electron/preload.js`: `window.electronAPI.generatePdf()` bridge. `server.py`: `APP_MODE=electron` accepted, `IS_ELECTRON` flag, Chrome not required at startup, `/api/pdf` returns 501 with IPC redirect message. `tests/test_pdf.py` (new): 14 tests, all pass.
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. See coding-agent run entry below for details. Manual PDF smoke still required.
 
 ## In progress
 
-- Issue 012 coding-agent run done; awaiting verification-gate PASS.
-- Issue 011 manual dev smoke and draft PR still pending.
+- Issues 011 + 012 code-complete and automated-verified. Manual dev smoke pending.
+- Draft PRs for 011 + 012 not yet opened.
 
 ## Open risks
 
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
 - `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
 - `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
-- Issue 012 PDF path: manual smoke is required to confirm `webContents.printToPDF()` produces correct pagination/footers/QR — this cannot be automated.
+- Issue 012 PDF path: `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing.
+- `window.electronAPI.generatePdf()` is wired in preload but not yet called from any JS UI — that call-site wiring is issue 013's scope. IPC handler is present but unreachable from the running app until then.
+- Temp dir from `fs.mkdtempSync` in `pdf:generate` handler is not cleaned up after the caller reads the file. Issue 013 should add cleanup after the save-dialog resolves.
 
 ## Next step
 
-1. Verification-gate for issue 012.
-2. Manual dev smoke: `npm run start:electron` → export a PDF → confirm pagination/footers/QR match the headless-Chrome output.
-3. Open draft PRs for issues 011 + 012.
-4. Next issue: **013** — Supabase auth in Electron (deep-link/custom-protocol). Depends on 011 + 012.
+1. Manual dev smoke for issues 011 + 012: `npm run start:electron` → confirm BrowserWindow + tray → export a PDF → verify pagination/footers/QR match headless-Chrome output.
+2. Open draft PRs for issues 011 + 012.
+3. Next issue: **013** — Supabase auth in Electron (deep-link/custom-protocol). Depends on 011 + 012.
 
 ## Recent coding-agent runs
 
