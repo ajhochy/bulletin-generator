@@ -1233,6 +1233,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/songs',                '_handle_get_songs'),
         ('/api/templates',            '_handle_get_templates'),
         ('/api/fonts',                '_handle_get_fonts'),
+        ('/api/presence',             '_handle_get_presence'),
         ('/api/bootstrap',            '_handle_bootstrap'),
         ('/api/health',               '_handle_health'),
         ('/api/google-calendars',     '_handle_google_calendars'),
@@ -1268,6 +1269,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/drive/upload',         '_handle_drive_upload'),
         ('/api/pco-disconnect',       '_handle_pco_disconnect'),
         ('/api/google-disconnect',    '_handle_google_disconnect'),
+        ('/api/presence/heartbeat',   '_handle_post_presence_heartbeat'),
         ('/api/admin/apply-update',   '_handle_apply_update'),
         ('/auth/logout',              '_handle_auth_logout'),
     ]
@@ -1276,6 +1278,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/projects/',            '_handle_delete_project'),
         ('/api/templates/',           '_handle_delete_template'),
         ('/api/fonts/',               '_handle_delete_font'),
+        ('/api/presence',             '_handle_delete_presence'),
     ]
 
     def _route(self, routes):
@@ -3113,6 +3116,120 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 self.wfile.write(json.dumps({'ok': False, 'events': [], 'error': str(e)}).encode())
             except Exception:
                 pass
+
+    # ── Presence endpoints ─────────────────────────────────────────────────────
+
+    def _handle_post_presence_heartbeat(self):
+        """POST /api/presence/heartbeat  body: {"project_id": "<uuid>"}
+        Upsert a workspace_presences row with last_seen_at = now().
+        Desktop mode: no-op, returns {"ok": true}.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"ok": True})
+            return
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+        project_id = (body.get("project_id") or "").strip()
+        if not project_id:
+            self._send_json({"error": "project_id is required"}, 400)
+            return
+        workspace_id = user.get("workspace_id")
+        user_id = user.get("id") or user.get("user_id")
+        if not workspace_id or not user_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            conn.execute(
+                """
+                INSERT INTO workspace_presences (workspace_id, user_id, project_id, last_seen_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (workspace_id, user_id, project_id)
+                DO UPDATE SET last_seen_at = now()
+                """,
+                (workspace_id, user_id, project_id),
+            )
+        self._send_json({"ok": True})
+
+    def _handle_get_presence(self):
+        """GET /api/presence?project_id=<uuid>
+        Return active presence records for the project (last_seen_at within 90s).
+        Desktop mode: returns empty list.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json([])
+            return
+        qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        project_id = (qs.get("project_id") or [None])[0]
+        if not project_id:
+            self._send_json({"error": "project_id query parameter is required"}, 400)
+            return
+        workspace_id = user.get("workspace_id")
+        if not workspace_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            rows = conn.execute(
+                """
+                SELECT wp.user_id::text, p.display_name, wp.last_seen_at::text
+                FROM workspace_presences wp
+                LEFT JOIN profiles p ON p.id = wp.user_id
+                WHERE wp.workspace_id = %s
+                  AND wp.project_id = %s
+                  AND wp.last_seen_at > now() - interval '90 seconds'
+                ORDER BY wp.last_seen_at DESC
+                """,
+                (workspace_id, project_id),
+            ).fetchall()
+        result = [
+            {
+                "user_id": row[0],
+                "display_name": row[1],
+                "last_seen_at": row[2],
+            }
+            for row in rows
+        ]
+        self._send_json(result)
+
+    def _handle_delete_presence(self):
+        """DELETE /api/presence
+        Remove the caller's presence rows (called on project close / sign-out).
+        Desktop mode: no-op, returns {"ok": true}.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"ok": True})
+            return
+        workspace_id = user.get("workspace_id")
+        user_id = user.get("id") or user.get("user_id")
+        if not workspace_id or not user_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            conn.execute(
+                """
+                DELETE FROM workspace_presences
+                WHERE workspace_id = %s AND user_id = %s
+                """,
+                (workspace_id, user_id),
+            )
+        self._send_json({"ok": True})
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────
