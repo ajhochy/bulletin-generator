@@ -1,6 +1,6 @@
 # Testing Guide
 
-This repo has no automated test suite. Validation is a layered checklist agents should run before claiming work is done.
+This repo has an automated test suite for backend logic and DB integration. Validation is a layered checklist agents should run before claiming work is done.
 
 ## Install / setup assumptions
 
@@ -40,6 +40,27 @@ pyinstaller bulletin-generator.spec
 # Output: dist/Bulletin Generator.app
 ```
 
+### Electron desktop (dev mode)
+
+Requires Node + the `electron` devDependency (`npm install`).
+
+```bash
+npm run start:electron
+# Equivalent: ./node_modules/.bin/electron .
+```
+
+What to expect:
+- A terminal window shows `[server] Serving on port 8765` once server.py is up.
+- A BrowserWindow opens pointing to `http://localhost:8765/`.
+- A tray icon appears; right-click shows "Open Bulletin Generator" and "Quit".
+- Clicking "Quit" from the tray kills the Python sidecar and exits cleanly.
+
+If the server fails to start within 20 s, an error dialog appears and the app quits.
+
+> **Packaged mode path (future):** when building the final `.app`, the PyInstaller
+> `server` binary will be placed at `<app>.app/Contents/Resources/server`.
+> `electron/main.js` already probes for that path via `process.resourcesPath`.
+
 ## Manual-only checks
 
 These cannot be automated and must be smoke-tested by a human before merge:
@@ -53,6 +74,31 @@ These cannot be automated and must be smoke-tested by a human before merge:
 ## Health probes
 
 The app has no dedicated `/health` endpoint. Acceptable substitute: `GET /api/bootstrap` returns 200 with a JSON body once the server is ready.
+
+## CI structure (two jobs)
+
+`.github/workflows/ci.yml` runs three jobs on every push and PR:
+
+| Job | What it tests | DB required? | Fork-safe? |
+|-----|--------------|--------------|------------|
+| `js` | vitest unit tests + vite build | No | Yes |
+| `python` | Non-DB pytest subset (server utils, update, drive, propresenter) | No | Yes |
+| `db-integration` | DB-dependent integration tests (`TestIntegration`, `TestRLSIsolation`, `TestDbIntegration`) | Yes | No — guarded by `if: github.repository == 'ajhochy/bulletin-generator'` |
+
+The `db-integration` job injects `DATABASE_URL` and `SUPABASE_JWT_SECRET` from GitHub Secrets and runs:
+
+```bash
+pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q
+```
+
+The `python` job is **unchanged** and still runs on every PR including forks. Only `db-integration` requires the secrets and is therefore restricted to the canonical repo.
+
+To run the DB integration tests locally:
+
+```bash
+set -a; source .env; set +a
+APP_MODE=server .venv/bin/pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q
+```
 
 ## Pre-handoff verification
 

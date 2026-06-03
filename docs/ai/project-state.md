@@ -1,37 +1,106 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-03 (issue 017 verification-gate PASS)_
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
+Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
+Issues 011 and 012 are code-complete and verified (automated checks). Both await manual dev smoke and draft PRs.
 
-- #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
-- #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
+## Recently completed (this branch)
 
-## Recently completed
-
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
+- **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
+- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. See coding-agent run entry below for details. Manual PDF smoke still required.
+- **017** — Operator runbook docs. Verification PASS: 100 pytest, 71 vitest, vite build. New `docs/operator-runbook.md` (5-section runbook: Supabase setup, Electron verification, Docker server mode, env vars reference, first-login provisioning). Updated `docs/ai/testing-guide.md` (removed stale "no automated test suite" language, confirmed CI structure and Electron dev launch present). Updated `docs/ai/decisions.md` (added M4/M5 deferred decisions: custom SMTP deferred, Windows signing deferred, staging=production confirmed).
 
 ## In progress
 
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+- Issues 011 + 012 code-complete and automated-verified. Manual dev smoke pending.
+- Draft PRs for 011 + 012 not yet opened.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
+- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
+- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
+- Issue 012 PDF path: `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing.
+- `window.electronAPI.generatePdf()` is wired in preload but not yet called from any JS UI — that call-site wiring is issue 013's scope. IPC handler is present but unreachable from the running app until then.
+- Temp dir from `fs.mkdtempSync` in `pdf:generate` handler is not cleaned up after the caller reads the file. Issue 013 should add cleanup after the save-dialog resolves.
+- Custom SMTP not yet configured — magic-link email delivery is rate-limited to project team addresses until a transactional email provider is set up (see `docs/operator-runbook.md` section 1.3).
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+1. Manual dev smoke for issues 011 + 012: `npm run start:electron` → confirm BrowserWindow + tray → export a PDF → verify pagination/footers/QR match headless-Chrome output.
+2. Open draft PRs for issues 011 + 012.
+3. Next issue: **013** — Supabase auth in Electron (deep-link/custom-protocol). Depends on 011 + 012.
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — docs-operator-runbook (issue 017)
+- Files modified:
+  - `docs/operator-runbook.md` (new) — complete operator runbook: Supabase project setup from scratch (create project, apply migrations, configure Auth providers, seed first workspace + user), Electron build verification (`npm run start:electron`, expected behaviors, login smoke), Docker server mode (still works for browser deployments; Watchtower/zip deprecated for Electron distribution), env vars reference table (all required vars with descriptions), first-login provisioning (domain allow-list SQL snippets).
+  - `docs/ai/testing-guide.md` — removed stale "no automated test suite" line; confirmed Electron dev launch section present; confirmed CI structure (two-job table) present; confirmed `npm run start:electron` documented.
+  - `docs/ai/decisions.md` — appended 2026-06-03 M4/M5 deferred decisions entry (custom SMTP deferred, Windows signing deferred, staging=production confirmed); back-filled 2026-06-03 issue 011 and 012 entries that were missing from the worktree copy.
+  - `docs/ai/project-state.md` — this entry.
+- Checks run:
+  - `python3 -c "import server"` → OK.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+  - `ai-workflow checks --level pr` → PASS (100 pytest, 71 vitest, vite build).
+  - Server smoke: `GET /api/bootstrap` → 401 (expected; confirms server is live and auth guard active).
+- Decisions made:
+  - No new architectural decisions. Recorded existing deferred items in `docs/ai/decisions.md` for durability.
+  - `docs/operator-runbook.md` chosen as new file (rather than expanding `MANUAL-STEPS.md`) because the runbook is structured reference material for operators, while `MANUAL-STEPS.md` is a step-by-step procedure list. Both serve different audiences and both are referenced from the runbook's "See also" section.
+- Deviations from spec: none. All five acceptance criteria addressed.
+- Concerns:
+  - `docs/ai/testing-guide.md` already had the Electron launch section and CI structure from issues 011/019 respectively — confirmed present, no changes needed there beyond the "no automated test suite" fix.
+  - `AGENTS.md` still says "This repo has no automated test suite" (line 23). That is out of scope for issue 017 (which only covers `testing-guide.md`) but should be updated in a follow-up.
+
+### 2026-06-03 — electron-pdf (issue 012)
+- Files modified:
+  - `electron/main.js` — added `ipcMain` + `os` imports; added `pdf:generate` IPC handler. Creates a hidden offscreen BrowserWindow, loads the print HTML via `loadFile()`, calls `webContents.printToPDF({ pageSize: { width, height } (microns), printBackground, margins: none })`, writes PDF bytes to a temp file, resolves with the path. Hidden window is always destroyed in a `finally` block.
+  - `electron/preload.js` — replaced the stub with a real `contextBridge.exposeInMainWorld('electronAPI', { generatePdf })` bridge. `generatePdf(opts)` calls `ipcRenderer.invoke('pdf:generate', opts)`.
+  - `server.py` — (1) `APP_MODE` validation now accepts `"electron"` alongside `"server"` and `"desktop"`. (2) `IS_ELECTRON = APP_MODE == "electron"` flag added. (3) `IS_DESKTOP` now `True` for both `"desktop"` and `"electron"`. (4) `CHROME_PATH` deferred: `None` when `APP_MODE=electron`, `_find_chrome()` otherwise (avoids RuntimeError at startup when Chrome isn't installed in Electron mode). (5) `_handle_pdf`: early return with HTTP 501 + TODO comment when `IS_ELECTRON` is True.
+  - `tests/test_pdf.py` (new) — 14 pytest tests covering: APP_MODE=electron flag values, IS_ELECTRON/IS_DESKTOP, CHROME_PATH=None in electron mode, `_handle_pdf` returns 501 in electron mode, auth guard fires before 501, input validation (400/413) unchanged in non-electron modes, route registration.
+  - `docs/ai/project-state.md` — this entry.
+- Checks run:
+  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
+  - `APP_MODE=electron python -c "import server; ..."` → APP_MODE=electron, IS_ELECTRON=True, IS_DESKTOP=True, CHROME_PATH=None. Confirmed for desktop and server modes too.
+  - `pytest tests/test_pdf.py -v` → 14 passed.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Accepted the "simpler alternative" from the issue spec: HTTP 501 + TODO in server.py for the electron IPC path, rather than full Python↔Node IPC plumbing. The `pdf:generate` IPC handler in main.js is the production path; the renderer calls `window.electronAPI.generatePdf()` directly (issue 013 will wire this call site in the JS).
+  - `IS_DESKTOP` kept True for `APP_MODE=electron` — electron is a desktop variant; all single-user guards and desktop-only code paths should apply.
+  - Page dimensions for `printToPDF` converted from inches to microns (Electron API requires microns): `Math.round(pageW * 25400)`. The existing server.py defaults of 5.5 × 8.5 in are preserved.
+  - Offscreen BrowserWindow destroyed in `finally` to prevent leaks even on `printToPDF` rejection.
+  - Preload: migrated from the comment-stub to a real `contextBridge.exposeInMainWorld` using ESM `import` (matches the file's existing style; root `package.json` has `"type": "module"`).
+- Deviations from spec: none. All three acceptance criteria addressed (IPC handler, server.py detection, tests).
+- Concerns:
+  - PDF quality/pagination can only be confirmed by manual smoke — `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing issue 012.
+  - The renderer call site (`window.electronAPI.generatePdf()`) is wired in preload but not yet called from the JS UI — that wiring is issue 013's scope. Until then the new IPC handler is present but unreachable from the running app.
+  - Temp directory created by `fs.mkdtempSync` is not cleaned up after the caller reads the PDF file. Issue 013 should add cleanup after the save-dialog resolves.
+
+### 2026-06-03 — electron-scaffold (issue 011)
+- Files modified:
+  - `electron/main.js` (new) — Electron main process. Spawns `server.py` sidecar on port 8765 (`python3 server.py 8765` in dev; `<resourcesPath>/server` in packaged mode). `waitForServer()` polls http://localhost:8765/ up to 20 s. Opens BrowserWindow (1280×900, contextIsolation on, nodeIntegration off, preload wired). Creates tray icon from `menubar-icon.png` with "Open Bulletin Generator" + separator + "Quit". Kills sidecar on `before-quit`; shows error dialog if sidecar crashes.
+  - `electron/preload.js` (new) — Intentionally minimal. contextIsolation boundary. No APIs exposed to renderer (app talks to Python sidecar directly over HTTP). Comments scaffold the `contextBridge.exposeInMainWorld` extension point.
+  - `package.json` — Added `"main": "electron/main.js"`, `"start:electron": "electron ."` script, `"electron": "^28.3.3"` devDependency.
+  - `docs/ai/testing-guide.md` — Added "Electron desktop (dev mode)" section: `npm run start:electron`, expected behaviors, packaged-mode path note.
+- Checks run:
+  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
+  - `./node_modules/.bin/electron --version` → v28.3.3.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Used ESM `import` syntax in `main.js` (root package.json has `"type": "module"`). Electron 28 supports ESM main entry points.
+  - Dev-mode sidecar command: `python3 server.py 8765` (passes port as argv, matching server.py's existing `sys.argv[1]` port override). Packaged-mode path probes `process.resourcesPath/server` — scaffolded now, binary doesn't exist until issue 014.
+  - `sidecarExited` boolean prevents double-kill races between `before-quit` and the `exit` handler.
+  - Tray keeps app alive on macOS when BrowserWindow is closed (standard macOS convention).
+- Deviations from spec: none.
+- Concerns:
+  - Dev smoke (`npm run start:electron`) requires Python 3 in PATH and `server.py` dependencies installed. Full end-to-end smoke is manual only — not automated.
+  - `launcher.py` NOT deleted per spec — deprecation deferred to issue 014.
+  - Vulnerabilities reported by `npm audit` are in electron's own transitive deps; none are in the runtime app surface. Not blocking for a devDependency-only install.
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:
