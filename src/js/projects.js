@@ -749,7 +749,7 @@ function renderFilesList() {
     // "New to you" badge: the project's owner changed to the current user
     // since the last time we rendered this list.
     const prevOwner = _prevOwners[project.id];
-    const isNewToYou = isOwner && !isActive
+    const isNewToYou = isOwner
                        && prevOwner !== undefined          // we've seen this project before
                        && prevOwner !== String(currentUserId); // owner just became us
     const isSel = selectedProjectIds.has(project.id);
