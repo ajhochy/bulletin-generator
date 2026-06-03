@@ -43,6 +43,20 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — issue-020-private-default-rls
+- Files modified:
+  - `supabase/migrations/20260603000002_private_default_rls.sql` (new) — changes `projects.visibility` DEFAULT to `'private'`; replaces `projects_update` policy to `owner_user_id = auth.uid()` only.
+  - `tests/test_rls_isolation.py` — added `test_owner_can_update_own_project` and `test_non_owner_cannot_update_others_project`.
+- Checks run:
+  - `pytest tests/test_rls_isolation.py -q` → 25 passed (23 original + 2 new) against staging DB.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Used `private.is_workspace_member(workspace_id)` in the new `projects_update` policy (consistent with existing helpers). The issue spec listed `private.get_workspace_id()` which does not exist in the schema; `is_workspace_member` is the correct and established form.
+  - `projects_select` left unchanged — it already correctly filters private projects to owner-only via `(visibility = 'workspace' OR owner_user_id = auth.uid())`.
+  - `WITH CHECK` on `projects_update` also scoped to owner, preventing a non-owner from updating `owner_user_id` to reassign ownership.
+- Deviations from spec: Issue spec referenced `private.get_workspace_id()` (non-existent). Used `private.is_workspace_member(workspace_id)` instead (established pattern). No functional difference in intent.
+- Concerns: None. Migration is idempotent and additive (existing rows unaffected). Applied and verified on staging dgydekhfzrmeoscpgmvo.
+
 ### 2026-06-03 — volunteer-roles-to-workspace-settings
 - Files modified:
   - `server.py` — removed `VOLUNTEER_ROLES_FILE` and `VOLUNTEER_ROLES_EXAMPLE_FILE` constants; removed `_initialize_local_file(VOLUNTEER_ROLES_FILE, ...)` startup call; updated `_handle_get_volunteer_roles` to read from `_get_settings().get('volunteerRoles', [])` and `_handle_post_volunteer_roles` to merge into `_get_settings()/_save_settings()`.
