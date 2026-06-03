@@ -41,6 +41,22 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — volunteer-roles-to-workspace-settings
+- Files modified:
+  - `server.py` — removed `VOLUNTEER_ROLES_FILE` and `VOLUNTEER_ROLES_EXAMPLE_FILE` constants; removed `_initialize_local_file(VOLUNTEER_ROLES_FILE, ...)` startup call; updated `_handle_get_volunteer_roles` to read from `_get_settings().get('volunteerRoles', [])` and `_handle_post_volunteer_roles` to merge into `_get_settings()/_save_settings()`.
+  - `scripts/migrate_to_supabase.py` — added reading of `volunteer-roles.json` from source dir and merging of its contents into the `settings` blob as `volunteerRoles` before the `workspace_settings` upsert; updated dry-run summary to show volunteer roles count.
+- Checks run:
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+  - `python -c "import server; print('import OK')"` → PASS.
+- Decisions made:
+  - Used module-level `_get_settings()/_save_settings()` (not user-scoped `_storage_for_user(user)`) to match the task spec; this matches the existing pattern for these module-level helpers already used by settings-adjacent operations.
+  - In `migrate_to_supabase.py`, merged volunteerRoles into the settings dict before the single `_upsert_workspace_settings` call (rather than a separate DB write) — reuses existing JSONB `||` merge which is idempotent on re-run.
+  - Worktree was rebased onto `feat/supabase-multitenant-electron` before implementing to get access to `scripts/`.
+- Deviations from spec: none. All 5 acceptance criteria addressed.
+- Concerns:
+  - `_handle_get_volunteer_roles` retains no auth guard (same as before this change). Not introducing a regression but worth noting for future hardening.
+  - The `volunteer-roles.json` flat file is NOT deleted from the data dir by this change — it will simply be ignored at runtime. The existing file on the Synology box should be migrated before the next cutover.
+
 ### 2026-06-03 — m5-qa-matrix (issue 016)
 - Files modified:
   - `docs/ai/qa-matrix-m5.md` (new) — structured QA checklist covering Security (S1-S6: cross-tenant read/write isolation, 401/403 auth tests, first-login provisioning), Collaboration (C1-C3: conflict detection, stale-check banner, revision history), Electron (E1-E4: dev smoke, OAuth, PDF export, auto-update deferred), and Data migration (D1-D2: dry-run exit 0, post-execute row count verification). Includes exact pytest commands for all automated items. Includes a pre-cutover gate block and cutover readiness checklist.
