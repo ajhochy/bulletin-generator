@@ -18,8 +18,8 @@ See `CLAUDE.md` "Key Files" table for the full annotated list. This file is a qu
 
 ## `electron/`
 
-- `electron/main.js` — Electron main process. Spawns `server.py` sidecar (dev: `python3 server.py 8765`; packaged: `<resourcesPath>/server`). Opens BrowserWindow to `http://localhost:8765/`. Tray icon. Kills sidecar on quit. Error dialog on crash.
-- `electron/preload.js` — Minimal preload. contextIsolation=true, nodeIntegration=false. No APIs exposed to renderer (HTTP-only to sidecar).
+- `electron/main.js` — Electron main process. Spawns `server.py` sidecar (dev: `python3 server.py 8765`; packaged: `<resourcesPath>/server`). Opens BrowserWindow to `http://localhost:8765/`. Tray icon. Kills sidecar on quit. Error dialog on crash. `pdf:generate` IPC handler: creates hidden offscreen BrowserWindow, renders print HTML, calls `webContents.printToPDF()`, writes to temp file, resolves with path.
+- `electron/preload.js` — contextIsolation=true, nodeIntegration=false. Exposes `window.electronAPI.generatePdf(opts)` → `ipcRenderer.invoke('pdf:generate', opts)` via `contextBridge`.
 
 ## `src/js/` (no bundler — files served as-is, `Cache-Control: no-store`)
 

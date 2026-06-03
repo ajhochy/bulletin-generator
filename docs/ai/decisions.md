@@ -4,26 +4,23 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
-## 2026-06-03 — Electron auth deep-link: PKCE `exchangeCodeForSession` + unchanged `_isDesktopMode`
+## 2026-06-03 — Issue 012: HTTP 501 + TODO instead of live Python↔Node IPC for `/api/pdf` in electron mode
 
-**Context.** Issue 013 wires Supabase OAuth/magic-link callbacks into Electron via a `bulletingen://auth-callback` custom protocol. The main process receives the deep-link URL and forwards it to the renderer over IPC. The renderer must extract tokens from the URL and hand them to the Supabase client.
+**Context.** The issue spec offered two paths for PDF generation in Electron mode: (A) full IPC between the Python sidecar and the Electron main process (e.g. a local socket or temp-file polling), or (B) the "simpler alternative" — detect `APP_MODE=electron` in `server.py`, return HTTP 501 with a redirect message, and implement the IPC handler in `electron/main.js` so the renderer can call `window.electronAPI.generatePdf()` directly.
 
-**Token extraction approach.** Two options:
-1. Manually parse the URL fragment (`#access_token=...&refresh_token=...`) and call `supabase.auth.setSession({access_token, refresh_token})`.
-2. Call `supabase.auth.exchangeCodeForSession(url)` and let the Supabase JS v2 SDK handle both PKCE code exchange and implicit-flow fragment parsing.
+**Decision.** Chose option B. The renderer's existing PDF export flow (in `src/js/preview.js`) will be updated in issue 013 to call `window.electronAPI.generatePdf()` instead of `POST /api/pdf` when `window.electronAPI` is present. The Python sidecar therefore never needs to be the PDF intermediary; the renderer owns the PDF request entirely in electron mode.
 
-**Decision.** Use `exchangeCodeForSession(url)`. It is the canonical Supabase JS v2 API for completing auth callbacks — it handles PKCE code exchange automatically (the recommended flow), and for implicit-flow URLs it falls back to fragment parsing internally. This avoids brittle manual URL manipulation and is forward-compatible if the Supabase project switches to PKCE later.
+**`IS_DESKTOP = True` for `APP_MODE=electron`.** Electron is a desktop variant — single-user, no collaboration features, no DATABASE_URL required. All `IS_DESKTOP` guards in `server.py` should apply identically.
 
-**Risk.** `exchangeCodeForSession` requires the Supabase project to have PKCE enabled (default for new projects). If a deployment uses the legacy implicit flow only, `exchangeCodeForSession` may fail for the PKCE exchange but `onAuthStateChange` will still fire from the fragment-based redirect — the implicit path still works. Confirm PKCE is active in the Supabase dashboard before Electron auth smoke.
+**`CHROME_PATH` deferred.** `CHROME_PATH = _find_chrome()` is called at module load time and raises `RuntimeError` when Chrome isn't installed. In electron mode Chrome is never used. The fix: `None if APP_MODE == electron else _find_chrome()`. This is evaluated from `os.environ` directly (before the `IS_ELECTRON` alias is defined) to keep the deferred evaluation correct at import time.
 
-**`_isDesktopMode()` unchanged.** The existing check (`return !_authConfig().url`) correctly differentiates:
-- Legacy desktop (no Supabase URL, `launcher.py`-based): bypass all auth → `showApp(null)`.
-- New Electron mode with Supabase configured: Supabase URL present → go through normal auth path → Electron callback handler registered.
-No change needed; the condition already produces the right behaviour.
+**Page dimensions.** Electron's `printToPDF` `pageSize` field uses microns, not inches. Conversion: `Math.round(inches * 25400)`. Existing server.py defaults (5.5 × 8.5 in) are preserved as the fallback.
+
+**Temp-dir cleanup.** `fs.mkdtempSync` in `pdf:generate` creates the output directory but does not clean it up — the caller (issue 013 JS wiring) must delete after the save-dialog resolves. Documented as a concern; not a blocker for this issue.
 
 **Consequences.**
-- Confirm PKCE is enabled in Supabase dashboard before smoke testing Electron auth.
-- The `onCallback` listener registered in `initAuth()` is never explicitly removed. This is safe: `initAuth()` is called once per page load, and the listener lifetime is bounded by the BrowserWindow/preload context.
+- Issue 013 (Supabase auth in Electron) must also wire the call-site: detect `window.electronAPI?.generatePdf`, call it, handle the returned path to trigger a save dialog. Until then the IPC handler is present but unreachable from the running UI.
+- If a non-renderer process (e.g. a CLI migration script) ever needs PDF generation in electron mode, a local socket IPC path can be added to `_handle_pdf` per the TODO comment in `server.py`.
 
 ---
 

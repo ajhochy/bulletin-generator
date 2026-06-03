@@ -1,58 +1,64 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 013 verification PASS)_
+_Last updated: 2026-06-03 (issue 012 verification PASS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issue 013 (Supabase Auth in Electron) is verified PASS (100 pytest, 71 vitest, vite build, `node --check` all files). Awaiting manual smoke (Google OAuth + magic-link in Electron) and draft PR before marking fully closed. See `MANUAL-STEPS.md` — "Electron Auth Deep-Link Setup" for the smoke checklist.
+Issues 011 and 012 are code-complete and verified (automated checks). Both await manual dev smoke and draft PRs.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
-- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. Verification PASS: 100 pytest, 71 vitest, vite build.
-- **013** — Supabase Auth in Electron. `electron/main.js`: `bulletingen` protocol + `open-url` (macOS) + `second-instance` (Windows) handlers. `electron/preload.js`: `contextBridge.exposeInMainWorld('electronAuth', { onCallback })`. `src/js/auth-ui.js`: `_isElectronMode()`, `_authRedirectUrl()` returns `bulletingen://auth-callback` in Electron, `initAuth()` registers `electronAuth.onCallback` + calls `exchangeCodeForSession(url)`. `MANUAL-STEPS.md`: redirect allow-list step activated + Issue 013 smoke section added. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. See coding-agent run entry below for details. Manual PDF smoke still required.
 
 ## In progress
 
-- Manual smoke for issue 013 pending (Electron auth flows require human to run `npm run start:electron`).
+- Issues 011 + 012 code-complete and automated-verified. Manual dev smoke pending.
+- Draft PRs for 011 + 012 not yet opened.
 
 ## Open risks
 
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
 - `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
 - `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
-- Issue 013: `exchangeCodeForSession(url)` requires PKCE enabled in the Supabase project. Confirm PKCE is active in the dashboard before Electron auth smoke. See `docs/ai/decisions.md` for rationale.
+- Issue 012 PDF path: `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing.
+- `window.electronAPI.generatePdf()` is wired in preload but not yet called from any JS UI — that call-site wiring is issue 013's scope. IPC handler is present but unreachable from the running app until then.
+- Temp dir from `fs.mkdtempSync` in `pdf:generate` handler is not cleaned up after the caller reads the file. Issue 013 should add cleanup after the save-dialog resolves.
 
 ## Next step
 
-1. Add `bulletingen://auth-callback` to the Supabase dashboard redirect allow-list (see `MANUAL-STEPS.md` — Electron Auth Deep-Link Setup section, step 1).
-2. Manual smoke for issue 013: `npm run start:electron` → Google OAuth → magic-link in Electron.
-3. Open draft PR for issues 011 + 013.
-4. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
+1. Manual dev smoke for issues 011 + 012: `npm run start:electron` → confirm BrowserWindow + tray → export a PDF → verify pagination/footers/QR match headless-Chrome output.
+2. Open draft PRs for issues 011 + 012.
+3. Next issue: **013** — Supabase auth in Electron (deep-link/custom-protocol). Depends on 011 + 012.
 
 ## Recent coding-agent runs
 
-### 2026-06-03 — electron-auth-deep-link (issue 013)
+### 2026-06-03 — electron-pdf (issue 012)
 - Files modified:
-  - `electron/main.js` — added `app.setAsDefaultProtocolClient('bulletingen')`, `extractDeepLinkUrl()`, `handleDeepLink()` helpers; `open-url` event handler (macOS); `requestSingleInstanceLock()` + `second-instance` event handler (Windows/Linux). Updated JSDoc to list responsibility 6.
-  - `electron/preload.js` — replaced stub with `contextBridge.exposeInMainWorld('electronAuth', { onCallback(cb) })`. Imports `contextBridge` and `ipcRenderer` from `electron`.
-  - `src/js/auth-ui.js` — added `_isElectronMode()` (checks `window.electronAuth?.onCallback`); updated `_authRedirectUrl()` to return `bulletingen://auth-callback` when in Electron mode; added Electron callback block in `initAuth()` that calls `client.auth.exchangeCodeForSession(url)` when a deep-link fires.
-  - `MANUAL-STEPS.md` — updated "bulletingen://auth-callback" redirect URL note from conditional to instructional; added "Electron Auth Deep-Link Setup (Issue 013)" section with 4 smoke-test steps.
+  - `electron/main.js` — added `ipcMain` + `os` imports; added `pdf:generate` IPC handler. Creates a hidden offscreen BrowserWindow, loads the print HTML via `loadFile()`, calls `webContents.printToPDF({ pageSize: { width, height } (microns), printBackground, margins: none })`, writes PDF bytes to a temp file, resolves with the path. Hidden window is always destroyed in a `finally` block.
+  - `electron/preload.js` — replaced the stub with a real `contextBridge.exposeInMainWorld('electronAPI', { generatePdf })` bridge. `generatePdf(opts)` calls `ipcRenderer.invoke('pdf:generate', opts)`.
+  - `server.py` — (1) `APP_MODE` validation now accepts `"electron"` alongside `"server"` and `"desktop"`. (2) `IS_ELECTRON = APP_MODE == "electron"` flag added. (3) `IS_DESKTOP` now `True` for both `"desktop"` and `"electron"`. (4) `CHROME_PATH` deferred: `None` when `APP_MODE=electron`, `_find_chrome()` otherwise (avoids RuntimeError at startup when Chrome isn't installed in Electron mode). (5) `_handle_pdf`: early return with HTTP 501 + TODO comment when `IS_ELECTRON` is True.
+  - `tests/test_pdf.py` (new) — 14 pytest tests covering: APP_MODE=electron flag values, IS_ELECTRON/IS_DESKTOP, CHROME_PATH=None in electron mode, `_handle_pdf` returns 501 in electron mode, auth guard fires before 501, input validation (400/413) unchanged in non-electron modes, route registration.
+  - `docs/ai/project-state.md` — this entry.
 - Checks run:
-  - `node --check electron/main.js && node --check electron/preload.js && node --check src/js/auth-ui.js` → JS OK.
+  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
+  - `APP_MODE=electron python -c "import server; ..."` → APP_MODE=electron, IS_ELECTRON=True, IS_DESKTOP=True, CHROME_PATH=None. Confirmed for desktop and server modes too.
+  - `pytest tests/test_pdf.py -v` → 14 passed.
   - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
 - Decisions made:
-  - Used `client.auth.exchangeCodeForSession(url)` (Supabase JS v2 PKCE API) rather than manually parsing the URL fragment. If implicit flow is in use, `onAuthStateChange` will still fire a SIGNED_IN event as Supabase detects the fragment, so both flows are covered.
-  - `_isElectronMode()` checks `window.electronAuth?.onCallback` at call time rather than at module init — future-safe if the bridge is injected asynchronously.
-  - `requestSingleInstanceLock()` placed at module top-level (before `whenReady`) so it runs on process start, matching Electron documentation requirement.
-  - `_isDesktopMode()` logic unchanged: returns true only when `BULLETIN_SUPABASE_CONFIG.url` is absent. The legacy desktop (no Supabase) still bypasses auth; the new Electron mode with Supabase configured goes through the Supabase auth path.
-- Deviations from spec: none.
+  - Accepted the "simpler alternative" from the issue spec: HTTP 501 + TODO in server.py for the electron IPC path, rather than full Python↔Node IPC plumbing. The `pdf:generate` IPC handler in main.js is the production path; the renderer calls `window.electronAPI.generatePdf()` directly (issue 013 will wire this call site in the JS).
+  - `IS_DESKTOP` kept True for `APP_MODE=electron` — electron is a desktop variant; all single-user guards and desktop-only code paths should apply.
+  - Page dimensions for `printToPDF` converted from inches to microns (Electron API requires microns): `Math.round(pageW * 25400)`. The existing server.py defaults of 5.5 × 8.5 in are preserved.
+  - Offscreen BrowserWindow destroyed in `finally` to prevent leaks even on `printToPDF` rejection.
+  - Preload: migrated from the comment-stub to a real `contextBridge.exposeInMainWorld` using ESM `import` (matches the file's existing style; root `package.json` has `"type": "module"`).
+- Deviations from spec: none. All three acceptance criteria addressed (IPC handler, server.py detection, tests).
 - Concerns:
-  - `exchangeCodeForSession` requires PKCE to be enabled in the Supabase project; implicit-flow deployments would need `setSession` instead. Confirm dashboard setting.
-  - The `onCallback` listener is never explicitly removed (no `off` mechanism used), but it's a single stable registration per `initAuth()` call and the BrowserWindow lifetime bounds the preload context.
-  - Manual smoke (Google OAuth + magic-link completing in Electron) is required before marking done.
+  - PDF quality/pagination can only be confirmed by manual smoke — `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing issue 012.
+  - The renderer call site (`window.electronAPI.generatePdf()`) is wired in preload but not yet called from the JS UI — that wiring is issue 013's scope. Until then the new IPC handler is present but unreachable from the running app.
+  - Temp directory created by `fs.mkdtempSync` is not cleaned up after the caller reads the PDF file. Issue 013 should add cleanup after the save-dialog resolves.
 
 ### 2026-06-03 — electron-scaffold (issue 011)
 - Files modified:

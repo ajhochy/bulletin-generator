@@ -12,27 +12,24 @@
  *                      bulletingen://auth-callback deep link is received.
  *                      cb receives { url: string }.
  *                      Returns an unsubscribe function.
+ *
+ *   window.electronAPI — PDF generation bridge (issue 012)
+ *     .generatePdf({ html, pageWidth, pageHeight, filename })
+ *       → Promise<string>  (absolute path to the written PDF temp file)
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
 
 // ── Auth deep-link bridge ─────────────────────────────────────────────────────
-//
-// The main process sends 'auth:callback' with { url } when a
-// bulletingen://auth-callback#access_token=...&refresh_token=... deep link
-// is opened.  auth-ui.js registers via window.electronAuth.onCallback and
-// calls supabase.auth.setSession / exchangeCodeForSession.
-
 contextBridge.exposeInMainWorld('electronAuth', {
-  /**
-   * Register a listener for Supabase auth deep-link callbacks.
-   *
-   * @param {function({ url: string }): void} cb
-   * @returns {function(): void} unsubscribe — call to remove the listener
-   */
   onCallback(cb) {
     const handler = (_event, data) => cb(data);
     ipcRenderer.on('auth:callback', handler);
     return () => ipcRenderer.removeListener('auth:callback', handler);
   },
+});
+
+// ── PDF generation bridge ─────────────────────────────────────────────────────
+contextBridge.exposeInMainWorld('electronAPI', {
+  generatePdf: (opts) => ipcRenderer.invoke('pdf:generate', opts),
 });
