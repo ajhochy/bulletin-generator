@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 020: private-by-default + owner-only update RLS)_
+_Last updated: 2026-06-03 (issue 022: workspace_presences heartbeat table + API — PASS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issues 001–020 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issue 020 (private-by-default + tighten RLS write policy) is DONE — migration applied to staging, 25/25 RLS isolation tests pass.
+Issues 001–020 and 022 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issue 022 (presence heartbeat table + API) is DONE — migration applied to staging (dgydekhfzrmeoscpgmvo), 26/26 presence tests pass, 100 pytest / 71 vitest / vite build green.
 
 ## Recently completed (this branch)
 
@@ -17,6 +17,7 @@ Issues 001–020 are implemented and automated-verified on this branch. Issue 01
 - **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
 - **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
 - **020** — Private-by-default + owner-only update RLS. `supabase/migrations/20260603000002_private_default_rls.sql` (new). `projects.visibility` DEFAULT changed to `'private'`; `projects_update` policy tightened to owner-only. Applied to staging. Verification PASS: 25/25 RLS tests, 100 pytest, 71 vitest, vite build.
+- **022** — Presence heartbeat table + API. `supabase/migrations/20260603000003_workspace_presences.sql` (new); `server.py` (+3 handlers); `tests/test_presence.py` (new, 26 tests). Applied to staging. Verification PASS: 26 presence tests, 100 pytest, 71 vitest, vite build.
 - **volunteer-roles-storage** — `_handle_get/post_volunteer_roles` now reads/writes `workspace_settings.settings['volunteerRoles']` via `_get_settings()/_save_settings()`. `VOLUNTEER_ROLES_FILE`, `VOLUNTEER_ROLES_EXAMPLE_FILE` constants removed; `_initialize_local_file` call removed from startup. `scripts/migrate_to_supabase.py` updated to migrate `volunteer-roles.json` → `volunteerRoles` key in the settings blob. Verification PASS: 100 pytest, 71 vitest, vite build.
 
 ## In progress
@@ -43,6 +44,23 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — issue-022-workspace-presences
+- Files modified:
+  - `supabase/migrations/20260603000003_workspace_presences.sql` (new) — creates `workspace_presences` table with PK `(workspace_id, user_id, project_id)`, index on `(workspace_id, project_id)`, RLS (select: workspace members; insert/update/delete: own row only). Applied to staging (dgydekhfzrmeoscpgmvo).
+  - `server.py` — added 3 presence route handlers (`_handle_post_presence_heartbeat`, `_handle_get_presence`, `_handle_delete_presence`) and registered routes in `_GET_ROUTES`, `_POST_ROUTES`, `_DELETE_ROUTES`.
+  - `tests/test_presence.py` (new) — 26 tests covering heartbeat upsert, get active presences, stale-filter SQL assertion, delete scoping, input validation (400/403), and desktop-mode bypass for all three endpoints.
+- Checks run:
+  - `pytest tests/test_presence.py -v` → 26 passed (0 failures).
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - `project_id` stored as `uuid not null` (not a FK to `projects`) per the issue spec — projects table uses `text` PK, presence is informational only and should not cascade-delete on project removal.
+  - Desktop bypass returns `{"ok": true}` / `[]` immediately after `_require_auth` — same pattern as other IS_DESKTOP guards in the codebase, no DB import in that path.
+  - `db.transaction(user.get("claims"))` used for all DB writes so RLS sees `auth.uid()` = caller; consistent with existing handlers.
+  - Stale filtering (90s) done in SQL (`last_seen_at > now() - interval '90 seconds'`), not in Python, to keep the filtering consistent with DB clock.
+  - Pre-existing advisory warning about 4 tables without RLS (`data_migrations`, `users`, `sessions`, `org_settings`) is unchanged and out of scope.
+- Deviations from spec: none. All 5 acceptance-criteria items addressed.
+- Concerns: No live-DB integration test for presence (same as other handlers). RLS correctness relies on staging manual verification. The `project_id` FK omission means presence rows survive project deletion — acceptable for a TTL-only cleanup model.
 
 ### 2026-06-03 — issue-020-private-default-rls
 - Files modified:
