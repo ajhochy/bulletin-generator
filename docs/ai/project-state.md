@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 016 — M5 QA matrix)_
+_Last updated: 2026-06-03 (volunteer-roles storage → workspace_settings JSONB)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session.
+All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session. Volunteer roles storage has been moved to `workspace_settings` JSONB (verification PASS: 100 pytest, 71 vitest, vite build).
 
 ## Recently completed (this branch)
 
@@ -16,6 +16,7 @@ All code issues (001–019) are implemented and automated-verified on this branc
 - **013** — Supabase Auth in Electron (deep-link OAuth + magic link).
 - **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
 - **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
+- **volunteer-roles-storage** — `_handle_get/post_volunteer_roles` now reads/writes `workspace_settings.settings['volunteerRoles']` via `_get_settings()/_save_settings()`. `VOLUNTEER_ROLES_FILE`, `VOLUNTEER_ROLES_EXAMPLE_FILE` constants removed; `_initialize_local_file` call removed from startup. `scripts/migrate_to_supabase.py` updated to migrate `volunteer-roles.json` → `volunteerRoles` key in the settings blob. Verification PASS: 100 pytest, 71 vitest, vite build.
 
 ## In progress
 
@@ -36,10 +37,27 @@ All code issues (001–019) are implemented and automated-verified on this branc
 Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
 2. Manual items (Electron smoke, conflict detection, first-login domain provisioning)
-3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator`
+3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
+   - Note: volunteer-roles.json on the Synology box has 2 entries; the migration will include them as `volunteerRoles` in `workspace_settings`. Run migration **before** the flat file is deleted or the Docker container is updated, or the data will be lost.
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — volunteer-roles-to-workspace-settings
+- Files modified:
+  - `server.py` — removed `VOLUNTEER_ROLES_FILE` and `VOLUNTEER_ROLES_EXAMPLE_FILE` constants; removed `_initialize_local_file(VOLUNTEER_ROLES_FILE, ...)` startup call; updated `_handle_get_volunteer_roles` to read from `_get_settings().get('volunteerRoles', [])` and `_handle_post_volunteer_roles` to merge into `_get_settings()/_save_settings()`.
+  - `scripts/migrate_to_supabase.py` — added reading of `volunteer-roles.json` from source dir and merging of its contents into the `settings` blob as `volunteerRoles` before the `workspace_settings` upsert; updated dry-run summary to show volunteer roles count.
+- Checks run:
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+  - `python -c "import server; print('import OK')"` → PASS.
+- Decisions made:
+  - Used module-level `_get_settings()/_save_settings()` (not user-scoped `_storage_for_user(user)`) to match the task spec; this matches the existing pattern for these module-level helpers already used by settings-adjacent operations.
+  - In `migrate_to_supabase.py`, merged volunteerRoles into the settings dict before the single `_upsert_workspace_settings` call (rather than a separate DB write) — reuses existing JSONB `||` merge which is idempotent on re-run.
+  - Worktree was rebased onto `feat/supabase-multitenant-electron` before implementing to get access to `scripts/`.
+- Deviations from spec: none. All 5 acceptance criteria addressed.
+- Concerns:
+  - `_handle_get_volunteer_roles` retains no auth guard (same as before this change). Not introducing a regression but worth noting for future hardening.
+  - The `volunteer-roles.json` flat file is NOT deleted from the data dir by this change — it will simply be ignored at runtime. The existing file on the Synology box should be migrated before the next cutover.
 
 ### 2026-06-03 — m5-qa-matrix (issue 016)
 - Files modified:

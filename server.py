@@ -62,7 +62,6 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PROJECTS_FILE          = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE     = DATA_DIR / "announcements.json"
-VOLUNTEER_ROLES_FILE   = DATA_DIR / "volunteer-roles.json"
 SETTINGS_FILE          = DATA_DIR / "settings.json"
 SONGS_FILE             = DATA_DIR / "song_database.json"
 MIGRATIONS_FILE        = DATA_DIR / "migrations.json"
@@ -74,7 +73,6 @@ FONT_CACHE_DIR     = FONTS_DIR / "cache"
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE           = _EXAMPLE_DIR / "projects.example.json"
 ANNOUNCEMENTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "announcements.example.json"
-VOLUNTEER_ROLES_EXAMPLE_FILE    = _EXAMPLE_DIR / "volunteer-roles.example.json"
 SETTINGS_EXAMPLE_FILE           = _EXAMPLE_DIR / "settings.example.json"
 TEMPLATES_EXAMPLE_FILE          = _EXAMPLE_DIR / "templates.example.json"
 
@@ -1431,7 +1429,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json(store.list_announcements())
 
     def _handle_get_volunteer_roles(self):
-        self._send_json(_read_json(VOLUNTEER_ROLES_FILE, []))
+        self._send_json(_get_settings().get('volunteerRoles', []))
 
     def _handle_get_settings(self):
         user = self._require_auth()
@@ -1829,8 +1827,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(roles, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(VOLUNTEER_ROLES_FILE, roles)
+        existing = _get_settings()
+        existing['volunteerRoles'] = roles
+        _save_settings(existing)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
@@ -3123,7 +3122,6 @@ def run_server(port=8080):
     _validate_server_config()
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
-    _initialize_local_file(VOLUNTEER_ROLES_FILE, VOLUNTEER_ROLES_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()
