@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,11 +11,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "css:watch": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --watch",
-    "css:build": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --minify"
+    "css:build": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --minify",
+    "start:electron": "electron ."
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
     "daisyui": "^4.12.24",
+    "electron": "^28.3.3",
     "impeccable": "github:pbakaus/impeccable",
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
