@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-06-03 (volunteer-roles storage → workspace_settings JSONB)_
+_Last updated: 2026-06-03 (issue 024: backfill ownerless projects + QA matrix update)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session. Volunteer roles storage has been moved to `workspace_settings` JSONB (verification PASS: 100 pytest, 71 vitest, vite build).
+Issues 001–024 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issues 020-024 complete the ownership model: private-by-default RLS, owner-only writes, transfer endpoint, presence heartbeat, and ownerless-project backfill. QA matrix updated to replace obsolete conflict detection items (C1-C3) with ownership model checks.
 
 ## Recently completed (this branch)
 
@@ -17,6 +17,7 @@ All code issues (001–019) are implemented and automated-verified on this branc
 - **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
 - **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
 - **volunteer-roles-storage** — `_handle_get/post_volunteer_roles` now reads/writes `workspace_settings.settings['volunteerRoles']` via `_get_settings()/_save_settings()`. `VOLUNTEER_ROLES_FILE`, `VOLUNTEER_ROLES_EXAMPLE_FILE` constants removed; `_initialize_local_file` call removed from startup. `scripts/migrate_to_supabase.py` updated to migrate `volunteer-roles.json` → `volunteerRoles` key in the settings blob. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **024** — Backfill ownerless projects + QA matrix update. `UPDATE projects SET owner_user_id = '74b48104-31b5-4100-9dc1-45935404e916' WHERE workspace_id = '614505d2-0f12-4c00-afb1-9077a0dc94fe' AND owner_user_id IS NULL` — 36 rows updated, 0 NULL owner_user_id rows remain. `docs/ai/qa-matrix-m5.md` C1-C3 conflict detection replaced with C1-C4 ownership model checks.
 
 ## In progress
 
@@ -36,12 +37,26 @@ All code issues (001–019) are implemented and automated-verified on this branc
 
 Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
-2. Manual items (Electron smoke, conflict detection, first-login domain provisioning)
+2. Manual items: Electron smoke (E1-E3), ownership model (C1-C4), first-login domain provisioning (S6)
 3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
    - Note: volunteer-roles.json on the Synology box has 2 entries; the migration will include them as `volunteerRoles` in `workspace_settings`. Run migration **before** the flat file is deleted or the Docker container is updated, or the data will be lost.
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — issue-024-backfill-ownerless-projects-qa-matrix
+- Files modified:
+  - `docs/ai/qa-matrix-m5.md` — replaced Collaboration surface (C1-C3: conflict detection, stale-check banner, revision history) with Ownership model surface (C1-C4: owner can save, non-owner 403, transfer ownership, presence badge). Updated "How to use this matrix" and "Cutover readiness checklist" to match.
+  - `docs/ai/project-state.md` (this file) — updated focus summary to note 020-024 complete, added 024 to recently completed, updated next step to reference ownership model items.
+- Checks run:
+  - Supabase MCP `execute_sql`: `UPDATE projects SET owner_user_id = '74b48104-31b5-4100-9dc1-45935404e916' WHERE workspace_id = '614505d2-0f12-4c00-afb1-9077a0dc94fe' AND owner_user_id IS NULL` — executed; 36 rows owned by `ajh@visaliacrc.com` confirmed.
+  - Supabase MCP `execute_sql`: `SELECT COUNT(*) FROM projects WHERE owner_user_id IS NULL` → **0** (acceptance criterion met).
+  - `ai-workflow checks --level issue` → pending (verification-gate).
+- Decisions made:
+  - Added C4 (presence badge) to the ownership matrix as it is a related UX signal from the presence heartbeat work (issue 022) and was missing from both the old and new matrices.
+  - Used `execute_sql` (not `apply_migration`) per the issue spec — this is a one-time data fix, not a schema migration.
+- Deviations from spec: added C4 (presence badge) which was not explicitly listed in the acceptance criteria but is directly related to the ownership/collaboration surface.
+- Concerns: none. The UPDATE was scoped to `workspace_id IS NULL` rows only — zero risk to rows with existing owner assignments.
 
 ### 2026-06-03 — volunteer-roles-to-workspace-settings
 - Files modified:
