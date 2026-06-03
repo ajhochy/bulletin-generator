@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-06-03 (issue 015 verified)_
 
 ## Active workflow run (Supabase + Multi-tenant + Electron, milestone #30)
 
@@ -13,6 +13,7 @@ Run branch: `feat/supabase-multitenant-electron` (stacking all issues; one PR fo
 - **005 (#261) — DONE / MANUALLY VALIDATED.** `MANUAL-STEPS.md` documents staging Supabase Auth provider setup: URL configuration, Google OAuth callback URL, email magic-link validation, custom SMTP fields and built-in-mailer limits, leaked-password protection, and manual v1 workspace membership seeding. User reported issue 005 validation complete on 2026-06-03: Google OAuth provider, email magic-link provider/session issuance, SMTP/staging-mailer decision, leaked-password protection status, and seeded membership prerequisites are no longer blocking issue 007. No `server.py`/`auth.py` changes were made for issue 005.
 - **006 (#262) — DONE.** Commit `bfd0f44` replaces collab-v1 cookie auth with server-side Supabase JWT verification, resolves workspace membership through `db.admin_transaction()`, scopes protected storage access with `get_storage(workspace_id, user_claims)`, returns `/api/me` identity, disables legacy `/auth/google/*`, and auth-gates `/api/projects/revisions` through scoped storage. Verification on `bfd0f44`: imports OK; stale-reference grep clean; auth/project regression suite 198 passed; `scripts/run_ai_workflow.py checks --level issue` PASS; `checks --level pr` PASS; server-mode smoke returned 401 for unauthenticated `/api/me`, `/api/projects/revisions`, and `/api/bootstrap`; live DB migration integration (`set -a; source .env; APP_MODE=server pytest tests/test_migrations.py -m integration`) passed 2/2 with escalated network.
 - **007 (#263) — DONE / MANUAL SMOKE PASS.** Commits `e3bd69e` and `db2ceac` add frontend Supabase login/logout, magic-link support, Bearer token attachment, runtime public Supabase config, and ES256 JWT/PKCE session handling. Verification: static checks pass; `ai-workflow checks --level issue` PASS; `ai-workflow checks --level pr` PASS; login-gate screenshots captured at `/tmp/bulletin-generator-verification/issue-007-login-fixed.png` and `/tmp/bulletin-generator-verification/issue-007-login-after-005.png`. Manual smoke reported by user on 2026-06-03: Google OAuth pass, magic-link pass, sign-out pass. Post-smoke artifact: `.agent-stack/postmortems/2026-06-03-issue-007.json`.
+- **015 — DONE.** Commit `c89e380`. `scripts/migrate_to_supabase.py` (NEW): standalone one-shot migration tool reads legacy JSON from a configurable `--source` directory and writes to the Supabase multi-tenant schema for workspace `614505d2` (Visalia CRC) via `admin_transaction()`. Dry-run default; `--execute` opt-in. Migrates projects→`projects`+`project_revisions`, announcements→`announcements`, songs→`songs`, settings→`workspace_settings` (OAuth tokens excluded). Idempotent (ON CONFLICT DO NOTHING / merge). Stable UUID derivation. `MANUAL-STEPS.md` updated with step-by-step runbook. Source data at `/Volumes/docker/bulletingenerator/` is currently all empty (confirmed). verification-gate PASS: 100 pytest, 71 vitest, vite build, dry-run exit 0.
 
 ## Current focus
 
@@ -52,7 +53,13 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Next step
 
-Move to issue 008 (#264): membership provisioning on first login. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`).
+Issue 015 is complete (verification-gate PASS, commit `c89e380`). Move to issue 008 (#264): membership provisioning on first login. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`).
+
+When source data at `/Volumes/docker/bulletingenerator/` is populated (projects/announcements/songs loaded into the Synology NAS), run the migration execute step:
+```bash
+set -a && source .env && set +a
+.venv/bin/python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator --execute
+```
 
 ## Resume in a new session
 
@@ -60,7 +67,7 @@ Move to issue 008 (#264): membership provisioning on first login. Decide per-wor
 - **Python:** use a 3.11 venv (`python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest`); system `python3` is 3.9 and cannot import `auth.py`.
 - **Supabase:** staging project `dgydekhfzrmeoscpgmvo` (Visalia CRC, us-west-1). `.env` (gitignored) has `DATABASE_URL` via the **session pooler** `aws-1-us-west-1.pooler.supabase.com:5432`. GitHub repo secrets set: `DATABASE_URL`, `SUPABASE_DATABASE_PW`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`. MCP config `.mcp.json` is scoped to the project (re-auth via `/mcp` if `mcp__supabase__*` tools are missing).
 - **Issues:** 19 local files in `docs/ai/generated-issues/` (001–019). To create them on GitHub: `bash scripts/create_migration_issues.sh` (idempotent; milestone "Supabase + Multi-tenant + Electron", label `supabase-migration`). NNN prefixes in titles keep the "Depends on" cross-refs resolvable.
-- **Start here:** issue **008** membership provisioning on first login. Issue 005 provider validation and issue 007 frontend auth smoke are complete as of 2026-06-03.
+- **Start here:** issue **008** membership provisioning on first login. Issues 005, 007, and 015 complete as of 2026-06-03.
 - **Decide before coding 008:** per-workspace allow-list shape — separate `workspace_invites` table vs JSONB on `workspace_settings`.
 - **Do NOT redo (already done):** branch merge, Supabase provisioning, app↔DB connection, tenancy foundation (`workspaces`/`workspace_members`/`profiles`/`projects` + RLS + cross-tenant isolation proven; captured in `supabase/migrations/20260602000001_tenancy_foundation.sql`).
 

@@ -83,3 +83,20 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 - Future agent sessions can skip the bootstrap step and dispatch specialists directly.
 - `project-state.md` becomes the source of truth for "what's in flight" — must be updated by `project-state-updater` after every completed unit of work, not just at release time.
 - Anyone editing `CLAUDE.md` should sanity-check that `architecture.md` / `repo-map.md` haven't drifted.
+
+---
+
+## 2026-06-03 — Two separate migration tools for two separate schema variants
+
+**Context.** The `migrations/` directory contains `import_projects.py` (and siblings) that reference columns not in the applied Supabase SQL migrations (`imported_from_json`, `created_by_email`, `updated_by_email`, `saved_by_email`, `saved_by_name`). These modules target a schema variant that was designed but never applied to the staging DB.
+
+**Decision.** Rather than reconcile `migrations/import_*.py` in issue 015, a new standalone `scripts/migrate_to_supabase.py` was created that targets only columns actually present in the applied migrations (`20260602000001` + `20260602000002`). The `migrations/` modules are left as-is since they have their own unit tests that mock away the DB; reconciling them is a separate concern.
+
+**Alternatives.**
+- Patch `migrations/import_projects.py` to match actual schema. Rejected — would break their unit tests and expand scope beyond issue 015.
+- Add the missing columns in a new migration. Rejected — the columns serve a logging purpose that the new architecture doesn't need; `state` JSONB captures provenance instead.
+
+**Consequences.**
+- `scripts/migrate_to_supabase.py` is the authoritative operator runbook tool for the Supabase migration.
+- `migrations/run_all_migrations.py` and its importers remain as legacy/unused code unless a future issue reconciles them. They should not be called as part of the Supabase migration.
+- A future cleanup issue should either delete `migrations/import_*.py` or update them to match the actual schema.
