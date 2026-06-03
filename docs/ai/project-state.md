@@ -49,7 +49,11 @@ All code issues complete. Remaining work is manual — follow `docs/cutover-plan
   - `docs/cutover-plan.md` (new) — complete operator cutover checklist: pre-cutover (Supabase health, GitHub Secrets, Electron build, dry-run migration), cutover steps (merge → tag → distribute `.dmg` → `--execute` migration → verify row counts → per-user smoke), rollback trigger conditions table, rollback procedure (notify users, restore from `/Volumes/docker/bulletingenerator/backups/bulletin-20260512-2115/`, restart Docker), post-cutover archival (stop container, tar archive to cold storage, mark `docker-compose.yml` deprecated).
   - `docs/ai/project-state.md` — updated "Current focus", "In progress", "Open risks", and "Next step" to reflect all code issues complete; remaining work is manual cutover per the new plan.
 - Checks run:
-  - `ai-workflow checks --level issue` — pending (docs-only change; no Python or JS modified).
+  - `pytest -q tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py` → 95 passed.
+  - `npm test` (vitest) → 29 passed.
+  - `npm run build` (vite) → clean build, 0 errors.
+  - `python3 -c "import ast; ast.parse(open('server.py').read())"` → syntax OK.
+  - Note: `ai-workflow checks --level issue` exits 1 due to global fallback requiring `npm run typecheck` which does not exist in this repo's `package.json`. The repo-local wrapper (`scripts/run_ai_workflow.py` on the feature branch) uses pytest + vitest only — both passed. Gap documented in verification-gate PASS block.
 - Decisions made:
   - Used `docs/cutover-plan.md` (not `MANUAL-STEPS.md`) per issue spec. `MANUAL-STEPS.md` already contains Supabase Auth setup, Electron deep-link, and data migration sections; the cutover plan is a separate operator document.
   - Staging project `dgydekhfzrmeoscpgmvo` is the production project (no separate prod project to provision) — the cutover plan omits any "provision production project" step per the issue context.

@@ -42,7 +42,9 @@ Runtime JSON (NOT committed): `projects.json`, `settings.json`, `announcements.j
 
 - `docs/ARCHITECTURE.md` — deployment-mode notes + GitHub label strategy.
 - `docs/ai/*` — agent memory (this folder).
+- `docs/cutover-plan.md` — operator checklist for the Supabase/Electron cutover: pre-cutover verification, merge/tag/distribute steps, rollback trigger conditions, rollback procedure, post-cutover archival.
 - `docs/testing/` — manual smoke checklists (when present).
+- `MANUAL-STEPS.md` (repo root) — Supabase Auth setup, Electron deep-link config, data migration steps, browser QA checklist. See `docs/cutover-plan.md` for the full production cutover sequence.
 
 ## Common search terms
 
