@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 020: private-by-default + owner-only update RLS)_
+_Last updated: 2026-06-03 (issue 021: owner-only writes + transfer endpoint — PASS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issues 001–020 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issue 020 (private-by-default + tighten RLS write policy) is DONE — migration applied to staging, 25/25 RLS isolation tests pass.
+Issues 001–021 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issue 020 (private-by-default + tighten RLS write policy) is DONE — migration applied to staging, 25/25 RLS isolation tests pass. Issue 021 (owner-only writes + transfer) is DONE — Verification PASS after repair loop (3 related test files updated to reflect new behavior).
 
 ## Recently completed (this branch)
 
@@ -17,6 +17,7 @@ Issues 001–020 are implemented and automated-verified on this branch. Issue 01
 - **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
 - **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
 - **020** — Private-by-default + owner-only update RLS. `supabase/migrations/20260603000002_private_default_rls.sql` (new). `projects.visibility` DEFAULT changed to `'private'`; `projects_update` policy tightened to owner-only. Applied to staging. Verification PASS: 25/25 RLS tests, 100 pytest, 71 vitest, vite build.
+- **021** — Owner-only writes + transfer endpoint. `server.py` + `storage.py` + 4 test files. `POST /api/projects` now enforces owner-only; `_clientRevision` ignored; `save_project_transactional` call removed from handler. New `POST /api/projects/{id}/transfer` endpoint. New `PostgresStorageBackend.transfer_project_owner()`. Verification PASS (100 pytest, 71 vitest, vite build) after repair loop — 3 related test files (`test_project_visibility.py`, `test_transactional_save.py`, `test_collab_regression.py`) updated to reflect new owner-only behavior. See run entry below.
 - **volunteer-roles-storage** — `_handle_get/post_volunteer_roles` now reads/writes `workspace_settings.settings['volunteerRoles']` via `_get_settings()/_save_settings()`. `VOLUNTEER_ROLES_FILE`, `VOLUNTEER_ROLES_EXAMPLE_FILE` constants removed; `_initialize_local_file` call removed from startup. `scripts/migrate_to_supabase.py` updated to migrate `volunteer-roles.json` → `volunteerRoles` key in the settings blob. Verification PASS: 100 pytest, 71 vitest, vite build.
 
 ## In progress
@@ -37,30 +38,30 @@ Issues 001–020 are implemented and automated-verified on this branch. Issue 01
 
 Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
-2. Manual items (Electron smoke, conflict detection, first-login domain provisioning)
+2. Manual items (Electron smoke, first-login domain provisioning). **Note: C1 (conflict detection) in the QA matrix is obsolete** — conflict detection (409 on stale `_clientRevision`) was removed in issue 021. Skip or remove C1 from the checklist.
 3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
    - Note: volunteer-roles.json on the Synology box has 2 entries; the migration will include them as `volunteerRoles` in `workspace_settings`. Run migration **before** the flat file is deleted or the Docker container is updated, or the data will be lost.
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
 
-### 2026-06-03 — issue-021-owner-only-writes-transfer
+### 2026-06-03 — issue-021-owner-only-writes-transfer (PASS after repair loop)
 - Files modified:
-  - `storage.py` — added `PostgresStorageBackend.transfer_project_owner(project_id, from_user_id, to_user_id)` method using `UPDATE ... WHERE owner_user_id=from RETURNING ...`.
-  - `server.py` — rewrote `_handle_post_projects` server-mode block: drops `save_project_transactional`; calls `save_project` for both new and existing projects; enforces owner-only writes on existing projects (403 if `owner_user_id != caller_id`); `_clientRevision` is silently discarded. Added `_handle_post_transfer_project(project_id)` handler for `POST /api/projects/{id}/transfer`; wired into `_handle_post_projects_sub`.
-  - `tests/test_project_ownership.py` — rewrote: updated helper and `TestExistingProjectUpdate`; added `test_non_owner_gets_403`, `test_client_revision_ignored`, `test_project_with_no_owner_is_allowed`; added `TestTransferProjectOwner` class (6 tests).
-- Checks run:
-  - `pytest tests/test_project_ownership.py -v` → 18 passed (red-green confirmed for new tests)
-  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest)
-- Decisions made:
-  - Switched to `save_project` (upsert) for all writes, removing `save_project_transactional` call site. Dead code remains in `storage.py` (other tests reference it).
-  - `owner_user_id is None` (legacy unowned project) allows any authenticated user to save — consistent with `_handle_share_project` behavior.
-  - Transfer membership check uses direct `admin_transaction()` SQL (same pattern as `resolve_workspace_membership`), checking specific workspace_id/user_id pair.
-  - Desktop mode: both handlers bypass ownership checks (IS_DESKTOP branch unchanged in save; transfer returns 404).
+  - `storage.py` — added `PostgresStorageBackend.transfer_project_owner(project_id, from_user_id, to_user_id)`.
+  - `server.py` — rewrote `_handle_post_projects` server-mode block: drops `save_project_transactional`; calls `save_project` for all writes; owner-only 403 on existing projects; `_clientRevision` discarded. New `_handle_post_transfer_project` handler for `POST /api/projects/{id}/transfer`.
+  - `tests/test_project_ownership.py` — full rewrite: 18 tests covering new/existing project saves, non-owner 403, `_clientRevision` ignored, legacy no-owner allowed, and `TestTransferProjectOwner` (6 tests).
+  - `tests/test_project_visibility.py` — `TestPostProjectsSave` updated: helper uses `save_project`; `test_both_users_can_save_workspace_project` → `test_only_owner_can_save_workspace_project` (non-owners now 403).
+  - `tests/test_transactional_save.py` — `TestPostProjectsServerMode` updated: `save_project_transactional` assertions → `save_project`; conflict/409 tests removed (behavior removed per spec); new `test_client_revision_is_ignored` and `test_missing_client_revision_is_ignored`.
+  - `tests/test_collab_regression.py` — `_call_save_project` helper uses `save_project`; `test_user_b_can_save_workspace_project` → `test_user_b_cannot_save_workspace_project_owned_by_user_a`.
+- Repair loop: initial commit passed ownership tests (18/18) but 9 tests in 3 related files failed because they asserted old behavior (workspace-member writes, save_project_transactional, 409 conflict). Those tests were updated to reflect the new owner-only policy. Final PR-level check: PASS (100 pytest, 71 vitest, vite build).
+- Commits: `ba4732c` (implementation), `fb439f1` (related test fixes).
+- Decisions made: see inline notes above and `docs/ai/decisions.md` (entry: owner-only write policy replaces workspace-member write access).
 - Deviations from spec: none. All 6 acceptance criteria addressed.
 - Concerns:
-  - TOCTOU window in the new/existing detection: `get_project` → None → INSERT. Mitigated by DB upsert semantics (owner set only on INSERT). No regression vs. prior code.
-  - `_clientRevision` is now ignored in server mode. Frontend conflict detection UI still works via the `/api/projects/revisions` stale poll; the 409 response path is gone. Frontend `_clientRevision` append code can be cleaned up as a follow-up.
+  - `save_project_transactional` and `ConflictError` remain as dead code in `storage.py` — referenced by `test_transactional_save.py` storage-unit tests (not the handler tests). Cleanup is a follow-up.
+  - Frontend `_clientRevision` append code in `projects.js` is now dead. Safe to remove in a follow-up; no functional regression.
+  - TOCTOU on new/existing detection mitigated by DB upsert semantics (owner set only on INSERT).
+  - QA matrix item C1 (conflict detection) in `docs/ai/qa-matrix-m5.md` is now obsolete — conflict detection removed per issue 021. Should be updated/removed before cutover.
 
 ### 2026-06-03 — issue-020-private-default-rls
 - Files modified:
