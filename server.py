@@ -2042,9 +2042,23 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             store = self._storage_for_user(user)
             all_fonts = store.list_fonts()
-            user_fonts = [f for f in all_fonts if f.get("source") == "user"]
-            cached_fonts = [f for f in all_fonts if f.get("source") != "user"]
-            self._send_json({"user": user_fonts, "cached": cached_fonts})
+            # In server mode all fonts come from the DB (Storage URLs).
+            # Return {id, name, url} for each; also preserve legacy keys for
+            # any frontend code that still reads slug/family/cssUrl.
+            user_fonts = [
+                {
+                    "id": f.get("id", ""),
+                    "name": f.get("name") or f.get("family") or "",
+                    "url": f.get("url") or f.get("css_url") or "",
+                    # Legacy keys — kept for backward compat with font picker UI
+                    "slug": f.get("slug") or f.get("name") or "",
+                    "family": f.get("family") or f.get("name") or "",
+                    "source": f.get("source") or "user",
+                    "cssUrl": f.get("url") or f.get("css_url") or "",
+                }
+                for f in all_fonts
+            ]
+            self._send_json({"user": user_fonts, "cached": []})
 
     def _handle_post_fonts(self):
         user = self._require_auth()
@@ -2079,36 +2093,77 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             family = str(form["family"].value or "").strip()
         if not family:
             family = Path(filename).stem
-        slug = _slugify(family)
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
-        dest_dir = _safe_child(USER_FONTS_DIR, slug)
-        dest_dir.mkdir(parents=True, exist_ok=True)
         data = field.file.read()
         if not data:
             self._send_json({"error": "empty font file"}, 400)
             return
-        _safe_child(dest_dir, safe_name).write_bytes(data)
-        self._send_json({"ok": True, "font": {
-            "family": family,
-            "slug": slug,
-            "source": "user",
-            "files": [safe_name],
-            "cssUrl": f"/fonts/user/{slug}/font.css",
-        }})
+
+        if IS_DESKTOP:
+            slug = _slugify(family)
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
+            dest_dir = _safe_child(USER_FONTS_DIR, slug)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            _safe_child(dest_dir, safe_name).write_bytes(data)
+            self._send_json({"ok": True, "font": {
+                "id": slug,
+                "name": family,
+                "url": f"/fonts/user/{slug}/font.css",
+                # Legacy keys
+                "family": family,
+                "slug": slug,
+                "source": "user",
+                "files": [safe_name],
+                "cssUrl": f"/fonts/user/{slug}/font.css",
+            }})
+        else:
+            slug = _slugify(family)
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
+            mime_type = mimetypes.guess_type(filename)[0] or "font/woff2"
+            store = self._storage_for_user(user)
+            try:
+                font = store.save_font(family, safe_name, data, mime_type)
+            except Exception as exc:
+                self._send_json({"error": f"font upload failed: {exc}"}, 500)
+                return
+            self._send_json({"ok": True, "font": {
+                "id": font["id"],
+                "name": font["name"],
+                "url": font["url"],
+                # Legacy keys
+                "family": font["name"],
+                "slug": _slugify(font["name"]),
+                "source": "user",
+                "cssUrl": font["url"],
+            }})
 
     def _handle_delete_font(self):
         user = self._require_auth()
         if user is None:
             return
         path = self.path.split("?")[0]
-        slug = _slugify(urllib.parse.unquote(path[len("/api/fonts/"):]))
-        if not slug:
-            self._send_json({"error": "missing font family"}, 400)
+        raw_id = urllib.parse.unquote(path[len("/api/fonts/"):])
+        if not raw_id:
+            self._send_json({"error": "missing font id"}, 400)
             return
-        target = _safe_child(USER_FONTS_DIR, slug)
-        if target.exists():
-            shutil.rmtree(target)
-        self._send_json({"ok": True})
+
+        if IS_DESKTOP:
+            # Desktop mode: raw_id is the slug (family-dir name)
+            slug = _slugify(raw_id)
+            target = _safe_child(USER_FONTS_DIR, slug)
+            if target.exists():
+                shutil.rmtree(target)
+            self._send_json({"ok": True})
+        else:
+            store = self._storage_for_user(user)
+            try:
+                found = store.delete_font(raw_id)
+            except Exception as exc:
+                self._send_json({"error": f"font delete failed: {exc}"}, 500)
+                return
+            if not found:
+                self._send_json({"error": "font not found"}, 404)
+                return
+            self._send_json({"ok": True})
 
     def _handle_user_font_file(self):
         user = self._require_auth()

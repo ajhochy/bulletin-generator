@@ -484,11 +484,22 @@ async function loadDesignerFonts() {
   try {
     const data = await apiFetch('/api/fonts');
     _installedFonts = [].concat(data.user || [], data.cached || []);
+    // Refresh the Storage font registry so syncTemplateFontLinks can inject
+    // @font-face blocks for server-mode fonts backed by Supabase Storage URLs.
+    if (typeof unregisterStorageFonts === 'function') unregisterStorageFonts();
     _installedFonts.forEach(font => {
       if (font.family) _designerFonts.push(font.family);
+      // Register Storage-backed fonts (url is an absolute HTTPS URL).
+      const url = font.url || font.cssUrl || '';
+      if (url && url.startsWith('http') && typeof registerStorageFont === 'function') {
+        const family = font.family || font.name || '';
+        if (family) registerStorageFont(family, url);
+      }
     });
     renderFontManager();
     renderDesignerToolbar();
+    // Re-sync font links so any newly registered Storage fonts take effect.
+    if (typeof applyDocTemplate === 'function') applyDocTemplate();
   } catch (err) {
     // Font APIs are optional for older servers; keep local/system fonts available.
   }
@@ -601,8 +612,10 @@ async function uploadFontFile(file) {
 
 async function deleteUploadedFont(font) {
   if (!font || !confirm(`Delete uploaded font "${font.family}"?`)) return;
+  // In server mode the font has a UUID id; in desktop mode use the slug.
+  const fontKey = font.id || font.slug;
   try {
-    await apiFetch(`/api/fonts/${encodeURIComponent(font.slug)}`, 'DELETE');
+    await apiFetch(`/api/fonts/${encodeURIComponent(fontKey)}`, 'DELETE');
     setStatus(`Deleted "${font.family}".`, 'success');
     await loadDesignerFonts();
   } catch (err) {
