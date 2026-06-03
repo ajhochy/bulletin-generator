@@ -2,6 +2,10 @@
 // ─── Server API ────────────────────────────────────────────────────────────
 async function apiFetch(path, method = 'GET', body = null) {
   const opts = { method, headers: {} };
+  const session = typeof getSession === 'function' ? getSession() : null;
+  if (session?.access_token) {
+    opts.headers.Authorization = `Bearer ${session.access_token}`;
+  }
   if (body !== null) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);

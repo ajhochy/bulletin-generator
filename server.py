@@ -448,6 +448,8 @@ def _public_config():
     return {
         "appMode": APP_MODE,
         "appVersion": APP_VERSION,
+        "supabaseUrl": os.getenv("SUPABASE_URL", ""),
+        "supabaseAnonKey": os.getenv("SUPABASE_ANON_KEY", ""),
         "pcoConfigured": _pco_auth_header() is not None,
         "googleConfigured": _google_auth_header() is not None,
         "driveConfigured": bool(settings.get('googleDriveScopeGranted')),
@@ -1241,6 +1243,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/fonts/cache/',             '_handle_google_font_cache'),
         ('/fonts/user/',              '_handle_user_font_file'),
         ('/cal',                      '_handle_cal'),
+        ('/src/js/supabase-browser.js', '_handle_supabase_browser_js'),
+        ('/src/js/supabase-config.js', '_handle_supabase_config_js'),
         ('/src/',                     '_handle_static'),
     ]
 
@@ -1316,6 +1320,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def _handle_favicon(self):
         self.send_response(204)
         self.end_headers()
+
+    def _handle_supabase_browser_js(self):
+        bundle_path = BASE_DIR / "node_modules" / "@supabase" / "supabase-js" / "dist" / "umd" / "supabase.js"
+        try:
+            body = bundle_path.read_bytes()
+        except (FileNotFoundError, IsADirectoryError):
+            self._send_json({"error": "Supabase browser bundle not installed"}, 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_supabase_config_js(self):
+        body = (
+            "globalThis.BULLETIN_SUPABASE_CONFIG = "
+            + json.dumps({
+                "url": os.getenv("SUPABASE_URL", ""),
+                "anonKey": os.getenv("SUPABASE_ANON_KEY", ""),
+            })
+            + ";\n"
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_health(self):
         if IS_DESKTOP:
