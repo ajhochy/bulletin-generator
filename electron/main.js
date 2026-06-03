@@ -23,7 +23,8 @@ import http from 'http';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { autoUpdater } from 'electron-updater';
+import autoUpdaterPkg from 'electron-updater';
+const { autoUpdater } = autoUpdaterPkg;
 
 // ESM equivalents for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -56,9 +57,12 @@ function resolveSidecar() {
   }
 
   // Dev: repo root is one directory above electron/
+  // Prefer the venv's python (3.11+) so auth.py / cryptography imports work.
   const repoRoot = path.resolve(__dirname, '..');
+  const venvPy   = path.join(repoRoot, '.venv', 'bin', 'python');
+  const cmd      = fs.existsSync(venvPy) ? venvPy : 'python3';
   return {
-    cmd: 'python3',
+    cmd,
     args: [path.join(repoRoot, 'server.py'), String(PORT)],
   };
 }
