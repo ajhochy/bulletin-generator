@@ -104,19 +104,91 @@ In Supabase Dashboard → Authentication → Security / Password Security:
 
 ### 6. Workspace membership strategy for v1
 
-No self-serve workspace UI is planned for v1. Workspace access is seeded manually:
+No self-serve workspace UI is planned for v1. Workspace access is seeded manually
+or auto-provisioned via the domain allow-list (see section 7 below):
 
 - Existing Visalia CRC users are inserted into `public.workspace_members` for
   the Visalia workspace by the workspace seed/migration script.
 - New church testers are inserted into their own workspace by the same seed path.
-- Domain allow-list enforcement is deferred to issue 008. The allow-list source
-  should be either a dedicated invite/allow-list table or a documented key in
-  `workspace_settings`; decide before coding issue 008.
+- Auto-provisioning: if a new user's verified email domain appears in a
+  workspace's `allowed_domains` list, they are automatically added as `editor`
+  on first login (issue 008). See section 7 for how to manage that list.
 - Never put authorization decisions in user-editable Supabase `user_metadata`.
   Membership must come from database rows or trusted app metadata.
 
 Issue 005 is complete only after the dashboard validation above succeeds for
 both Google OAuth and email magic links.
+
+### 7. Managing the domain allow-list (issue 008)
+
+After issue 008 lands, new users whose email domain is on the allow-list are
+automatically provisioned as `editor` in the matching workspace on first login.
+
+**Adding a domain to the allow-list**
+
+Run as `service_role` (bypasses RLS) using psql or the Supabase SQL Editor
+(Dashboard → SQL Editor → New query):
+
+```sql
+-- Replace <workspace-id> with the target workspace UUID and
+-- <domain> with the lowercase domain string, e.g. 'visaliacrc.com'.
+UPDATE public.workspace_settings
+SET settings = jsonb_set(
+    settings,
+    '{allowed_domains}',
+    COALESCE(settings->'allowed_domains', '[]'::jsonb) || to_jsonb('<domain>'::text)
+)
+WHERE workspace_id = '<workspace-id>'::uuid;
+```
+
+If no `workspace_settings` row exists yet for the workspace, insert one:
+
+```sql
+INSERT INTO public.workspace_settings (workspace_id, settings)
+VALUES ('<workspace-id>'::uuid, '{"allowed_domains": ["<domain>"]}'::jsonb)
+ON CONFLICT (workspace_id) DO UPDATE
+SET settings = jsonb_set(
+    workspace_settings.settings,
+    '{allowed_domains}',
+    COALESCE(workspace_settings.settings->'allowed_domains', '[]'::jsonb)
+    || to_jsonb('<domain>'::text)
+);
+```
+
+**Removing a domain from the allow-list**
+
+```sql
+UPDATE public.workspace_settings
+SET settings = jsonb_set(
+    settings,
+    '{allowed_domains}',
+    (
+        SELECT jsonb_agg(d)
+        FROM jsonb_array_elements_text(settings->'allowed_domains') AS d
+        WHERE lower(d) != '<domain>'
+    )
+)
+WHERE workspace_id = '<workspace-id>'::uuid;
+```
+
+**Verifying the current allow-list**
+
+```sql
+SELECT workspace_id, settings->'allowed_domains' AS allowed_domains
+FROM public.workspace_settings
+WHERE settings ? 'allowed_domains';
+```
+
+**Security notes**
+
+- Domain matching is performed on the **verified JWT email claim** from Supabase
+  Auth, not from user-editable `user_metadata`. The server derives the domain
+  after the token signature is verified.
+- `ON CONFLICT … DO NOTHING` in the provisioning INSERT means a race between two
+  simultaneous first-logins from the same user is safe — the second insert is a
+  no-op and the subsequent SELECT returns the already-inserted row.
+- Auto-provisioned users receive the `editor` role. To grant `owner` or `viewer`,
+  update the row manually after provisioning.
 
 ---
 

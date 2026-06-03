@@ -3,13 +3,14 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 if "cgi" not in sys.modules:
     sys.modules["cgi"] = types.ModuleType("cgi")
 
+import auth  # noqa: E402
 import server  # noqa: E402
 
 
@@ -153,3 +154,106 @@ class TestScopedStorage:
         )
         store.list_projects.assert_called_once_with(user_id=USER["id"])
         assert handler._send_json.call_args[0][0]["projects"][0]["id"] == "p1"
+
+
+# ---------------------------------------------------------------------------
+# First-login provisioning (Issue 008)
+# ---------------------------------------------------------------------------
+
+_PROVISIONED_MEMBERSHIP = {
+    "workspace_id": "cccccccc-0000-0000-0000-000000000001",
+    "role": "editor",
+    "email": "bob@allowlisted.org",
+    "display_name": "",
+    "avatar_url": "",
+}
+
+_PROVISIONED_USER = {
+    "id": "dddddddd-0000-0000-0000-000000000001",
+    "user_id": "dddddddd-0000-0000-0000-000000000001",
+    "email": "bob@allowlisted.org",
+    "display_name": "",
+    "avatar_url": "",
+    "workspace_id": "cccccccc-0000-0000-0000-000000000001",
+    "role": "editor",
+    "claims": {
+        "sub": "dddddddd-0000-0000-0000-000000000001",
+        "email": "bob@allowlisted.org",
+    },
+}
+
+
+class TestFirstLoginProvisioning:
+    """Tests for domain-allow-list auto-provisioning on first login (issue 008)."""
+
+    def test_first_login_allow_listed_domain_gets_workspace(self):
+        """New user whose domain is allow-listed gets auto-provisioned as editor."""
+        claims = {
+            "sub": "dddddddd-0000-0000-0000-000000000001",
+            "email": "bob@allowlisted.org",
+            "exp": 9999999999,
+        }
+        # resolve_workspace_membership returns None (no prior row), then
+        # provision_first_login returns the new membership.
+        with (
+            patch("auth._verify_supabase_jwt", return_value=claims),
+            patch("auth.resolve_workspace_membership", return_value=None) as resolve,
+            patch("auth.provision_first_login", return_value=_PROVISIONED_MEMBERSHIP) as provision,
+        ):
+            status, identity = auth.authenticate_authorization_header("Bearer sometoken")
+
+        assert status == 200
+        assert identity is not None
+        assert identity["workspace_id"] == _PROVISIONED_MEMBERSHIP["workspace_id"]
+        assert identity["role"] == "editor"
+        resolve.assert_called_once_with("dddddddd-0000-0000-0000-000000000001")
+        provision.assert_called_once_with(
+            "dddddddd-0000-0000-0000-000000000001", "bob@allowlisted.org"
+        )
+
+    def test_first_login_unlisted_domain_gets_403(self):
+        """New user whose domain is NOT on any allow-list still gets 403."""
+        claims = {
+            "sub": "eeeeeeee-0000-0000-0000-000000000001",
+            "email": "eve@notallowed.example",
+            "exp": 9999999999,
+        }
+        with (
+            patch("auth._verify_supabase_jwt", return_value=claims),
+            patch("auth.resolve_workspace_membership", return_value=None),
+            patch("auth.provision_first_login", return_value=None) as provision,
+        ):
+            status, identity = auth.authenticate_authorization_header("Bearer sometoken")
+
+        assert status == 403
+        assert identity is None
+        provision.assert_called_once_with(
+            "eeeeeeee-0000-0000-0000-000000000001", "eve@notallowed.example"
+        )
+
+    def test_existing_member_skips_provisioning(self):
+        """A user who already has a membership row is never sent to provisioning."""
+        claims = {
+            "sub": "aaaaaaaa-0000-0000-0000-000000000001",
+            "email": "alice@example.com",
+            "exp": 9999999999,
+        }
+        existing_membership = {
+            "workspace_id": "bbbbbbbb-0000-0000-0000-000000000001",
+            "role": "admin",
+            "email": "alice@example.com",
+            "display_name": "Alice",
+            "avatar_url": "",
+        }
+        with (
+            patch("auth._verify_supabase_jwt", return_value=claims),
+            patch("auth.resolve_workspace_membership", return_value=existing_membership),
+            patch("auth.provision_first_login") as provision,
+        ):
+            status, identity = auth.authenticate_authorization_header("Bearer sometoken")
+
+        assert status == 200
+        assert identity is not None
+        assert identity["role"] == "admin"
+        # provision_first_login must NOT be called when membership already exists
+        provision.assert_not_called()
