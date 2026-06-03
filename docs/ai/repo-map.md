@@ -10,6 +10,11 @@ See `CLAUDE.md` "Key Files" table for the full annotated list. This file is a qu
 - `bulletin-generator.spec` — PyInstaller spec for `.app` build.
 - `docker-compose.yml` — server-mode container + Watchtower sidecar.
 - `requirements.txt`, `desktop_config.py(.example)`, `.env(.example)`.
+- `auth.py` — Supabase JWT verification middleware, workspace membership lookup.
+- `db.py` — psycopg3 connection helpers, `transaction(claims)`, `admin_transaction()`.
+- `storage.py` — `StorageBackend` ABC + `JsonStorageBackend` (desktop) + `PostgresStorageBackend` (server).
+- `storage_assets.py` — Supabase Storage upload helper; `extract_and_upload_images()` replaces base64 cover/logo data-URIs with Storage public URLs. Called from `storage.py` save paths. No-op when `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` unset (desktop bypass).
+- `revisions.py` — `generate_summary()` for project revision diffs.
 
 ## `src/js/` (no bundler — files served as-is, `Cache-Control: no-store`)
 
