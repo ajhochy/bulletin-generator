@@ -1,37 +1,42 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-03 (issue 019 done)_
+
+## Active workflow run (Supabase + Multi-tenant + Electron, milestone #30)
+
+Run branch: `feat/supabase-multitenant-electron`. Toolchain: 3.11 venv at `.venv`. `ai-workflow checks` wired via `scripts/run_ai_workflow.py`.
+
+- **001–007 — DONE.** See main `docs/ai/project-state.md` for details on schema, RLS, db.py, storage, auth, and frontend auth issues.
+- **019 — DONE.** `.github/workflows/ci.yml` gains a `db-integration` job (DATABASE_URL + SUPABASE_JWT_SECRET secrets, APP_MODE=server, fork-guard). `docs/ai/testing-guide.md` documents two-job CI structure. verification-gate PASS: 100 pytest / 71 vitest / vite build clean / /api/bootstrap 200.
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
-
-Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
-
-- #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
-- #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
-
-## Recently completed
-
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
-
-## In progress
-
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+Issue 019 (CI DB integration) complete. Next: issue 008 — membership provisioning on first login.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior (rendering, Template Designer, poll timer) is manual-only.
+- `db-integration` CI job connects to staging Supabase. If staging is torn down or session-pooler DNS changes, the job will fail.
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+Issue 008 (#264): membership provisioning on first login. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`).
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — ci-db-integration (issue 019)
+- Files modified:
+  - `.github/workflows/ci.yml` — Added `db-integration` job: runs `pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q` with `DATABASE_URL`, `SUPABASE_JWT_SECRET` from GitHub Secrets and `APP_MODE=server`. Guarded by `if: github.repository == 'ajhochy/bulletin-generator'` so forks without secrets do not fail.
+  - `docs/ai/testing-guide.md` — Updated intro sentence and added "CI structure (two jobs)" section documenting the `js`, `python`, and `db-integration` jobs, their DB requirements, fork-safety, and local equivalent command.
+- Checks run:
+  - `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` → YAML valid.
+  - `ai-workflow checks --level issue` → PASS: 100 pytest passed (0 DB), 71 vitest passed.
+- Decisions made:
+  - `db-integration` is a separate job (not a step in `python`) so forks see the two non-DB jobs as always-green and the conditional DB job as simply skipped. This matches the standard pattern for secrets-gated CI.
+  - `pip install -r requirements.txt` before the test step because `psycopg[binary]` is required to connect; base `pytest` install alone is insufficient.
+  - Only `SUPABASE_JWT_SECRET` added beyond `DATABASE_URL`; `SUPABASE_URL` and `SUPABASE_ANON_KEY` are browser-safe and not needed server-side for these tests. `SUPABASE_DATABASE_PW` is embedded in `DATABASE_URL` already.
+- Deviations from spec: none.
+- Concerns: The `db-integration` job connects to the staging Supabase project. If staging is torn down or the session-pooler DNS changes, the job will fail. No test-isolation cleanup is performed by `test_db.py::test_admin_transaction_bypasses_rls` — it inserts and deletes within the same tx, so this is safe.
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:

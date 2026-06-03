@@ -29,3 +29,22 @@ jobs:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip pytest
       - run: pytest tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py
+
+  db-integration:
+    # Only run on the canonical repo so forks without the required secrets
+    # do not fail with a missing-secret error.
+    if: github.repository == 'ajhochy/bulletin-generator'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --upgrade pip pytest
+      - run: pip install -r requirements.txt
+      - name: Run DB integration tests
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          APP_MODE: server
+        run: pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q
