@@ -1,37 +1,56 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-03 (issue 011 done)_
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
+Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
+Issue 011 (Electron scaffold) is done. `electron/main.js` and `electron/preload.js` committed; `package.json` updated with electron 28 devDep. Dev smoke (`npm run start:electron`) is manual-only — requires a human to confirm BrowserWindow opens and tray icon appears.
 
-- #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
-- #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
+## Recently completed (this branch)
 
-## Recently completed
-
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
+- **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
+- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
 
 ## In progress
 
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+- Issue 011 verified; awaiting manual dev smoke (`npm run start:electron`) and draft PR before marking fully closed.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
+- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
+- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+1. Manual dev smoke for issue 011: `npm run start:electron` — confirm BrowserWindow opens to `http://localhost:8765/`, tray icon visible, Quit kills sidecar.
+2. Open draft PR for issue 011.
+3. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — electron-scaffold (issue 011)
+- Files modified:
+  - `electron/main.js` (new) — Electron main process. Spawns `server.py` sidecar on port 8765 (`python3 server.py 8765` in dev; `<resourcesPath>/server` in packaged mode). `waitForServer()` polls http://localhost:8765/ up to 20 s. Opens BrowserWindow (1280×900, contextIsolation on, nodeIntegration off, preload wired). Creates tray icon from `menubar-icon.png` with "Open Bulletin Generator" + separator + "Quit". Kills sidecar on `before-quit`; shows error dialog if sidecar crashes.
+  - `electron/preload.js` (new) — Intentionally minimal. contextIsolation boundary. No APIs exposed to renderer (app talks to Python sidecar directly over HTTP). Comments scaffold the `contextBridge.exposeInMainWorld` extension point.
+  - `package.json` — Added `"main": "electron/main.js"`, `"start:electron": "electron ."` script, `"electron": "^28.3.3"` devDependency.
+  - `docs/ai/testing-guide.md` — Added "Electron desktop (dev mode)" section: `npm run start:electron`, expected behaviors, packaged-mode path note.
+- Checks run:
+  - `node --check electron/main.js && node --check electron/preload.js` → JS syntax OK.
+  - `./node_modules/.bin/electron --version` → v28.3.3.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Used ESM `import` syntax in `main.js` (root package.json has `"type": "module"`). Electron 28 supports ESM main entry points.
+  - Dev-mode sidecar command: `python3 server.py 8765` (passes port as argv, matching server.py's existing `sys.argv[1]` port override). Packaged-mode path probes `process.resourcesPath/server` — scaffolded now, binary doesn't exist until issue 014.
+  - `sidecarExited` boolean prevents double-kill races between `before-quit` and the `exit` handler.
+  - Tray keeps app alive on macOS when BrowserWindow is closed (standard macOS convention).
+- Deviations from spec: none.
+- Concerns:
+  - Dev smoke (`npm run start:electron`) requires Python 3 in PATH and `server.py` dependencies installed. Full end-to-end smoke is manual only — not automated.
+  - `launcher.py` NOT deleted per spec — deprecation deferred to issue 014.
+  - Vulnerabilities reported by `npm audit` are in electron's own transitive deps; none are in the runtime app surface. Not blocking for a devDependency-only install.
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:

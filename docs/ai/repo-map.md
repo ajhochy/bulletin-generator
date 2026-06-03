@@ -5,11 +5,16 @@ See `CLAUDE.md` "Key Files" table for the full annotated list. This file is a qu
 ## Top-level
 
 - `server.py` — Python stdlib `http.server`, all API routes, OAuth, PDF gen, ~1,485 lines.
-- `launcher.py` — macOS desktop launcher + menu bar (rumps).
+- `launcher.py` — macOS desktop launcher + menu bar (rumps). **Deprecated** — Electron replaces this (issue 014 will remove it).
 - `index.html` — single-page shell, loads `src/js/*` directly via `<script>` tags. No bundler.
 - `bulletin-generator.spec` — PyInstaller spec for `.app` build.
 - `docker-compose.yml` — server-mode container + Watchtower sidecar.
 - `requirements.txt`, `desktop_config.py(.example)`, `.env(.example)`.
+
+## `electron/`
+
+- `electron/main.js` — Electron main process. Spawns `server.py` sidecar (dev: `python3 server.py 8765`; packaged: `<resourcesPath>/server`). Opens BrowserWindow to `http://localhost:8765/`. Tray icon. Kills sidecar on quit. Error dialog on crash.
+- `electron/preload.js` — Minimal preload. contextIsolation=true, nodeIntegration=false. No APIs exposed to renderer (HTTP-only to sidecar).
 
 ## `src/js/` (no bundler — files served as-is, `Cache-Control: no-store`)
 

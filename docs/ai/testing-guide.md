@@ -40,6 +40,27 @@ pyinstaller bulletin-generator.spec
 # Output: dist/Bulletin Generator.app
 ```
 
+### Electron desktop (dev mode)
+
+Requires Node + the `electron` devDependency (`npm install`).
+
+```bash
+npm run start:electron
+# Equivalent: ./node_modules/.bin/electron .
+```
+
+What to expect:
+- A terminal window shows `[server] Serving on port 8765` once server.py is up.
+- A BrowserWindow opens pointing to `http://localhost:8765/`.
+- A tray icon appears; right-click shows "Open Bulletin Generator" and "Quit".
+- Clicking "Quit" from the tray kills the Python sidecar and exits cleanly.
+
+If the server fails to start within 20 s, an error dialog appears and the app quits.
+
+> **Packaged mode path (future):** when building the final `.app`, the PyInstaller
+> `server` binary will be placed at `<app>.app/Contents/Resources/server`.
+> `electron/main.js` already probes for that path via `process.resourcesPath`.
+
 ## Manual-only checks
 
 These cannot be automated and must be smoke-tested by a human before merge:
