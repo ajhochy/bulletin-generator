@@ -16,7 +16,7 @@
  * (http://localhost:8765/oauth/pco/callback) require no change.
  */
 
-import { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } from 'electron';
 import { spawn } from 'child_process';
 import path from 'path';
 import http from 'http';
@@ -33,8 +33,11 @@ const __dirname = path.dirname(__filename);
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PORT = 8765;
-const APP_URL = `http://localhost:${PORT}/`;
-const READY_TIMEOUT_MS = 20_000; // 20 s to wait for server to start
+// Use 127.0.0.1 (IPv4) not localhost — Electron's Node resolves localhost to
+// ::1 (IPv6) on macOS but the Python sidecar only binds to 0.0.0.0 (IPv4).
+const APP_URL  = `http://127.0.0.1:${PORT}/`;
+const APP_URL_DISPLAY = `http://localhost:${PORT}/`; // for the BrowserWindow
+const READY_TIMEOUT_MS = 40_000; // 40 s to wait for server to start
 const READY_POLL_INTERVAL_MS = 200;
 
 // ── Sidecar resolution ────────────────────────────────────────────────────────
@@ -74,16 +77,24 @@ function resolveSidecar() {
  * Returns a Promise that resolves when the server is up.
  */
 function waitForServer(timeoutMs) {
+  console.log(`[waitForServer] PID=${process.pid} starting, url=${APP_URL}, timeout=${timeoutMs}ms`);
   return new Promise((resolve, reject) => {
     const deadline = Date.now() + timeoutMs;
+    let probeCount = 0;
 
     function probe() {
+      probeCount++;
       const req = http.get(APP_URL, (res) => {
-        res.resume(); // drain
+        console.log(`[waitForServer] PID=${process.pid} probe #${probeCount} resolved with status=${res.statusCode}`);
+        res.resume();
         resolve();
       });
-      req.on('error', () => {
+      req.on('error', (err) => {
+        if (probeCount % 10 === 0) {
+          console.log(`[waitForServer] PID=${process.pid} probe #${probeCount} error: ${err.code}`);
+        }
         if (Date.now() >= deadline) {
+          console.log(`[waitForServer] PID=${process.pid} deadline exceeded after ${probeCount} probes`);
           reject(new Error(`Server did not start within ${timeoutMs / 1000}s`));
         } else {
           setTimeout(probe, READY_POLL_INTERVAL_MS);
@@ -106,7 +117,12 @@ function waitForServer(timeoutMs) {
  * On Windows this also ensures single-instance behaviour (see second-instance
  * handler below).
  */
-app.setAsDefaultProtocolClient('bulletingen');
+// Protocol registration only works reliably in a packaged app bundle.
+// In dev mode, skip it to avoid macOS killing the process due to stale
+// single-instance lock conflicts.
+if (app.isPackaged) {
+  app.setAsDefaultProtocolClient('bulletingen');
+}
 
 /**
  * Extract the raw deep-link URL from a process.argv array.
@@ -197,7 +213,26 @@ function createWindow() {
     },
   });
 
-  mainWindow.loadURL(APP_URL);
+  mainWindow.loadURL(APP_URL_DISPLAY);
+
+  // Intercept the bulletingen:// deep-link redirect that Supabase sends after
+  // OAuth completes.  We can't load it as a URL, but we can extract the tokens
+  // and forward them to the renderer via IPC, then reload the app page.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('bulletingen://')) {
+      event.preventDefault();
+      handleDeepLink(url);
+      mainWindow.loadURL(APP_URL_DISPLAY);
+    }
+    // All other navigations (Google OAuth, Supabase callback, localhost) are
+    // allowed — the BrowserWindow handles the full OAuth flow internally.
+  });
+
+  // Open window.open / target=_blank links in the OS browser (e.g. help docs).
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
@@ -319,6 +354,7 @@ function configureAutoUpdater() {
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  console.log(`[electron] PID=${process.pid} whenReady fired, gotLock=${gotLock}`);
   spawnSidecar();
 
   try {
@@ -375,10 +411,11 @@ app.on('open-url', (event, url) => {
 // Windows / Linux: Electron relaunches a second instance with the protocol URL
 // appended to argv.  Request single-instance lock so the second instance
 // hands its argv to the first instance and exits immediately.
-const gotLock = app.requestSingleInstanceLock();
+// Single-instance lock is only enforced in packaged builds.
+// In dev mode it can conflict with stale lock files and cause SIGKILL.
+const gotLock = app.isPackaged ? app.requestSingleInstanceLock() : true;
 if (!gotLock) {
-  // This is the second instance — quit after passing the URL via the lock.
-  app.quit();
+  process.exit(0);
 }
 
 app.on('second-instance', (_event, argv) => {
