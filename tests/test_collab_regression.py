@@ -406,13 +406,14 @@ class TestPrivateProjectIsolation:
     # ── POST (save) ──────────────────────────────────────────────────────────
 
     def _call_save_project(self, user: dict, project: dict) -> server.Handler:
+        # _clientRevision is silently ignored by the server (issue 021).
         payload = {"id": project["id"], "name": "Updated", "_clientRevision": 1}
         body = json.dumps(payload).encode()
         handler = _make_handler("/api/projects", cookie="bg_session=tok", body=body)
         mock_store = MagicMock()
         mock_store.get_project.return_value = project
         saved = dict(project, revision=2)
-        mock_store.save_project_transactional.return_value = saved
+        mock_store.save_project.return_value = saved
         with patch.object(server, "IS_DESKTOP", False), \
              patch("auth.get_request_user", return_value=user), \
              patch("storage.get_storage", return_value=mock_store):
@@ -431,11 +432,12 @@ class TestPrivateProjectIsolation:
         h = self._call_save_project(self._USER_A, prj)
         assert _status(h) == 200
 
-    def test_user_b_can_save_workspace_project(self):
+    def test_user_b_cannot_save_workspace_project_owned_by_user_a(self):
+        """Non-owners cannot save even workspace-visibility projects (issue 021)."""
         prj = mock_project(visibility="workspace", owner_id=self._USER_A["id"])
         h = self._call_save_project(self._USER_B, prj)
-        assert _status(h) == 200, \
-            f"User B must be able to save workspace projects (got {_status(h)})"
+        assert _status(h) == 403, \
+            f"User B (non-owner) must not save User A's workspace project (got {_status(h)})"
 
     # ── DELETE ───────────────────────────────────────────────────────────────
 
