@@ -51,7 +51,9 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 - Checks run:
   - Supabase MCP `execute_sql`: `UPDATE projects SET owner_user_id = '74b48104-31b5-4100-9dc1-45935404e916' WHERE workspace_id = '614505d2-0f12-4c00-afb1-9077a0dc94fe' AND owner_user_id IS NULL` — executed; 36 rows owned by `ajh@visaliacrc.com` confirmed.
   - Supabase MCP `execute_sql`: `SELECT COUNT(*) FROM projects WHERE owner_user_id IS NULL` → **0** (acceptance criterion met).
-  - `ai-workflow checks --level issue` → pending (verification-gate).
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+  - `ai-workflow checks --level pr` → PASS (100 pytest, 71 vitest, vite build).
+  - Verification-gate: PASS. Commit 2b6fea95.
 - Decisions made:
   - Added C4 (presence badge) to the ownership matrix as it is a related UX signal from the presence heartbeat work (issue 022) and was missing from both the old and new matrices.
   - Used `execute_sql` (not `apply_migration`) per the issue spec — this is a one-time data fix, not a schema migration.
