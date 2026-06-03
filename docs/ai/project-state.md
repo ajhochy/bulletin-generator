@@ -66,6 +66,26 @@ Move to issue 008 (#264): membership provisioning on first login. Decide per-wor
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — workspace-seeding-migration-script (issue 015)
+- Files modified:
+  - `scripts/migrate_to_supabase.py` (NEW) — Standalone migration script that reads legacy JSON from a configurable source directory and writes to the Supabase multi-tenant schema via `db.admin_transaction()`. Dry-run is the default; `--execute` is explicit. Handles projects→`projects`+`project_revisions`, announcements→`announcements`, songs→`songs`, settings→`workspace_settings`. Idempotent (ON CONFLICT DO NOTHING / upsert merge). Excludes OAuth token secrets from settings migration. Stable UUID derivation so re-runs produce same IDs.
+  - `MANUAL-STEPS.md` — Added "Supabase Data Migration (Issue 015)" section with step-by-step dry-run and execute commands, prerequisites, idempotency note, and data-safety callouts. Updated First-Run Server Setup to reference the new script.
+- Checks run:
+  - `python -m py_compile scripts/migrate_to_supabase.py` → compile OK
+  - Dry-run against live source `/Volumes/docker/bulletingenerator/` → exit 0; all source files are currently empty arrays/dicts (0 rows each) — confirmed by reading source files before implementation.
+  - `scripts/run_ai_workflow.py checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Script targets the actual staging schema columns (no `imported_from_json` or `created_by_email` — those columns exist in `migrations/import_projects.py` but not in the real SQL migration). See docs/ai/decisions.md for the discrepancy note.
+  - Used `ON CONFLICT DO UPDATE SET settings = ... || EXCLUDED.settings` for `workspace_settings` (merge, not ignore) so incremental re-runs can add new keys without wiping existing ones.
+  - OAuth tokens excluded from settings migration; they must be re-issued for the multi-tenant deployment.
+  - The script lives in `scripts/` (not `migrations/`) to clearly separate the one-shot operator runbook tool from the unit-testable importer modules.
+- Deviations from spec:
+  - The issue says to use `admin_transaction()` — implemented as specified. The `migrations/run_all_migrations.py` uses `transaction()` instead; those are separate tools targeting a different schema variant.
+  - Source data at `/Volumes/docker/bulletingenerator/` is currently all empty (confirmed). Dry-run output shows 0 rows for all tables.
+- Concerns:
+  - The `migrations/import_projects.py` SQL references columns (`imported_from_json`, `created_by_email`, `updated_by_email`, `created_by_name`, `updated_by_name`, `saved_by_email`, `saved_by_name`) that do not exist in the applied migrations. That module targets a schema variant that was never applied. The new `scripts/migrate_to_supabase.py` targets the actual applied schema. The `migrations/` modules may need reconciliation in a future issue.
+  - `workspace_settings` ON CONFLICT uses `DO UPDATE ... || EXCLUDED.settings`. If the existing row has keys that should be reset, a full overwrite may be needed instead. Current approach is conservative (merge, preserve existing).
+
 ### 2026-06-03 — frontend-supabase-login-token-attach (issue 007 / #263)
 - Files modified:
   - `package.json`, `package-lock.json` — Added `@supabase/supabase-js` for browser Supabase Auth.
