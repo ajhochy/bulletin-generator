@@ -66,6 +66,30 @@ Move to issue 008 (#264): membership provisioning on first login. Decide per-wor
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — storage-assets-image-upload (issue 009)
+- Files modified:
+  - `storage_assets.py` (new) — `extract_and_upload_images()`, `upload_image()`, `is_base64_data_uri()`, `_parse_data_uri()`. Handles base64→Storage URL replacement via Supabase Storage REST API using `urllib.request`. Falls back to base64 silently on any failure. No-op when `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are unset (desktop bypass).
+  - `storage.py` — Added calls to `extract_and_upload_images()` at the top of `PostgresStorageBackend.save_project()` and `save_project_transactional()`. Only fires when `workspace_id is not None`.
+  - `.env.example` — Added `SUPABASE_SERVICE_ROLE_KEY` documentation (HTTP JWT service-role key for Storage uploads, distinct from `SUPABASE_SERVICE_ROLE_URL` Postgres URL).
+  - `tests/test_storage_assets.py` (new) — 29 unit tests covering: upload mock, public URL return, fallback-to-base64 on network/auth error, desktop mode bypass (no URL / no key), existing-URL passthrough, header assertions, env-var reads, storage.py integration wiring.
+- Checks run:
+  - `python3.11 -c "import storage_assets; import storage; import server"` → pass.
+  - `.venv/bin/python3.11 -m pytest tests/test_storage_assets.py -v` → 29 passed.
+  - `ai-workflow checks --level issue` → PASS: 100 pytest passed; 71 vitest passed.
+  - `ai-workflow checks --level pr` → PASS: 100 pytest passed; 71 vitest passed; vite build clean.
+- Decisions made:
+  - Introduced `SUPABASE_SERVICE_ROLE_KEY` as a new env var (HTTP JWT service-role key) rather than repurposing `SUPABASE_SERVICE_ROLE_URL` (which is a Postgres connection string). These are structurally different — the Storage REST API needs a JWT Bearer token, not a Postgres URL. See also docs/ai/decisions.md.
+  - Upload placed in `storage.py` `save_project` / `save_project_transactional` (before `_json.dumps`) so the stored JSONB state never contains base64 after a successful upload. This is the single controlled chokepoint for all project saves.
+  - `workspace_id is None` guard prevents upload attempts in un-scoped / desktop-mode calls.
+  - Desktop mode bypass: if either `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` is unset, `extract_and_upload_images` returns immediately — existing base64 preserved.
+- Deviations from spec:
+  - Issue spec named the env var `SUPABASE_SERVICE_ROLE_URL` for Storage HTTP calls; that is already a Postgres connection string. Introduced `SUPABASE_SERVICE_ROLE_KEY` (JWT) instead to avoid ambiguity. Documented in `.env.example` and decisions.md.
+  - `save_project_transactional` integration test not added (would require mocking the complex conflict-check / revision-insert SQL chain); the `save_project` integration test confirms the wiring pattern is identical and the unit tests cover the `extract_and_upload_images` function exhaustively.
+- Concerns:
+  - `SUPABASE_SERVICE_ROLE_KEY` must be set in the deployment environment for uploads to work; without it, images will continue to be stored as base64 in JSONB (safe fallback, not a data-loss risk).
+  - The `project-assets` bucket must exist and be configured as public in the Supabase dashboard before URLs will render correctly. This is a manual setup step (out of scope for this issue).
+  - `staffLogoUrl` is a workspace-level setting (stored in `workspace_settings` via `/api/settings`), but the project dict also carries a copy (saved in project state for backward compat). The upload here covers the project-state copy. Deduplicated uploads are idempotent due to the `x-upsert: true` header.
+
 ### 2026-06-03 — frontend-supabase-login-token-attach (issue 007 / #263)
 - Files modified:
   - `package.json`, `package-lock.json` — Added `@supabase/supabase-js` for browser Supabase Auth.

@@ -4,6 +4,19 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-03 — SUPABASE_SERVICE_ROLE_KEY (HTTP JWT) vs SUPABASE_SERVICE_ROLE_URL (Postgres) for Storage uploads
+
+**Context.** Issue 009 calls for server-initiated uploads to Supabase Storage using "SUPABASE_SERVICE_ROLE_URL". That variable is already defined in `db.py` as a Postgres connection string (`postgresql://postgres.<ref>:<pw>@pooler.supabase.com:5432/...`). The Supabase Storage REST API requires an HTTP Bearer token (a JWT), not a Postgres connection string.
+
+**Decision.** Introduce `SUPABASE_SERVICE_ROLE_KEY` as a separate env var for the HTTP service-role JWT. This is the "service_role" key shown in Supabase Dashboard → Settings → API → Project API keys. `SUPABASE_SERVICE_ROLE_URL` (Postgres) is unchanged and still used by `db.admin_transaction()`.
+
+**Consequences.**
+- Operators must set two service-role secrets: `SUPABASE_SERVICE_ROLE_URL` (Postgres admin) and `SUPABASE_SERVICE_ROLE_KEY` (Storage HTTP). Both are server-side-only; neither goes into the Electron bundle.
+- If `SUPABASE_SERVICE_ROLE_KEY` is unset, `extract_and_upload_images()` is a no-op and images stay as base64 — safe fallback, no data loss.
+- Documented in `.env.example` alongside existing secrets.
+
+---
+
 ## 2026-06-02 — Schema source of truth = Supabase-managed migrations (refines D1)
 
 **Context.** With the Supabase MCP installed and a staging project provisioned (`bulletin-generator`, ref `dgydekhfzrmeoscpgmvo`, org Visalia CRC, region us-west-1), we have direct DDL access. The earlier plan reuse-map said "keep collab-v1's Python migration runner + `data_migrations` table" for schema.
