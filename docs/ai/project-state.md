@@ -66,6 +66,40 @@ Move to issue 007 (#263) frontend Supabase login + Bearer token attachment. Issu
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — frontend-supabase-login-token-attach (issue 007 / #263)
+- Files modified:
+  - `package.json`, `package-lock.json` — Added `@supabase/supabase-js` for browser Supabase Auth.
+  - `src/js/main.js` — Replaces legacy `auth.js` in the load order with Supabase browser bundle/config/auth UI scripts.
+  - `src/js/supabase-browser.js` — Adds a safe placeholder for the local script path; `server.py` dynamically serves this path from the installed `@supabase/supabase-js` UMD browser bundle.
+  - `src/js/supabase-config.js` — Adds a safe default browser config file; `server.py` dynamically serves the same path from environment values in server mode.
+  - `src/js/auth-ui.js` — Adds `initAuth()`, Google OAuth, magic-link, sign-out, current-session/user accessors, login/app visibility gating, and `/api/me` identity confirmation with the Supabase access token.
+  - `src/js/api.js` — Attaches `Authorization: Bearer <access_token>` from `getSession()` to API requests.
+  - `index.html` — Replaces the disabled legacy Google-login link with Supabase-driven Google + magic-link login controls and keeps app UI hidden until authenticated.
+  - `server.py` — Exposes public Supabase URL/anon key through `_public_config()` and dynamically serves `/src/js/supabase-config.js` with no-store caching.
+  - `.env.example` — Documents browser-safe `SUPABASE_URL` and `SUPABASE_ANON_KEY` separately from server-only `SUPABASE_JWT_SECRET`.
+  - `tests/auth-ui.spec.js` — Adds the required no-session and active-session `initAuth()` coverage.
+- Checks run:
+  - `node --check src/js/auth-ui.js` → pass.
+  - `node --check src/js/api.js` → pass.
+  - `node --check src/js/app.js` → pass.
+  - `node --check src/js/main.js` → pass.
+  - `.venv/bin/python -c "import server; print('server import OK')"` → pass.
+  - `npm test -- tests/auth-ui.spec.js` → 2 passed.
+  - `npm run build` → pass.
+  - `npm test` → 71 passed.
+  - `ai-workflow checks --level issue` → PASS: 100 pytest passed; 71 vitest passed.
+  - `ai-workflow checks --level pr` → PASS: 100 pytest passed; 71 vitest passed; vite build passed.
+  - Server-mode smoke on `http://localhost:8766/` → `/api/me` returns 401 unauthenticated; `/src/js/supabase-browser.js` and `/src/js/auth-ui.js` served from the patched branch; screenshot captured at `/tmp/bulletin-generator-verification/issue-007-login-fixed.png` (21 KB) showing login gate with Google + magic-link controls and app hidden.
+- Decisions made:
+  - Kept the app's legacy script loading model: `server.py` serves the installed Supabase UMD browser bundle at `/src/js/supabase-browser.js` before `auth-ui.js`, so the direct static server does not need a browser import map or Vite dev server.
+  - Served `/src/js/supabase-config.js` dynamically from `server.py` so public Supabase config comes from environment values without hardcoding deployment keys in source; the checked-in file is an empty safe fallback for Vite builds.
+  - `initAuth()` confirms an active Supabase session against `/api/me` before showing the app, so server-side workspace membership from issue 006 still gates data access.
+- Deviations from spec: none known.
+- Concerns:
+  - Live Google OAuth and magic-link browser smoke still depend on Supabase dashboard/provider setup from issue 005 and a seeded workspace membership.
+  - Existing `src/js/auth.js` is now unused by the loader but left in place to avoid broad cleanup outside issue 007.
+  - Verification-gate cannot emit PASS yet because the required live OAuth/magic-link round trip is externally blocked; failure-triage status is `BLOCKED — requires human Supabase/Google Auth provider setup and seeded test membership`.
+
 ### 2026-06-02 — supabase-jwt-middleware (issue 006 / #262)
 - Files modified:
   - `auth.py` — Replaced collab-v1 Google/session-cookie auth with Supabase JWT verification using `SUPABASE_JWT_SECRET`, Bearer header parsing, admin membership lookup, and a disabled legacy `get_request_user` stub for old test monkeypatches.

@@ -14,7 +14,11 @@ import hmac
 import json
 import os
 import time
+import urllib.request
 from typing import Any
+
+# Cached EC public keys keyed by kid, populated lazily from the JWKS endpoint.
+_ec_key_cache: dict[str, Any] = {}
 
 
 def _b64url_decode(value: str) -> bytes:
@@ -30,15 +34,82 @@ def _decode_json_segment(value: str) -> dict[str, Any]:
     return payload
 
 
+def _b64url_to_int(value: str) -> int:
+    return int.from_bytes(_b64url_decode(value), "big")
+
+
+def _load_ec_keys() -> None:
+    """Fetch JWKS from Supabase and populate _ec_key_cache."""
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    if not supabase_url:
+        return
+    jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+    try:
+        with urllib.request.urlopen(jwks_url, timeout=5) as resp:
+            jwks = json.loads(resp.read().decode("utf-8"))
+        for key in jwks.get("keys", []):
+            if key.get("kty") == "EC" and key.get("alg") == "ES256":
+                kid = key.get("kid", "default")
+                _ec_key_cache[kid] = key
+    except Exception:
+        pass
+
+
+def _get_ec_public_key(kid: str) -> Any:
+    """Return a cryptography EC public key object for the given kid."""
+    from cryptography.hazmat.primitives.asymmetric.ec import (
+        EllipticCurvePublicNumbers,
+        SECP256R1,
+    )
+
+    if not _ec_key_cache:
+        _load_ec_keys()
+
+    # Try exact kid match, then fall back to first available key.
+    jwk = _ec_key_cache.get(kid) or (next(iter(_ec_key_cache.values())) if _ec_key_cache else None)
+    if jwk is None:
+        return None
+
+    x = _b64url_to_int(jwk["x"])
+    y = _b64url_to_int(jwk["y"])
+    return EllipticCurvePublicNumbers(x, y, SECP256R1()).public_key()
+
+
+def _verify_es256(header_b64: str, payload_b64: str, signature: bytes, kid: str) -> bool:
+    """Verify an ES256 JWT signature using the Supabase JWKS public key."""
+    from cryptography.hazmat.primitives.asymmetric.ec import ECDSA
+    from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.exceptions import InvalidSignature
+
+    public_key = _get_ec_public_key(kid)
+    if public_key is None:
+        return False
+
+    # JWT ES256 signatures are P1363 format (r||s, 32 bytes each).
+    # cryptography.verify() expects DER.
+    if len(signature) != 64:
+        return False
+    r = int.from_bytes(signature[:32], "big")
+    s = int.from_bytes(signature[32:], "big")
+    der_sig = encode_dss_signature(r, s)
+
+    signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
+    try:
+        public_key.verify(der_sig, signing_input, ECDSA(hashes.SHA256()))
+        return True
+    except InvalidSignature:
+        return False
+
+
 def _verify_supabase_jwt(token: str) -> dict[str, Any] | None:
     """Return verified Supabase JWT claims, or None for invalid/expired tokens.
 
-    Supabase project JWTs are HS256-signed with the project's JWT Secret
-    (Dashboard -> Settings -> API -> JWT Secret). This secret is server-side
-    only and must not be exposed to frontend or Electron code.
+    Supports HS256 (legacy/self-hosted) and ES256 (new Supabase projects).
+    HS256: verified with SUPABASE_JWT_SECRET.
+    ES256: verified via JWKS public key fetched from SUPABASE_URL.
     """
-    secret = os.environ.get("SUPABASE_JWT_SECRET", "").strip()
-    if not secret or not token:
+    if not token:
         return None
 
     parts = token.split(".")
@@ -53,12 +124,21 @@ def _verify_supabase_jwt(token: str) -> dict[str, Any] | None:
     except Exception:
         return None
 
-    if header.get("alg") != "HS256":
-        return None
-
+    alg = header.get("alg")
+    kid = header.get("kid", "default")
     signing_input = f"{header_b64}.{payload_b64}".encode("ascii")
-    expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    if not hmac.compare_digest(signature, expected):
+
+    if alg == "HS256":
+        secret = os.environ.get("SUPABASE_JWT_SECRET", "").strip()
+        if not secret:
+            return None
+        expected = hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
+        if not hmac.compare_digest(signature, expected):
+            return None
+    elif alg == "ES256":
+        if not _verify_es256(header_b64, payload_b64, signature, kid):
+            return None
+    else:
         return None
 
     exp = claims.get("exp")
