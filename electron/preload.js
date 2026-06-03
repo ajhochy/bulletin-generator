@@ -6,16 +6,33 @@
  * that has access to Node/Electron APIs but cannot leak them into the
  * renderer's global scope unless explicitly bridged via contextBridge.
  *
- * The current app architecture has no IPC needs (the renderer talks directly
- * to the Python sidecar over HTTP). This file is therefore intentionally
- * minimal — it exists to satisfy Electron's preload contract and to serve
- * as the safe extension point if IPC is added in a future issue.
+ * Exposed APIs:
+ *   window.electronAuth — auth deep-link bridge (issue 013)
+ *     .onCallback(cb)  Register a callback that fires when a
+ *                      bulletingen://auth-callback deep link is received.
+ *                      cb receives { url: string }.
+ *                      Returns an unsubscribe function.
  */
 
-// No APIs are exposed to the renderer at this time.
-// If you need to expose a capability, use contextBridge.exposeInMainWorld():
+import { contextBridge, ipcRenderer } from 'electron';
+
+// ── Auth deep-link bridge ─────────────────────────────────────────────────────
 //
-//   import { contextBridge, ipcRenderer } from 'electron';
-//   contextBridge.exposeInMainWorld('electronAPI', {
-//     exampleMethod: () => ipcRenderer.invoke('example'),
-//   });
+// The main process sends 'auth:callback' with { url } when a
+// bulletingen://auth-callback#access_token=...&refresh_token=... deep link
+// is opened.  auth-ui.js registers via window.electronAuth.onCallback and
+// calls supabase.auth.setSession / exchangeCodeForSession.
+
+contextBridge.exposeInMainWorld('electronAuth', {
+  /**
+   * Register a listener for Supabase auth deep-link callbacks.
+   *
+   * @param {function({ url: string }): void} cb
+   * @returns {function(): void} unsubscribe — call to remove the listener
+   */
+  onCallback(cb) {
+    const handler = (_event, data) => cb(data);
+    ipcRenderer.on('auth:callback', handler);
+    return () => ipcRenderer.removeListener('auth:callback', handler);
+  },
+});

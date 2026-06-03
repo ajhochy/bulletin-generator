@@ -1,35 +1,58 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 011 done)_
+_Last updated: 2026-06-03 (issue 013 coding-agent run done)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issue 011 (Electron scaffold) is done. `electron/main.js` and `electron/preload.js` committed; `package.json` updated with electron 28 devDep. Dev smoke (`npm run start:electron`) is manual-only — requires a human to confirm BrowserWindow opens and tray icon appears.
+Issue 013 (Supabase Auth in Electron) implementation complete. `electron/main.js` extended with `bulletingen` protocol registration and deep-link handlers; `electron/preload.js` exposes `window.electronAuth`; `src/js/auth-ui.js` handles Electron callbacks. All checks pass. Manual smoke (Google OAuth + magic-link in Electron) required before marking done.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
 - **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **013** — Supabase Auth in Electron. `electron/main.js`: `bulletingen` protocol + `open-url` (macOS) + `second-instance` (Windows) handlers. `electron/preload.js`: `contextBridge.exposeInMainWorld('electronAuth', ...)`. `src/js/auth-ui.js`: `_isElectronMode()`, `_authRedirectUrl()` returns `bulletingen://auth-callback` in Electron mode, `initAuth()` registers `window.electronAuth.onCallback`. `MANUAL-STEPS.md`: updated redirect allow-list note + new Issue 013 smoke-test section.
 
 ## In progress
 
-- Issue 011 verified; awaiting manual dev smoke (`npm run start:electron`) and draft PR before marking fully closed.
+- Issue 013 implementation verified (checks PASS); awaiting manual smoke and verification-gate.
 
 ## Open risks
 
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
 - `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
 - `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
+- Issue 013: `exchangeCodeForSession(url)` is the right Supabase JS v2 API for PKCE flows. If Supabase is configured for implicit flow (not PKCE), the fragment tokens won't need an exchange — `setSession` would be used instead. For v1, PKCE is recommended; confirm in the Supabase dashboard that PKCE is enabled.
 
 ## Next step
 
-1. Manual dev smoke for issue 011: `npm run start:electron` — confirm BrowserWindow opens to `http://localhost:8765/`, tray icon visible, Quit kills sidecar.
-2. Open draft PR for issue 011.
-3. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
+1. Add `bulletingen://auth-callback` to the Supabase dashboard redirect allow-list (see `MANUAL-STEPS.md` — Electron Auth Deep-Link Setup section).
+2. Manual smoke for issue 013: `npm run start:electron` → Google OAuth → magic-link flows in Electron.
+3. Open draft PR for issues 011 + 013.
+4. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — electron-auth-deep-link (issue 013)
+- Files modified:
+  - `electron/main.js` — added `app.setAsDefaultProtocolClient('bulletingen')`, `extractDeepLinkUrl()`, `handleDeepLink()` helpers; `open-url` event handler (macOS); `requestSingleInstanceLock()` + `second-instance` event handler (Windows/Linux). Updated JSDoc to list responsibility 6.
+  - `electron/preload.js` — replaced stub with `contextBridge.exposeInMainWorld('electronAuth', { onCallback(cb) })`. Imports `contextBridge` and `ipcRenderer` from `electron`.
+  - `src/js/auth-ui.js` — added `_isElectronMode()` (checks `window.electronAuth?.onCallback`); updated `_authRedirectUrl()` to return `bulletingen://auth-callback` when in Electron mode; added Electron callback block in `initAuth()` that calls `client.auth.exchangeCodeForSession(url)` when a deep-link fires.
+  - `MANUAL-STEPS.md` — updated "bulletingen://auth-callback" redirect URL note from conditional to instructional; added "Electron Auth Deep-Link Setup (Issue 013)" section with 4 smoke-test steps.
+- Checks run:
+  - `node --check electron/main.js && node --check electron/preload.js && node --check src/js/auth-ui.js` → JS OK.
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - Used `client.auth.exchangeCodeForSession(url)` (Supabase JS v2 PKCE API) rather than manually parsing the URL fragment. If implicit flow is in use, `onAuthStateChange` will still fire a SIGNED_IN event as Supabase detects the fragment, so both flows are covered.
+  - `_isElectronMode()` checks `window.electronAuth?.onCallback` at call time rather than at module init — future-safe if the bridge is injected asynchronously.
+  - `requestSingleInstanceLock()` placed at module top-level (before `whenReady`) so it runs on process start, matching Electron documentation requirement.
+  - `_isDesktopMode()` logic unchanged: returns true only when `BULLETIN_SUPABASE_CONFIG.url` is absent. The legacy desktop (no Supabase) still bypasses auth; the new Electron mode with Supabase configured goes through the Supabase auth path.
+- Deviations from spec: none.
+- Concerns:
+  - `exchangeCodeForSession` requires PKCE to be enabled in the Supabase project; implicit-flow deployments would need `setSession` instead. Confirm dashboard setting.
+  - The `onCallback` listener is never explicitly removed (no `off` mechanism used), but it's a single stable registration per `initAuth()` call and the BrowserWindow lifetime bounds the preload context.
+  - Manual smoke (Google OAuth + magic-link completing in Electron) is required before marking done.
 
 ### 2026-06-03 — electron-scaffold (issue 011)
 - Files modified:

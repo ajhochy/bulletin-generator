@@ -1,4 +1,4 @@
-// auth-ui.js - Supabase browser auth for server mode
+// auth-ui.js - Supabase auth for server mode and Electron desktop (issue 013)
 
 let _supabaseClient = null;
 let _currentSession = null;
@@ -8,7 +8,25 @@ function _authConfig() {
   return globalThis.BULLETIN_SUPABASE_CONFIG || {};
 }
 
+/**
+ * Return true when running inside Electron with the auth deep-link bridge
+ * available (window.electronAuth exposed by electron/preload.js).
+ */
+function _isElectronMode() {
+  return typeof window !== 'undefined' && typeof window.electronAuth?.onCallback === 'function';
+}
+
+/**
+ * Return the OAuth / magic-link redirect URL.
+ *
+ * In Electron mode the redirect goes to the bulletingen:// custom protocol so
+ * the main process can intercept it and pass the tokens to the renderer via
+ * IPC.  In browser/server mode we redirect back to the current page origin.
+ */
 function _authRedirectUrl() {
+  if (_isElectronMode()) {
+    return 'bulletingen://auth-callback';
+  }
   return `${window.location.origin}${window.location.pathname}`;
 }
 
@@ -236,6 +254,28 @@ async function initAuth() {
       showLoginScreen();
     }
   });
+
+  // Electron deep-link handler: the main process sends 'auth:callback' with
+  // { url } when a bulletingen://auth-callback#... link is opened.  We pass
+  // the full URL to exchangeCodeForSession so Supabase can extract the tokens
+  // from the fragment / query string (works for both PKCE and implicit flows).
+  if (_isElectronMode()) {
+    window.electronAuth.onCallback(async ({ url }) => {
+      if (!url) return;
+      try {
+        const { data: cbData, error: cbError } = await client.auth.exchangeCodeForSession(url);
+        if (cbError) {
+          console.warn('[auth] Electron callback exchangeCodeForSession error:', cbError.message);
+        }
+        // onAuthStateChange will fire a SIGNED_IN event — _applySession handles the rest.
+        if (cbData?.session) {
+          await _applySession(cbData.session);
+        }
+      } catch (err) {
+        console.warn('[auth] Electron callback error:', err.message || err);
+      }
+    });
+  }
 
   const { data, error } = await client.auth.getSession();
   if (!error && data?.session) {
