@@ -4,6 +4,29 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-03 — Electron auth deep-link: PKCE `exchangeCodeForSession` + unchanged `_isDesktopMode`
+
+**Context.** Issue 013 wires Supabase OAuth/magic-link callbacks into Electron via a `bulletingen://auth-callback` custom protocol. The main process receives the deep-link URL and forwards it to the renderer over IPC. The renderer must extract tokens from the URL and hand them to the Supabase client.
+
+**Token extraction approach.** Two options:
+1. Manually parse the URL fragment (`#access_token=...&refresh_token=...`) and call `supabase.auth.setSession({access_token, refresh_token})`.
+2. Call `supabase.auth.exchangeCodeForSession(url)` and let the Supabase JS v2 SDK handle both PKCE code exchange and implicit-flow fragment parsing.
+
+**Decision.** Use `exchangeCodeForSession(url)`. It is the canonical Supabase JS v2 API for completing auth callbacks — it handles PKCE code exchange automatically (the recommended flow), and for implicit-flow URLs it falls back to fragment parsing internally. This avoids brittle manual URL manipulation and is forward-compatible if the Supabase project switches to PKCE later.
+
+**Risk.** `exchangeCodeForSession` requires the Supabase project to have PKCE enabled (default for new projects). If a deployment uses the legacy implicit flow only, `exchangeCodeForSession` may fail for the PKCE exchange but `onAuthStateChange` will still fire from the fragment-based redirect — the implicit path still works. Confirm PKCE is active in the Supabase dashboard before Electron auth smoke.
+
+**`_isDesktopMode()` unchanged.** The existing check (`return !_authConfig().url`) correctly differentiates:
+- Legacy desktop (no Supabase URL, `launcher.py`-based): bypass all auth → `showApp(null)`.
+- New Electron mode with Supabase configured: Supabase URL present → go through normal auth path → Electron callback handler registered.
+No change needed; the condition already produces the right behaviour.
+
+**Consequences.**
+- Confirm PKCE is enabled in Supabase dashboard before smoke testing Electron auth.
+- The `onCallback` listener registered in `initAuth()` is never explicitly removed. This is safe: `initAuth()` is called once per page load, and the listener lifetime is bounded by the BrowserWindow/preload context.
+
+---
+
 ## 2026-06-03 — ESM syntax in `electron/main.js`; packaged-mode sidecar path scaffolded early
 
 **Context.** Root `package.json` has `"type": "module"`, making Node treat all `.js` files in the tree as ESM. Electron 28+ supports ESM main entry points. The alternative — CJS `require()` in `main.js` — would require either a `.cjs` extension or a local `package.json` override in `electron/` (neither is wrong, but both add complexity).
