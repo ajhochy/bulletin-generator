@@ -159,7 +159,7 @@ function spawnSidecar() {
   const { cmd, args } = resolveSidecar();
 
   const env = Object.assign({}, process.env, {
-    APP_MODE: 'desktop',
+    APP_MODE: 'server',
     PORT: String(PORT),
   });
 

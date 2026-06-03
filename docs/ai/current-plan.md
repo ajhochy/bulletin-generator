@@ -1,181 +1,228 @@
 # Current Plan
 
-_Last updated: 2026-06-02_
+_Last updated: 2026-06-03_
 
-> **Active effort:** Migrate Bulletin Generator to a Supabase-backed, multi-tenant,
-> Electron-wrapped desktop app. Long-lived integration branch:
-> `feat/supabase-multitenant-electron`. This supersedes the Volunteer-Roles plan
-> (that work is complete/in-PR; see `project-state.md`).
+> **Active effort:** Project ownership and sharing model — private-by-default,
+> workspace sharing, ownership transfer, lightweight presence badge, and removal
+> of 409 conflict detection.
+> Branch: `feat/supabase-multitenant-electron` (continuing on this branch).
 
 ---
 
-## User request
+## Clarification interview
 
-Re-platform the app so that:
+Skipped full interview — the request provides explicit, concrete acceptance criteria for all five features, named non-goals (no hard locks, no WebSockets, desktop unaffected), boundary conditions (owner-only write, informational-only presence), and done-definitions (private default, migration for existing rows). Two residual ambiguities documented under Known Ambiguities rather than blocking on a clarification round.
 
-1. **Supabase Postgres** replaces the self-hosted Docker/Synology database.
-2. **Supabase Auth** (Google OAuth + email magic link) with **Row-Level Security** is the identity + access-control layer.
-3. **Multi-tenant "Workspaces"** isolate each church's data (so a second church can test). Architect for many; seed workspaces manually for v1.
-4. The **existing vanilla-JS frontend is wrapped in Electron** (no React rewrite) to ship a desktop client.
-5. All of the above is built on a **fork/integration branch and tested before replacing the production app**.
+---
 
 ## Goal (one sentence)
 
-Ship a desktop (Electron) client whose existing UI is unchanged, backed by Supabase Postgres + Auth + RLS, with each church isolated in its own Workspace — reusing the already-built `collab-v1` Postgres/storage/collaboration work and replacing only its auth and single-tenant assumptions.
+Make each project privately owned by default in server mode, allow the owner to optionally share it to the workspace (read-only for others), transfer ownership to a teammate, show a lightweight "User X is editing" badge when the owner has the project open, and remove the now-unnecessary 409 conflict/stale-poll system entirely.
+
+---
 
 ## In scope
 
-- Reuse of `collab-v1` (branch `claude/amazing-archimedes-122d78`): `storage.py` boundary, `db.py`, `migrations/`, Postgres schema skeleton, `project_revisions` history + conflict UX, route-through-storage refactor.
-- New `workspaces` + `workspace_members` tables; `workspace_id` on every data table; RLS policies on every table.
-- Replacing `auth.py` (Google-only, single hard-coded domain, custom session cookies) with Supabase Auth + server-side JWT verification.
-- Per-request JWT-claims plumbing so RLS is enforced *for real* through the trusted `server.py` data path.
-- Moving cover/logo images and font binaries out of base64-in-JSONB into **Supabase Storage** (the one piece of "Migration A" `collab-v1` did not do).
-- Electron shell: spawn local `server.py` (PyInstaller sidecar), `printToPDF`, OAuth/magic-link redirect handling, auto-update.
-- Manual workspace seeding/data-migration tooling (service_role).
+- Change the `visibility` column default from `'workspace'` to `'private'` for new projects.
+- Enforce owner-only writes for `visibility='workspace'` projects: non-owners see the project but `POST /api/projects` returns 403 (server-side) and the UI shows read-only state (frontend-side).
+- Add `POST /api/projects/{id}/transfer` — owner transfers ownership to another workspace member; new owner becomes sole editor.
+- Add a presence subsystem: a lightweight DB table (`workspace_presences`) with heartbeat upserts; `GET /api/projects` (or a new `GET /api/projects/presence`) returns current editor names; frontend shows badge.
+- Remove `save_project_transactional` call path, `ConflictError`, `_clientRevision` from project saves, `startStaleCheck` / 30s poll, conflict banner, conflict dialog from the frontend.
+- `can_write_project` helper in `storage.py` updated: workspace-visible projects are now read-only for non-owners (not writable by all members as today).
+- Existing `'workspace'`-visibility projects: migrated at runtime (no schema change needed — they keep their visibility but the write policy tightens). Legacy ownerless projects (`owner_user_id IS NULL`) retain the existing "accessible to all" read-only behavior, write-disabled until an owner is assigned.
+- RLS policies updated to match new write semantics: `projects_update` should require `owner_user_id = auth.uid()`.
 
 ## Non-goals (explicit)
 
-- **No React rewrite.** The existing `src/js/*` runs unchanged in the Electron renderer. (Deferred to a possible future effort.)
-- **No self-serve onboarding** (signup→workspace, invite UI, billing, roles admin). Workspaces are seeded manually for v1.
-- **No offline mode** in v1. Electron + Supabase is online-required (see Known Ambiguities — flagged for confirmation).
-- Not retiring the current Synology/Docker production deployment until cutover QA passes. Parallel-run first.
-- Not changing PCO / Google Calendar / Drive *integration* OAuth (that is separate from app-login identity; `collab-v1` already split the two).
+- No real-time collaborative editing (no WebSockets, no OT/CRDT).
+- No hard locks — presence badge is informational only; non-owner can still view the project while the owner edits.
+- Desktop mode (`APP_MODE=desktop`) is entirely unaffected — `JsonStorageBackend` and all desktop JS paths remain unchanged.
+- No UI for workspace membership management or invite flows (out of scope for this plan).
+- No changes to announcements, songs, templates, settings write semantics — ownership is a project-level concept only.
+- No removal of `project_revisions` table or revision history feature — revision snapshots are still useful for the restore feature; we only remove the *conflict detection* use of revisions.
+
+---
 
 ## Hard constraints
 
-- **Data-safety (`AGENTS.md`):** never delete/commit/overwrite user data files; atomic writes only; migrations idempotent + additive. The Supabase migration must be **non-destructive** — export + dry-run + backup before any cutover.
-- **RLS must be the real boundary**, not just Python-side checks — that was the explicit reason for choosing Supabase Auth + RLS.
-- **service_role key must never ship to clients** and must never be the normal query path (it bypasses RLS). It is for seeding/migration/admin scripts only.
-- Reuse existing toolchain: Python stdlib `http.server` (no Flask), psycopg3, pytest + vitest + vite (the repo now has real automated tests despite the stale note in `testing-guide.md`).
-- Conventional Commits; feature-branch only; draft PRs; manual merge.
+- **Data-safety (`AGENTS.md`):** atomic writes only; migrations idempotent + additive; never delete user data.
+- **Visibility default change is a DB migration** — must be applied via `supabase/migrations/` (idempotent SQL), not a one-time hotfix. All existing `'workspace'` rows keep their current value; only new INSERTs get `'private'`.
+- **RLS must remain the real boundary** — the update to `projects_update` policy must be applied as a migration, not just a Python-side `can_write_project` check.
+- **Desktop mode (`IS_DESKTOP=True`, `APP_MODE=desktop`, `APP_MODE=electron`) must not be affected** — any new server-mode route must be gated behind `_require_auth()` and checked only when `not IS_DESKTOP`.
+- Conventional Commits; feature branch only; draft PRs; manual merge.
+- Test suite must continue to pass: 100 pytest, 71 vitest, vite build.
+
+---
 
 ## Design tensions
 
-- **Minimal frontend change** (wrap existing UI) **vs. RLS-as-primary-boundary.** Resolved by keeping `server.py` as the trusted data API but having it execute queries under the user's JWT claims so RLS still applies — instead of moving all CRUD to `supabase-js` in the browser.
-- **Connection pooling for many desktop clients** **vs. per-request `SET LOCAL` session state.** Supabase's transaction-mode pooler (6543) can break session state / prepared statements; this directly affects how per-request JWT claims are set. See Decision D2.
-- **Reuse `collab-v1` as-is** **vs. its single-tenant assumptions.** `collab-v1` is hard-wired single-org; multi-tenancy threads `workspace_id` through its schema and replaces its auth. Reuse the seams, not the tenancy model.
+- **Minimal surface area vs full enforcement.** The simplest implementation is a Python-side `can_write_project` check in `_handle_post_projects`. But the user request says RLS is the real boundary. We resolve this by doing *both*: Python-side check for clean 403 UX, and a DB migration that tightens `projects_update` RLS to `owner_user_id = auth.uid()`.
+- **Presence heartbeat storage: Supabase Realtime vs simple DB table.** Realtime (Broadcast + Presence channels) is the canonical Supabase approach but requires `@supabase/supabase-js` in the browser and WebSocket infrastructure — explicitly out of scope. A simple `workspace_presences` table with TTL-based heartbeat is dumber, polling-based, and fully within the existing stack.
+- **Removing conflict detection before the QA matrix is run.** The existing QA matrix item C1 ("conflict detection") will become moot. The plan removes conflict machinery; the QA matrix document should be updated to remove C1–C3 and add presence + write-protection checks in their place.
 
-## Cheapest version that proves the idea (spike first)
+---
 
-Before any multi-tenancy or Electron work: **merge `collab-v1` into the integration branch (done — issue 1), point `DATABASE_URL` at a Supabase project, and run the app in server mode against Supabase with `collab-v1`'s existing auth.** If projects/settings/songs round-trip to Supabase Postgres unchanged, the core thesis ("Supabase is a `DATABASE_URL` swap for the data layer") is proven. Everything else (RLS, Supabase Auth, Storage, Electron) layers on top. This is Milestone 0 (issues 1–3).
+## Cheapest version that proves the idea
+
+1. Apply DB migration: change default to `'private'`, tighten RLS update policy.
+2. Update `can_write_project` in `storage.py`.
+3. Add a single `403` guard in `_handle_post_projects`.
+4. Remove `_clientRevision` / `save_project_transactional` from the save path, remove `startStaleCheck` from `projects.js`.
+5. Smoke: create a project → it's private → share it → other user sees it read-only → owner can still edit.
+
+That five-step slice proves the core thesis before adding presence or transfer.
+
+---
 
 ## Prior Art
 
-> **Method note:** the planning prior-art swarm could not run — Haiku research subagents overflowed their context on tool results, and episodic-memory had a Node module-version mismatch. The patterns below are well-established; items marked **(verify)** should be confirmed against current Supabase docs during the relevant issue.
+No prior-art swarm run (patterns are all well-established within the existing repo):
 
-- **Multi-tenant RLS (standard pattern):** a `workspaces` table + a `workspace_members(user_id, workspace_id, role)` join table; every data table carries `workspace_id`; RLS policies allow a row only if the requesting user is a member of that row's workspace. Use **both** `USING` (read/update visibility) **and** `WITH CHECK` (insert/update integrity) — omitting `WITH CHECK` is a classic cross-tenant write leak. **(verify)**
-- **RLS performance:** wrap `auth.uid()` as `(select auth.uid())` so Postgres evaluates it once per query, and index `workspace_id` on every table. Membership checks should hit an indexed join, not a per-row function call. **(verify)**
-- **Enforcing RLS from a trusted backend (the crux):** connect as the `authenticated` role and, per transaction, `SET LOCAL request.jwt.claims = '<json>'` (and `SET LOCAL role authenticated`) so `auth.uid()`/`auth.jwt()` resolve inside policies — RLS then applies even though `server.py` is the connector. The `service_role` key bypasses RLS entirely and is reserved for seeding/migration. **(verify exact claim plumbing for psycopg3)**
-- **Supabase pooler caveat:** the transaction-mode pooler (port 6543) does not preserve session state and conflicts with psycopg3's automatic prepared statements; either use a **session-mode/direct connection (5432)** or disable prepared statements (`prepare_threshold=None`) and keep all claim-setting inside a single transaction with `SET LOCAL`. Decision D2. **(verify)**
-- **Electron + local server:** Electron main spawns the backend child process, polls a readiness endpoint (here `GET /api/bootstrap`), then `loadURL('http://localhost:<port>')`. Python backends are commonly shipped as a PyInstaller "sidecar" binary inside the Electron resources. **(verify packaging details)**
-- **Supabase Auth in Electron:** desktop OAuth/magic-link typically uses a **custom-protocol deep link** (`bulletingen://auth-callback`) or a loopback `http://localhost` redirect; use the PKCE flow and persist the session via `@supabase/supabase-js`. Magic links open in the system browser and must hand the session back to the app via the registered deep link. **(verify)**
-- **`printToPDF`:** Electron's `webContents.printToPDF()` renders the existing print HTML at native Chromium fidelity, removing the external headless-Chrome dependency (`_find_chrome` currently blocks server startup without a Chrome binary).
-- **Repo memory (already known):** GHCR package must stay public for Watchtower; Synology bind-mount keeps data across pulls; revision-based 409 conflict model exists. The Supabase cutover supersedes Watchtower/GHCR auto-update for the desktop distribution (replaced by `electron-updater`).
+- **Owner-only write pattern** is already partially implemented in `can_delete_project` (storage.py L1849–1860): "owner is None → False; else str(owner)==str(user_id)". The same logic is extended to `can_write_project`.
+- **Presence via DB heartbeat** is a classic low-overhead approach used widely where WebSockets are unavailable. TTL + periodic upsert (every 30s) + read on project load. Supabase Realtime is the "right" answer but was explicitly excluded.
+- **Transfer ownership** is a single `UPDATE projects SET owner_user_id = %(new_owner)s WHERE id=... AND owner_user_id=%(current)s` — atomically safe, no two-phase commit needed.
+- **Removing a stale-poll** (the `startStaleCheck` 30s timer in `projects.js`) is the same code added in the `lightweight-projects-poll` commit (`2026-05-28`). That timer is entirely eliminated, as is the `/api/projects/revisions` endpoint it called.
 
-## Target architecture
+---
 
-```
-┌──────────────── Electron app (one per user, per workspace) ───────────────┐
-│ Renderer (existing vanilla-JS UI, unchanged)     Main process (Node)       │
-│   • login screen via @supabase/supabase-js  IPC  • spawn server.py sidecar │
-│   • apiFetch attaches Supabase JWT  ───────────► • printToPDF              │
-│   • loadURL(http://localhost:PORT)               • OAuth/magic-link deep-  │
-│                                                    link redirect handling  │
-└───────────────┬───────────────────────────────────────────────────────-──┘
-                │  HTTP (localhost) + Bearer JWT
-                ▼
-        server.py (trusted local API — reused from collab-v1)
-                │  verifies JWT, resolves workspace membership
-                │  psycopg3: SET LOCAL role authenticated + request.jwt.claims
-                ▼
-┌──────────────────────────── Supabase ─────────────────────────────────────┐
-│ Postgres: workspaces, workspace_members, projects, project_revisions,      │
-│   workspace_settings, user_settings, announcements, songs, templates,      │
-│   fonts, data_migrations  — ALL with workspace_id + RLS policies           │
-│ Auth: Google OAuth + email magic link (PKCE)                               │
-│ Storage: cover/logo images, font files                                     │
-└────────────────────────────────────────────────────────────────────────-──┘
-   (replaces self-hosted Docker Postgres + Synology + Watchtower)
+## Key design decisions
+
+### D6 — Presence storage: `workspace_presences` table with 60s TTL
+
+A new `workspace_presences` table:
+
+```sql
+create table if not exists public.workspace_presences (
+  user_id      uuid primary key references auth.users(id) on delete cascade,
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  project_id   text,
+  display_name text,
+  last_seen    timestamptz not null default now()
+);
 ```
 
-## Architecture decisions (also appended to `decisions.md`)
+- The owner's browser calls `POST /api/presence/heartbeat` every 30s when a project is open, upserting `last_seen`.
+- `GET /api/projects` (or a dedicated `GET /api/presence?project_id=X`) returns presences where `last_seen > now() - 90s` (1.5× the heartbeat interval — survives one missed beat).
+- The frontend polls `GET /api/presence?project_id=X` on a 30s interval when the project list or project editor is visible (replacing the removed `startStaleCheck` call).
+- No RLS bypass needed — the presence row belongs to the authenticated user; other workspace members can read it via a `SELECT` policy gated on `is_workspace_member(workspace_id)`.
+- Cleanup: `last_seen` is checked at read time (no cron needed for v1).
 
-- **D1 — Managed Supabase over self-hosted Postgres.** `collab-v1` introduced self-hosted Postgres in Docker; we point its `DATABASE_URL` at Supabase instead and delete the postgres compose service on this branch.
-- **D2 — RLS enforced via backend-set JWT claims; pooling mode chosen accordingly.** `server.py` connects as `authenticated` and sets `request.jwt.claims` per transaction; `service_role` only for admin/seed. Default to session-mode/direct connection (5432) for correctness; if connection limits force the transaction pooler (6543), disable psycopg3 prepared statements and keep claim-setting transaction-local. (Validated in Milestone 1.)
-- **D3 — Supabase Auth replaces `auth.py`.** Custom Google-only single-domain sessions are removed; `server.py` verifies Supabase JWTs and maps `sub` → user → workspace membership. Per-workspace domain allow-list / invite replaces the hard-coded `visaliacrc.com`.
-- **D4 — Electron wraps the existing frontend.** No React rewrite. `printToPDF` replaces headless Chrome; `electron-updater` replaces Watchtower/zip for the desktop distribution.
-- **D5 — Binaries move to Supabase Storage.** Cover/logo images and font files leave base64-in-JSONB (fixes the ~8.6 MB project bloat and makes assets shareable across clients).
+**Why not Supabase Realtime:** explicitly out of scope (no WebSockets).
+**Why TTL-read not hard delete:** avoids a background job dependency; presence rows are self-expiring from the query's perspective.
 
-## collab-v1 reuse map
+### D7 — Conflict detection removal strategy
 
-| Keep (reuse) | Change | Add |
-|---|---|---|
-| `storage.py` `StorageBackend` ABC + `PostgresStorageBackend` | `db.py` (Supabase URL/SSL/pooler/claims/prepared-stmt) | `workspaces`, `workspace_members` tables |
-| `migrations/` runner + importers | schema: `org_settings` → `workspace_settings` | `workspace_id` FK on all data tables |
-| `project_revisions` history + restore + summaries | route guards → JWT/membership-based | RLS policies on every table |
-| transactional optimistic-revision saves + conflict UX | `auth.py` → Supabase Auth + JWT verify | per-request claims plumbing |
-| route-through-storage refactor | hard-coded domain → per-workspace allow-list | Supabase Storage for images + fonts |
-| pytest test scaffolding | | Electron shell + packaging + auto-update |
+The 409 path is threaded through multiple layers. Removal order:
+1. Remove `_clientRevision` from the `POST /api/projects` payload (frontend).
+2. Remove `startStaleCheck` 30s timer and all conflict-banner/dialog DOM interaction (frontend).
+3. Swap `save_project_transactional` for `save_project` in `_handle_post_projects` (server.py).
+4. `ConflictError` class and `save_project_transactional` in `storage.py` are left in place for now (they have test coverage; removing them is a separate cleanup). The Postgres implementation is simply no longer called from the normal save path.
+5. Remove the `/api/projects/revisions` GET endpoint (added purely for the stale poll — no other callers).
+6. Update `testing-guide.md`: remove the "409 conflict" manual smoke item; add write-protection + presence smoke items.
 
-## Milestone / issue table
+**What is kept:** `project_revisions` table + `get_project_revisions` / `get_project_revision` (used by the revision history / restore feature, issue 019). Only the *save-side* transactional revision check is removed.
+
+### D8 — Default visibility change requires a DB migration + Python change
+
+The `projects` table has `visibility text not null default 'workspace'`. Changing it to `'private'` requires:
+1. A new Supabase migration file (`supabase/migrations/20260604000001_private_default.sql`).
+2. Updating `save_project` in `PostgresStorageBackend` — the INSERT hardcodes `'workspace'` as the visibility value (storage.py L643). Change to `'private'`.
+3. Updating the RLS `projects_update` policy to require `owner_user_id = (select auth.uid())` (dropping the current `visibility = 'workspace' OR owner_user_id = auth.uid()` condition).
+
+**Existing rows:** All existing `'workspace'`-visibility projects keep their value (no backfill needed). The tighter update RLS means non-owners can no longer save them — which is the desired behavior.
+
+### D9 — Transfer uses a server-guarded endpoint, not direct RLS
+
+`POST /api/projects/{id}/transfer { "new_owner_user_id": "<uuid>" }`:
+- Python verifies: caller = current owner; new owner is a member of the same workspace.
+- Single `UPDATE projects SET owner_user_id = %(new)s, updated_at = now() WHERE id=... AND owner_user_id=%(caller)s`.
+- Returns 200 with updated project dict, or 403/404 as appropriate.
+- RLS update policy (`owner_user_id = auth.uid()`) still covers this because the UPDATE runs under the caller's claims.
+
+---
+
+## Decomposed issues
 
 | Order | Title | Goal | Likely files | Tests / evaluation | Dependencies |
 |---|---|---|---|---|---|
-| **M0 — Foundation & spike** ||||||
-| 1 | ✅ **DONE** (b16b842) — Merge collab-v1 into integration branch | Brought 37 collab-v1 commits in via `git merge --no-ff` (not rebase — both branches had wanted work; rebase would fight collab-v1's deletions of post-fork files). Only 3 content conflicts (`server.py`, `src/js/projects.js`, `tests/test_server_utils.py`), resolved as union; no deletion conflicts | `server.py`, `src/js/projects.js`, `tests/test_server_utils.py` | verification-gate PASS (py3.11 venv): pytest 939 / 2-DB-only, vitest 123, vite build, `/api/bootstrap` 200, 0 conflict markers | — |
-| 2 | Provision Supabase project + env wiring | Create staging Supabase project; set `DATABASE_URL` + keys; remove postgres service from `docker-compose.yml` on this branch; document env | `.env.example`, `docker-compose.yml`, `README.md`, `MANUAL-STEPS.md` | `db.health_check()` connects to Supabase; document-only otherwise | 1 |
-| 3 | Adapt `db.py` for Supabase + prove round-trip | SSL, pooler vs session decision (D2), psycopg3 prepared-stmt handling; run app in server mode against Supabase with collab-v1 auth; CRUD round-trips | `db.py` | New `tests/test_db.py` cases hit Supabase test DB; manual: create/edit/load a project persists in Supabase | 2 |
-| **M1 — Multi-tenant schema + RLS** ||||||
-| 4 | Add workspaces + memberships schema | `workspaces`, `workspace_members(user_id, workspace_id, role)` + migration | `migrations/v00X_workspaces.py`, `migrations/runner.py` | `tests/test_migrations.py` applies idempotently; rollback/backup dry-run | 3 |
-| 5 | Thread `workspace_id` through all tables | Add `workspace_id` FK + index to projects, project_revisions, settings→workspace_settings, announcements, songs, templates, fonts; backfill a default workspace | `migrations/*`, `storage.py` | Migration tests on legacy fixtures; backfill assigns all existing rows to the seed workspace | 4 |
-| 6 | Enable RLS + policies on every table | `USING` + `WITH CHECK` policies keyed on membership; service_role seed path | `migrations/v00X_rls.py` | RLS unit tests: member reads/writes allowed | 5 |
-| 7 | Per-request JWT-claims plumbing | `db.py`/`storage.py` set `role authenticated` + `SET LOCAL request.jwt.claims` per transaction; thread auth context from routes | `db.py`, `storage.py`, `server.py` | Tests prove queries run under claims; service_role still seeds | 6 |
-| 8 | Cross-tenant isolation test suite | Prove workspace A cannot read/write workspace B; same-workspace sharing works | `tests/test_workspace_isolation.py` | pytest: cross-tenant denied (RLS), same-tenant allowed; **security-critical** | 7 |
-| **M2 — Supabase Auth (replace auth.py)** ||||||
-| 9 | Configure Supabase Auth providers | Google OAuth + email magic link; custom SMTP for magic-link deliverability; per-workspace domain allow-list strategy | `MANUAL-STEPS.md`, Supabase dashboard | Manual: both providers issue a session in staging | 3 |
-| 10 | Server-side JWT verification middleware | Verify Supabase JWT (JWKS/secret), map `sub`→user, resolve membership; replace `auth.py` sessions; keep `/api/me` | `server.py`, `auth.py` (replace), `tests/test_auth*.py` | pytest: valid token → identity+claims; invalid/expired rejected; non-member 403 | 7, 9 |
-| 11 | Frontend login + token attach | Login/logout via `@supabase/supabase-js`; `apiFetch` attaches Bearer token; gate app behind auth | `src/js/api.js`, `src/js/app.js`, new `src/js/auth-ui.js`, `index.html` | Manual smoke: login → app loads; logout → gated; console clean | 10 |
-| 12 | Membership provisioning on first login | Map authenticated user → `workspace_members` via allow-list/invite; remove hard-coded `visaliacrc.com` | `auth.py`/`server.py`, `migrations/*` | pytest: allow-listed domain joins workspace; others rejected | 11 |
-| **M3 — Binaries to Storage** ||||||
-| 13 | Move cover/logo images to Supabase Storage | Extract base64 from project state → Storage; store URLs; migration for existing images | `storage.py`, `src/js/editor.js`, `src/js/projects.js`, `migrations/*` | Migration test extracts base64 fixtures; manual: image renders + PDF correct | 7 |
-| 14 | Move font files to Supabase Storage | User fonts + cache → Storage; `fonts` table → Storage URLs | `server.py` (fonts routes), `storage.py`, `migrations/*` | Tests for font inventory→Storage; manual: custom font renders | 7 |
-| **M4 — Electron desktop shell** ||||||
-| 15 | Electron scaffold + spawn server sidecar | Main spawns `server.py` (PyInstaller sidecar), polls `/api/bootstrap`, `loadURL` localhost | new `electron/` (main.js, preload.js), `package.json`, `bulletin-generator.spec` | `npm run build` / electron launches; app loads existing UI | 1 |
-| 16 | PDF via `printToPDF` | Replace `/api/pdf` headless-Chrome dependency with Electron `webContents.printToPDF`; keep print-HTML pipeline | `electron/main.js`, `src/js/preview.js`, `server.py` (`/api/pdf` fallback) | Manual: PDF round-trip matches current pagination/footers/QR | 15 |
-| 17 | Supabase auth in Electron | Deep-link/custom-protocol (or loopback) redirect for Google + magic link; PKCE; session persistence | `electron/main.js`, `electron/preload.js`, `src/js/auth-ui.js` | Manual: Google + magic-link login complete inside the desktop app | 11, 15 |
-| 18 | Packaging + auto-update | `electron-updater`; macOS sign/notarize + Windows build; retire `launcher.py` for this distribution | `package.json`, CI workflow, `bulletin-generator.spec` | CI builds signed artifacts; manual update round-trip | 15, 16, 17 |
-| **M5 — Hardening, migration, cutover** ||||||
-| 19 | Workspace seeding + data migration tool | service_role script: create a church workspace + migrate its existing JSON data; idempotent + dry-run + backup | `migrations/seed_workspace.py`, `MANUAL-STEPS.md` | Dry-run on real export; verify counts; backup written first | 8, 12, 13, 14 |
-| 20 | End-to-end multi-tenant QA | Two workspaces × two users: isolation, in-workspace sharing, conflict UX, revision history, PDF, PCO/calendar | — (manual smoke matrix) | Documented smoke matrix all-pass; cross-tenant leak = blocker | 18, 19 |
-| 21 | Docs + operator runbook | Update `architecture.md`, `decisions.md`, `testing-guide.md`, `CLAUDE.md`; Supabase setup + seeding runbook; Synology/Watchtower deprecation | `docs/ai/*`, `CLAUDE.md`, `README.md`, `MANUAL-STEPS.md` | Docs review | 20 |
-| 22 | Cutover + rollback plan | Parallel-run staging; export from Synology → import to Supabase; switch; documented rollback | `MANUAL-STEPS.md` | Rehearsed on staging; rollback verified | 20, 21 |
+| **Issue 020** | DB migration: private-by-default + RLS write policy | Change `visibility` default to `'private'`; tighten `projects_update` RLS to `owner_user_id = auth.uid()` only | `supabase/migrations/20260604000001_private_default.sql` | pytest: new project row has `visibility='private'`; non-owner UPDATE rejected by RLS; `tests/test_rls_isolation.py` | — |
+| **Issue 021** | Server + storage: enforce owner-only writes + add transfer endpoint | Update `can_write_project`; replace `save_project_transactional` with `save_project` in normal save path; add `POST /api/projects/{id}/transfer`; gate all writes with 403 on non-owner | `storage.py`, `server.py` | pytest: non-owner POST → 403; owner POST → 200; transfer changes owner; tests in `tests/test_server_utils.py` or new `tests/test_ownership.py` | 020 |
+| **Issue 022** | Add presence heartbeat table + API endpoints | Create `workspace_presences` table migration; add `POST /api/presence/heartbeat` and `GET /api/presence` (filtered by `project_id`); 90s TTL at read | `supabase/migrations/20260604000002_presence.sql`, `server.py` | pytest: heartbeat upsert → row visible; TTL filter excludes stale rows; RLS: only workspace members see presence | 020 |
+| **Issue 023** | Frontend: remove conflict detection, add presence badge | Remove `_clientRevision`, `startStaleCheck`, conflict-banner/dialog; replace stale-poll timer with 30s presence poll; render "User X is editing" badge on project cards when owner is present; make workspace-visible projects non-editable by non-owners (disable save button + show read-only hint) | `src/js/projects.js`, `index.html` (conflict DOM removal) | vitest: `can_write_project` UI logic; manual smoke: private project list, share, non-owner read-only, presence badge appears/disappears | 021, 022 |
+| **Issue 024** | Migration for existing projects + QA matrix update | Backfill `owner_user_id` on any ownerless `'workspace'`-visibility projects to the workspace's founding member (service_role script); update `docs/ai/qa-matrix-m5.md` removing C1–C3 conflict checks, adding write-protection + presence checks | `scripts/migrate_to_supabase.py` (add backfill step), `docs/ai/qa-matrix-m5.md` | Dry-run: ownerless count before/after; idempotent; QA matrix reviewable | 021, 022 |
+
+---
+
+## Acceptance criteria (per issue)
+
+### Issue 020 — DB migration
+
+- **AC-020-1:** After applying the migration, `INSERT INTO projects (...) VALUES (...)` without an explicit `visibility` value produces a row with `visibility='private'`.
+- **AC-020-2:** A user who is not `owner_user_id` cannot `UPDATE` a project row under `authenticated` role (RLS rejects, `rowcount=0`); the project owner can update.
+- **AC-020-3:** Existing rows with `visibility='workspace'` are unchanged by the migration.
+- **AC-020-4:** Migration is idempotent: applying it twice is a no-op.
+
+### Issue 021 — Server + storage
+
+- **AC-021-1:** `POST /api/projects` by a non-owner of a workspace-visible project returns HTTP 403 (not 200 or 409).
+- **AC-021-2:** `POST /api/projects` by the project owner returns HTTP 200 and the saved project is returned.
+- **AC-021-3:** `POST /api/projects` without `_clientRevision` in the payload saves successfully (no conflict check needed).
+- **AC-021-4:** `POST /api/projects/{id}/transfer { "new_owner_user_id": "<uuid>" }` by the current owner returns 200 with `owner_user_id` equal to the new owner.
+- **AC-021-5:** The same transfer call by a non-owner returns 403.
+- **AC-021-6:** Transferring to a user who is not a workspace member returns 403.
+- **AC-021-7:** Desktop mode (`APP_MODE=desktop`) is unaffected — `JsonStorageBackend.save_project` is called without ownership checks.
+
+### Issue 022 — Presence
+
+- **AC-022-1:** `POST /api/presence/heartbeat { "project_id": "..." }` by an authenticated user upserts a row in `workspace_presences` with `last_seen` = now. Returns 200.
+- **AC-022-2:** `GET /api/presence?project_id=X` returns an array of `{ user_id, display_name }` for all users in the same workspace who have `last_seen > now() - 90s` for that project.
+- **AC-022-3:** A presence row older than 90s does NOT appear in the response.
+- **AC-022-4:** A workspace member cannot read presence rows from a different workspace (RLS enforced — `is_workspace_member(workspace_id)`).
+- **AC-022-5:** Both endpoints are no-ops / 401 in desktop mode.
+
+### Issue 023 — Frontend
+
+- **AC-023-1:** The project list no longer calls `/api/projects/revisions` (the stale-poll endpoint). DevTools Network tab shows no 30s polling to that endpoint.
+- **AC-023-2:** Conflict-banner (`#conflict-banner`) and conflict-dialog (`#conflict-dialog`) DOM elements are removed from `index.html` and no JS references them.
+- **AC-023-3:** When the current user is NOT the project owner and the project is `visibility='workspace'`, the save button is disabled (or absent) and a "Read only" or "View only" hint is visible on the project card or editor.
+- **AC-023-4:** A project card for a workspace-visible project shows a "User X is editing" badge when `GET /api/presence?project_id=X` returns at least one entry and that user is not the current user.
+- **AC-023-5:** The presence badge disappears within 2 poll cycles (~60s) after the editing user closes the project (no more heartbeats).
+- **AC-023-6:** Browser console is clean (no errors) after exercising the project list, project load, and save in all ownership states.
+
+### Issue 024 — Migration + QA matrix
+
+- **AC-024-1:** The backfill script, run with `--dry-run`, prints a count of ownerless workspace-visible projects and exits 0.
+- **AC-024-2:** After running without `--dry-run`, no `projects` row has `visibility='workspace' AND owner_user_id IS NULL` (except intentionally unowned rows that the script explicitly skips).
+- **AC-024-3:** `docs/ai/qa-matrix-m5.md` no longer contains C1–C3 (conflict detection checks); contains new checks for owner-write enforcement and presence badge behavior.
+
+---
 
 ## Validation strategy
 
-- **Per issue:** `python3 -c "import server"`; `node --check` on changed JS; `pytest` (relevant module + full before PR); `vitest`; `vite build`.
-- **DB/RLS:** integration tests against a Supabase **test** schema/project; **issue 8 is security-critical** — cross-tenant isolation must be proven, not assumed.
-- **Manual-only (per `testing-guide.md`):** Template Designer click-through, PDF export round-trip, project save/load + 409 conflict, PCO import + calendar fetch, clean DevTools console — re-run for any issue touching those surfaces.
-- **Electron:** build + launch verification is part of `verification-gate`, not manual smoke; manual smoke covers behavior (login, PDF, sync).
+- **Per issue:** `python3 -c "import server"`; `node --check src/js/projects.js`; full `pytest` + `vitest` + `vite build`.
+- **DB/RLS:** integration tests prove `projects_update` rejects non-owner; `workspace_presences` scoped correctly. Run against the Supabase staging project (`APP_MODE=server pytest tests/test_rls_isolation.py`).
+- **Manual-only:** open two browser sessions (owner + non-owner); verify: private project invisible to non-owner, workspace project visible-but-save-disabled, presence badge appears, transfer changes editor.
+- **Conflict removal regression:** after issue 023, no new console errors; existing project save/load flow works without `_clientRevision`.
+
+---
 
 ## Data-safety notes
 
-- The Supabase migration is **additive + reversible**: export current Synology data, dry-run import, write a backup, verify row counts before any cutover. Never delete the JSON/Synology data until cutover QA (issue 20) passes.
-- `service_role` key: server-side seed/migration scripts only — never in the Electron bundle, never the normal query path.
-- Desktop-bundle secrets: prefer NOT shipping OAuth client secrets in the Electron binary (Supabase Auth keeps them server-side); the anon key + RLS is the only client-shippable credential.
-- Magic-link mailer: Supabase's built-in mailer is rate-limited; configure custom SMTP before real multi-church testing.
+- The visibility default change is purely additive for new rows. No backfill of existing rows is needed — they keep `'workspace'`.
+- The ownerless-project backfill (issue 024) has a `--dry-run` gate and is idempotent.
+- `workspace_presences` is ephemeral metadata — no backup needed; rows expire naturally.
+- `ConflictError` and `save_project_transactional` are left in `storage.py` (dead code for the save path) to preserve test coverage; a separate cleanup issue can remove them after the cutover QA passes.
 
-## Clarification interview
+---
 
-Completed via the upfront-alignment round earlier this session (4 questions: scope, tenancy depth, fork mechanics, auth providers — all answered). Residual decisions that did not block planning are surfaced below rather than forcing another round (per the two-round cap), since the user asked to resume.
+## Known ambiguities / open questions
 
-## Known ambiguities / open questions (confirm before the relevant milestone)
+1. **Non-owner save UX (issue 023):** Three options: (a) disable the save button entirely (no network call), (b) allow the user to copy the project and work on the copy, (c) show a banner "You're viewing a read-only project." Option (b) has precedent in `projects.js` (the existing "copy" path sets `visibility='private'`). **Recommended:** (a) disable save + (c) show banner. Implement as (a)+(c); the copy shortcut is already present.
+2. **Presence heartbeat TTL (issue 022):** 60s heartbeat interval / 90s TTL at read is the recommended default. If the tab is backgrounded or the user leaves the project editor without closing the tab, the heartbeat stops and the badge disappears in ≤ 90s. Acceptable for informational-only presence.
+3. **QA matrix conflict items (C1–C3):** These become moot after issue 023. The plan removes them from the QA matrix in issue 024. Confirm this is the desired outcome (vs. keeping them as "REMOVED / N/A" for audit history).
 
-1. **Offline (M4):** plan assumes **online-required** v1 (Electron + Supabase). A church with flaky Sunday wifi would be blocked. Confirm acceptable, or add a local cache/sync layer as a later effort.
-2. **Seed data (M5):** assumed the first workspace = the existing Visalia CRC data migrated in. Confirm.
-3. **Membership model (M2):** per-workspace **domain allow-list** vs **explicit email invite**. Plan supports allow-list first; invites are the self-serve path (out of scope for v1).
-4. **Pooling mode (D2/M1):** session-mode (5432) vs transaction pooler (6543) depends on expected concurrent client count — decide during issue 3/7 with real numbers.
-5. **PCO/Google integration tokens (M2):** keep as a shared per-workspace connection (matches today) vs per-user. Plan assumes per-workspace shared; confirm.
+---
 
 ## Next in chain
 
-Issue 1 (the merge) is complete and verified. Hand off to **`issue-writer`** to convert the remaining rows into GitHub-ready issues (with per-issue acceptance criteria + likely files + tests) under `docs/ai/generated-issues/`, in dependency order, **starting with issue 2**. Do **not** create remote GitHub issues until the user asks. Issues touching RLS (6–8) and auth (10) warrant `acceptance-contract` before `coding-agent`.
+Hand off to **`issue-writer`** to convert issues 020–024 into GitHub-ready issues under `docs/ai/generated-issues/`, in dependency order, with per-issue acceptance criteria, likely files, and tests. Issues 020, 021 warrant `acceptance-contract` before `coding-agent` (RLS and auth-boundary changes). Issue 023 (frontend) can go straight to `coding-agent` after 021 is merged.
