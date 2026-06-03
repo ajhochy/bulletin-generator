@@ -718,6 +718,10 @@ function renderFilesList() {
       updatedLabel,
     ].filter(Boolean);
 
+    const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+    const currentUserId = currentUser?.id || currentUser?.user_id || null;
+    const isOwner = !isServerMode() || !project.owner_user_id ||
+                    (currentUserId && String(project.owner_user_id) === String(currentUserId));
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
     card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
@@ -737,6 +741,7 @@ function renderFilesList() {
         <button class="btn btn-xs btn-ghost"   data-fm="download-pdf" data-id="${escAttr(project.id)}">↓ PDF</button>
         <button class="btn btn-xs btn-ghost"   data-fm="download-json" data-id="${escAttr(project.id)}">↓ JSON</button>
         <button class="btn btn-xs btn-ghost"   data-fm="rename"       data-id="${escAttr(project.id)}">Rename</button>
+        ${isOwner ? `<button class="btn btn-xs btn-ghost" data-fm="handoff" data-id="${escAttr(project.id)}">Hand off →</button>` : ''}
         <button class="btn btn-xs btn-error"   data-fm="delete"       data-id="${escAttr(project.id)}">Delete</button>
       </div>`;
 
@@ -1078,7 +1083,76 @@ function handleFilesListClick(e) {
     }
     renderProjectSelect();
     setStatus(`Deleted "${projName}".`, 'success');
+  } else if (action === 'handoff') {
+    handleHandoff(id);
   }
+}
+
+async function handleHandoff(projectId) {
+  const proj = projectById(projectId);
+  if (!proj) return;
+
+  // Fetch workspace members (excluding self)
+  let members = [];
+  try {
+    const res = await apiFetch('/api/workspace/members');
+    members = res.members || [];
+  } catch (e) {
+    setStatus('Could not load workspace members.', 'error');
+    return;
+  }
+
+  if (members.length === 0) {
+    alert('No other workspace members to hand off to.\nAdd teammates to the workspace first.');
+    return;
+  }
+
+  // Build a simple select dialog
+  const options = members.map(m => {
+    const label = m.display_name || m.email || m.user_id;
+    return `<option value="${escAttr(m.user_id)}">${esc(label)}</option>`;
+  }).join('');
+
+  const modal = document.createElement('dialog');
+  modal.className = 'modal modal-open';
+  modal.innerHTML = `
+    <div class="modal-box max-w-sm">
+      <h3 class="font-bold text-lg mb-1">Hand off project</h3>
+      <p class="text-sm text-base-content/60 mb-4">"${esc(proj.name)}" will be transferred.<br>They become the editor; you keep view access.</p>
+      <select id="handoff-select" class="select select-bordered w-full mb-4">
+        <option value="">— Pick a person —</option>
+        ${options}
+      </select>
+      <div class="modal-action">
+        <button id="handoff-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+        <button id="handoff-confirm" class="btn btn-primary btn-sm">Hand off →</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector('#handoff-cancel').onclick = () => modal.remove();
+  modal.querySelector('#handoff-confirm').onclick = async () => {
+    const toUserId = modal.querySelector('#handoff-select').value;
+    if (!toUserId) { alert('Please pick a person.'); return; }
+    const confirmBtn = modal.querySelector('#handoff-confirm');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Transferring…';
+    try {
+      await apiFetch(`/api/projects/${projectId}/transfer`, 'POST', { to_user_id: toUserId });
+      modal.remove();
+      // Refresh project list so ownership badge updates
+      const res = await apiFetch('/api/projects');
+      setProjects(res.projects || []);
+      renderProjectSelect();
+      renderFilesList();
+      setStatus(`"${proj.name}" handed off.`, 'success');
+    } catch (e) {
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Hand off →';
+      setStatus(e.message || 'Transfer failed.', 'error');
+    }
+  };
 }
 
 // ─── Bulk action bar handlers ─────────────────────────────────────────────────

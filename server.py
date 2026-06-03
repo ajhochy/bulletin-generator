@@ -1244,6 +1244,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/oauth/google/start',       '_handle_google_oauth_start'),
         ('/oauth/google/callback',    '_handle_google_oauth_callback'),
         ('/api/me',                    '_handle_api_me'),
+        ('/api/workspace/members',    '_handle_get_workspace_members'),
         ('/auth/google/login',        '_handle_auth_google_login'),
         ('/auth/google/callback',     '_handle_auth_google_callback'),
         ('/pco-proxy/',               '_proxy_pco'),
@@ -2567,6 +2568,50 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             'workspace_id': user.get('workspace_id'),
             'role': user.get('role') or '',
         })
+
+    def _handle_get_workspace_members(self):
+        """GET /api/workspace/members — list members of the caller's workspace.
+
+        Returns [{user_id, display_name, email, role}] for all members,
+        excluding the caller so the handoff UI only shows valid recipients.
+        Desktop mode returns [].
+        """
+        if IS_DESKTOP:
+            self._send_json({'members': []})
+            return
+
+        identity = self._require_auth()
+        if identity is None:
+            return
+
+        from db import admin_transaction  # noqa: PLC0415
+        workspace_id = identity.get('workspace_id')
+        caller_id    = identity.get('user_id') or identity.get('id')
+
+        with admin_transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT wm.user_id, wm.role,
+                       p.display_name, p.email
+                FROM public.workspace_members wm
+                LEFT JOIN public.profiles p ON p.id = wm.user_id
+                WHERE wm.workspace_id = %(workspace_id)s::uuid
+                  AND wm.user_id != %(caller_id)s::uuid
+                ORDER BY p.display_name NULLS LAST, p.email
+                """,
+                {"workspace_id": workspace_id, "caller_id": caller_id},
+            ).fetchall()
+
+        members = [
+            {
+                "user_id": str(r[0]),
+                "role":    r[1] or "",
+                "display_name": r[2] or "",
+                "email":   r[3] or "",
+            }
+            for r in rows
+        ]
+        self._send_json({"members": members})
 
     def _handle_auth_logout(self):
         """
