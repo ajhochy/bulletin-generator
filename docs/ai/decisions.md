@@ -4,6 +4,23 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-03 — Issue 008: allow-list stored as JSONB in workspace_settings (not a new table)
+
+**Context.** Issue 008 needed a per-workspace domain allow-list for first-login auto-provisioning. The `project-state.md` "Next step" for 008 deferred the shape decision: "separate `workspace_invites` table vs JSONB on `workspace_settings`."
+
+**Decision.** Used the existing `workspace_settings.settings` JSONB column (key `allowed_domains`, type `text[]`). No new migration file needed.
+
+**Alternatives.**
+- Separate `workspace_invites` / `workspace_allowed_domains` table. Rejected for v1 — the allow-list is operator-managed (service_role SQL only), not user-visible, and is read once per login. A separate table adds a migration and FK with no benefit at this scale.
+- A new column `allowed_domains text[]` on `workspaces`. Rejected — adding a column would require a migration; the flexible JSONB key on `workspace_settings` avoids DDL changes for a single-value key.
+
+**Consequences.**
+- Provisioning SQL queries `jsonb_array_elements_text(COALESCE(ws.settings->'allowed_domains', '[]'::jsonb))`. The `COALESCE` guard prevents errors on rows where the key is absent.
+- Allow-list management is documented in `MANUAL-STEPS.md` section 7 (INSERT/UPDATE/verify SQL snippets).
+- Domain is derived from the **verified JWT email claim** (`claims["email"]`), never from user-editable `user_metadata`.
+
+---
+
 ## 2026-06-02 — Schema source of truth = Supabase-managed migrations (refines D1)
 
 **Context.** With the Supabase MCP installed and a staging project provisioned (`bulletin-generator`, ref `dgydekhfzrmeoscpgmvo`, org Visalia CRC, region us-west-1), we have direct DDL access. The earlier plan reuse-map said "keep collab-v1's Python migration runner + `data_migrations` table" for schema.
