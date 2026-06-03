@@ -1734,14 +1734,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         the need to transfer state for all projects on startup.
         Auth required in server mode.
         """
-        if not IS_DESKTOP:
-            status, identity = _require_auth(self.headers.get("Authorization"))
-            if status != 200:
-                self._send_json({"error": "Authentication required"}, status)
-                return
-            store = _get_scoped_storage(identity)
+        if IS_DESKTOP:
+            store = self._storage_for_user(None)
         else:
-            store = _get_storage()
+            user = self._require_auth()
+            if user is None:
+                return
+            store = self._storage_for_user(user)
 
         project = store.get_project(project_id)
         if project is None:
@@ -2580,13 +2579,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({'members': []})
             return
 
-        identity = self._require_auth()
-        if identity is None:
+        user = self._require_auth()
+        if user is None:
             return
 
         from db import admin_transaction  # noqa: PLC0415
-        workspace_id = identity.get('workspace_id')
-        caller_id    = identity.get('user_id') or identity.get('id')
+        workspace_id = user.get('workspace_id')
+        caller_id    = user.get('user_id') or user.get('id')
 
         with admin_transaction() as conn:
             rows = conn.execute(
