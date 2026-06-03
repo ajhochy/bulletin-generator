@@ -997,11 +997,15 @@ async function generateAndDownloadPdf(pagesHtml, filename) {
   let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
+  const _pdfSession = typeof getSession === 'function' ? getSession() : null;
+  const _pdfHeaders = { 'Content-Type': 'application/json' };
+  if (_pdfSession?.access_token) _pdfHeaders['Authorization'] = `Bearer ${_pdfSession.access_token}`;
+
   let resp;
   try {
     resp = await fetch('/api/pdf', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _pdfHeaders,
       body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
     });
   } catch (e) {
@@ -1064,9 +1068,13 @@ async function buildProjectPdfBlob(id) {
 
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
+  const _pdfSess2 = typeof getSession === 'function' ? getSession() : null;
+  const _pdfHdrs2 = { 'Content-Type': 'application/json' };
+  if (_pdfSess2?.access_token) _pdfHdrs2['Authorization'] = `Bearer ${_pdfSess2.access_token}`;
+
   const resp = await fetch('/api/pdf', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: _pdfHdrs2,
     body: JSON.stringify({ html, filename, pageWidth: pageDims.w, pageHeight: pageDims.h }),
   });
 
