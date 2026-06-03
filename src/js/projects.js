@@ -9,8 +9,8 @@ function enterReadOnlyMode(ownerName) {
 
   const nameLabel = ownerName ? `${esc(ownerName)}'s` : 'this';
   banner.innerHTML =
-    `<span>Viewing · ${nameLabel} bulletin — you can't edit this</span>` +
-    `<button class="btn btn-xs btn-ghost ml-2" id="readonly-duplicate-btn">Duplicate</button>`;
+    `<span>Viewing ${nameLabel} bulletin · changes won't save · </span>` +
+    `<button class="btn btn-xs btn-primary btn-sm ml-1" id="readonly-duplicate-btn">Duplicate to edit your own copy</button>`;
   banner.style.display = '';
 
   const dupBtn = document.getElementById('readonly-duplicate-btn');
