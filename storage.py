@@ -538,9 +538,12 @@ class PostgresStorageBackend(StorageBackend):
             ws_clause = "AND p.workspace_id = %(workspace_id)s::uuid"
             params["workspace_id"] = self.workspace_id
         with self._transaction() as conn:
+            # Exclude `state` from the list query — state blobs can be many MB
+            # each and are not needed for the file picker.  Full state is
+            # fetched on-demand by get_project() when a project is opened.
             cursor = conn.execute(
                 f"""
-                SELECT p.id, p.name, p.owner_user_id, p.visibility, p.state,
+                SELECT p.id, p.name, p.owner_user_id, p.visibility,
                        p.revision, p.created_at, p.updated_at,
                        p.created_by_user_id, p.updated_by_user_id,
                        pc.email AS created_by_email,

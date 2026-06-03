@@ -1720,8 +1720,33 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif remainder.endswith("/revision"):
             project_id = remainder[: -len("/revision")]
             self._handle_project_revision(project_id)
+        elif "/" not in remainder and remainder:
+            # GET /api/projects/{id} — fetch a single project with full state
+            self._handle_get_single_project(remainder)
         else:
             self._send_json({"error": "not found"}, 404)
+
+    def _handle_get_single_project(self, project_id: str):
+        """GET /api/projects/{id} — fetch one project with full state.
+
+        Used by the frontend when opening a project from the list, avoiding
+        the need to transfer state for all projects on startup.
+        Auth required in server mode.
+        """
+        if not IS_DESKTOP:
+            status, identity = _require_auth(self.headers.get("Authorization"))
+            if status != 200:
+                self._send_json({"error": "Authentication required"}, status)
+                return
+            store = _get_scoped_storage(identity)
+        else:
+            store = _get_storage()
+
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "not found"}, 404)
+            return
+        self._send_json({"project": project})
 
     def _handle_project_history(self, project_id: str):
         """GET /api/projects/{id}/history — return revision history for a project.

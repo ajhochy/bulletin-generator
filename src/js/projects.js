@@ -478,9 +478,9 @@ function loadDraftState() {
   }
 }
 
-function loadProjectById(id) {
-  const project = projectById(id);
-  if (!project) {
+async function loadProjectById(id) {
+  const meta = projectById(id);
+  if (!meta) {
     setStatus('Project not found.', 'error');
     return;
   }
@@ -488,6 +488,18 @@ function loadProjectById(id) {
   // Stop any in-progress presence for the previous project
   _stopPresenceHeartbeat();
   exitReadOnlyMode();
+
+  // Fetch full state on demand — the list only contains metadata now.
+  let project = meta;
+  if (!project.state) {
+    try {
+      const res = await apiFetch('/api/projects/' + id);
+      project = res.project || meta;
+    } catch (e) {
+      setStatus('Could not load project.', 'error');
+      return;
+    }
+  }
 
   activeProjectId = project.id;
   applyProjectState(project.state || {});
@@ -604,7 +616,14 @@ async function restoreOnStartup() {
   const decision = deriveStartupRestoreCore({ rememberedId, projects, isServerMode: isServerMode() });
 
   if (decision.action === 'load' || decision.action === 'load-newest') {
-    const project = decision.project;
+    let project = decision.project;
+    // Fetch full state on demand — the list only contains metadata now.
+    if (!project.state) {
+      try {
+        const res = await apiFetch('/api/projects/' + project.id);
+        project = res.project || project;
+      } catch (_) { /* fall through with empty state */ }
+    }
     activeProjectId = project.id;
     applyProjectState(project.state || {});
     bulletinTitleInput.value = project.name;
