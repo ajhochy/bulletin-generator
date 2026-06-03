@@ -587,10 +587,13 @@ class PostgresStorageBackend(StorageBackend):
                        pc.email AS created_by_email,
                        pu.email AS updated_by_email,
                        pc.display_name AS created_by_name,
-                       pu.display_name AS updated_by_name
+                       pu.display_name AS updated_by_name,
+                       po.display_name AS owner_display_name,
+                       po.email AS owner_email
                 FROM projects p
                 LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
                 LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                LEFT JOIN public.profiles po ON po.id = p.owner_user_id
                 WHERE p.id = %(id)s
                 {ws_clause}
                 """,
