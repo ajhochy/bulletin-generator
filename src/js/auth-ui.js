@@ -148,7 +148,12 @@ async function signInWithGoogle() {
   }
   const { data, error } = await client.auth.signInWithOAuth({
     provider: 'google',
-    options: { redirectTo: _authRedirectUrl() },
+    options: {
+      redirectTo: _authRedirectUrl(),
+      // Force the Google account picker so signing out and back in
+      // as a different user works without clearing browser cookies.
+      queryParams: { prompt: 'select_account' },
+    },
   });
   if (error) {
     showLoginScreen(error.message || 'Google sign-in failed.');
@@ -239,7 +244,15 @@ async function initAuth() {
       await client.auth.signOut().catch(() => {});
       _currentSession = null;
       _currentUser = null;
-      showLoginScreen(err.status === 403 ? 'Your account is not assigned to a workspace.' : '');
+      if (err.status === 403) {
+        const email = session?.user?.email || '';
+        showLoginScreen(
+          `${email ? email + ' is' : 'Your account is'} not in this workspace yet. ` +
+          'Contact the admin to be added, or sign in with a different account.'
+        );
+      } else {
+        showLoginScreen('');
+      }
     }
   }
 
