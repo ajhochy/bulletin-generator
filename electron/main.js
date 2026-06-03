@@ -120,7 +120,14 @@ function waitForServer(timeoutMs) {
 // Protocol registration only works reliably in a packaged app bundle.
 // In dev mode, skip it to avoid macOS killing the process due to stale
 // single-instance lock conflicts.
-if (app.isPackaged) {
+// Register the bulletingen:// protocol handler so magic-link emails and
+// OAuth redirects route back to this app.  In dev mode, pass the entry
+// path explicitly so macOS Launch Services associates the correct binary.
+// The single-instance lock (below) is still gated to packaged builds to
+// avoid SIGKILL from stale lock files in dev — protocol registration is safe.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient('bulletingen', process.execPath, [path.resolve(process.argv[1])]);
+} else {
   app.setAsDefaultProtocolClient('bulletingen');
 }
 
