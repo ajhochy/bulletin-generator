@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 009)_
+_Last updated: 2026-06-03 (issue 015 verified)_
 
 ## Active workflow run (Supabase + Multi-tenant + Electron, milestone #30)
 
@@ -13,7 +13,7 @@ Run branch: `feat/supabase-multitenant-electron` (stacking all issues; one PR fo
 - **005 (#261) — DONE / MANUALLY VALIDATED.** `MANUAL-STEPS.md` documents staging Supabase Auth provider setup: URL configuration, Google OAuth callback URL, email magic-link validation, custom SMTP fields and built-in-mailer limits, leaked-password protection, and manual v1 workspace membership seeding. User reported issue 005 validation complete on 2026-06-03: Google OAuth provider, email magic-link provider/session issuance, SMTP/staging-mailer decision, leaked-password protection status, and seeded membership prerequisites are no longer blocking issue 007. No `server.py`/`auth.py` changes were made for issue 005.
 - **006 (#262) — DONE.** Commit `bfd0f44` replaces collab-v1 cookie auth with server-side Supabase JWT verification, resolves workspace membership through `db.admin_transaction()`, scopes protected storage access with `get_storage(workspace_id, user_claims)`, returns `/api/me` identity, disables legacy `/auth/google/*`, and auth-gates `/api/projects/revisions` through scoped storage. Verification on `bfd0f44`: imports OK; stale-reference grep clean; auth/project regression suite 198 passed; `scripts/run_ai_workflow.py checks --level issue` PASS; `checks --level pr` PASS; server-mode smoke returned 401 for unauthenticated `/api/me`, `/api/projects/revisions`, and `/api/bootstrap`; live DB migration integration (`set -a; source .env; APP_MODE=server pytest tests/test_migrations.py -m integration`) passed 2/2 with escalated network.
 - **007 (#263) — DONE / MANUAL SMOKE PASS.** Commits `e3bd69e` and `db2ceac` add frontend Supabase login/logout, magic-link support, Bearer token attachment, runtime public Supabase config, and ES256 JWT/PKCE session handling. Verification: static checks pass; `ai-workflow checks --level issue` PASS; `ai-workflow checks --level pr` PASS; login-gate screenshots captured at `/tmp/bulletin-generator-verification/issue-007-login-fixed.png` and `/tmp/bulletin-generator-verification/issue-007-login-after-005.png`. Manual smoke reported by user on 2026-06-03: Google OAuth pass, magic-link pass, sign-out pass. Post-smoke artifact: `.agent-stack/postmortems/2026-06-03-issue-007.json`.
-- **009 — DONE.** `storage_assets.py` (new, 196 lines): `extract_and_upload_images()` uploads base64 cover/logo images to Supabase Storage bucket `project-assets` via `urllib.request`, returns public Storage URLs, falls back silently to base64 on any upload failure. `storage.py`: wired into `PostgresStorageBackend.save_project()` and `save_project_transactional()` before JSONB serialization (only when `workspace_id is not None`). `.env.example`: added `SUPABASE_SERVICE_ROLE_KEY` (HTTP JWT service-role key for Storage, distinct from `SUPABASE_SERVICE_ROLE_URL` Postgres URL). `tests/test_storage_assets.py` (29 tests): upload mock, URL return, fallback-to-base64 on network/auth error, desktop bypass, header assertions, env-var reads, storage.py integration wiring — all pass. `ai-workflow checks --level issue` PASS (100 pytest + 71 vitest); `checks --level pr` PASS (+ vite build). Commits: `6c3381c` (feat) + `2358c0d` (docs). **Requires manual setup: `project-assets` bucket must exist and be public in Supabase dashboard; `SUPABASE_SERVICE_ROLE_KEY` must be set in deployment env.** Decision D6 recorded in `docs/ai/decisions.md`.
+- **015 — DONE.** Commit `c89e380`. `scripts/migrate_to_supabase.py` (NEW): standalone one-shot migration tool reads legacy JSON from a configurable `--source` directory and writes to the Supabase multi-tenant schema for workspace `614505d2` (Visalia CRC) via `admin_transaction()`. Dry-run default; `--execute` opt-in. Migrates projects→`projects`+`project_revisions`, announcements→`announcements`, songs→`songs`, settings→`workspace_settings` (OAuth tokens excluded). Idempotent (ON CONFLICT DO NOTHING / merge). Stable UUID derivation. `MANUAL-STEPS.md` updated with step-by-step runbook. Source data at `/Volumes/docker/bulletingenerator/` is currently all empty (confirmed). verification-gate PASS: 100 pytest, 71 vitest, vite build, dry-run exit 0.
 
 ## Current focus
 
@@ -44,7 +44,6 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Open risks
 
-- **Issue 009 Storage pre-requisites (manual):** `project-assets` Supabase Storage bucket must be created and set public in the dashboard; `SUPABASE_SERVICE_ROLE_KEY` (HTTP JWT service-role key, NOT the Postgres URL) must be in the deployment env. Until set, images are stored as base64 in JSONB (safe fallback). No data loss risk.
 - stale-poll JS now uses `/api/projects/${id}/revision` (collab-v1, per-project, requires auth). In desktop mode auth is bypassed, so this works fine. In Postgres mode, issue 007 now attaches a Supabase Bearer token from `apiFetch()` and auth smoke has passed.
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through.
 - Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL loaded from `.env`. They pass against staging when run with network access; they still fail/skip in sandboxed or DB-less runs.
@@ -54,7 +53,13 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Next step
 
-Issue 009 (Storage images) complete. Issue 008 (#264) — membership provisioning on first login — is the next critical-path item. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`). Issue 014 (font files to Storage) depends on this pattern and can follow.
+Issue 015 is complete (verification-gate PASS, commit `c89e380`). Move to issue 008 (#264): membership provisioning on first login. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`).
+
+When source data at `/Volumes/docker/bulletingenerator/` is populated (projects/announcements/songs loaded into the Synology NAS), run the migration execute step:
+```bash
+set -a && source .env && set +a
+.venv/bin/python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator --execute
+```
 
 ## Resume in a new session
 
@@ -62,35 +67,31 @@ Issue 009 (Storage images) complete. Issue 008 (#264) — membership provisionin
 - **Python:** use a 3.11 venv (`python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest`); system `python3` is 3.9 and cannot import `auth.py`.
 - **Supabase:** staging project `dgydekhfzrmeoscpgmvo` (Visalia CRC, us-west-1). `.env` (gitignored) has `DATABASE_URL` via the **session pooler** `aws-1-us-west-1.pooler.supabase.com:5432`. GitHub repo secrets set: `DATABASE_URL`, `SUPABASE_DATABASE_PW`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`. MCP config `.mcp.json` is scoped to the project (re-auth via `/mcp` if `mcp__supabase__*` tools are missing).
 - **Issues:** 19 local files in `docs/ai/generated-issues/` (001–019). To create them on GitHub: `bash scripts/create_migration_issues.sh` (idempotent; milestone "Supabase + Multi-tenant + Electron", label `supabase-migration`). NNN prefixes in titles keep the "Depends on" cross-refs resolvable.
-- **Start here:** issue **008** membership provisioning on first login. Issues 005, 007, 009 are complete as of 2026-06-03. Issue 009 (Storage images) adds `storage_assets.py` and requires `SUPABASE_SERVICE_ROLE_KEY` (HTTP JWT) in the env and a public `project-assets` bucket in the Supabase dashboard.
+- **Start here:** issue **008** membership provisioning on first login. Issues 005, 007, and 015 complete as of 2026-06-03.
 - **Decide before coding 008:** per-workspace allow-list shape — separate `workspace_invites` table vs JSONB on `workspace_settings`.
 - **Do NOT redo (already done):** branch merge, Supabase provisioning, app↔DB connection, tenancy foundation (`workspaces`/`workspace_members`/`profiles`/`projects` + RLS + cross-tenant isolation proven; captured in `supabase/migrations/20260602000001_tenancy_foundation.sql`).
 
 ## Recent coding-agent runs
 
-### 2026-06-03 — storage-assets-image-upload (issue 009)
+### 2026-06-03 — workspace-seeding-migration-script (issue 015)
 - Files modified:
-  - `storage_assets.py` (new) — `extract_and_upload_images()`, `upload_image()`, `is_base64_data_uri()`, `_parse_data_uri()`. Handles base64→Storage URL replacement via Supabase Storage REST API using `urllib.request`. Falls back to base64 silently on any failure. No-op when `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are unset (desktop bypass).
-  - `storage.py` — Added calls to `extract_and_upload_images()` at the top of `PostgresStorageBackend.save_project()` and `save_project_transactional()`. Only fires when `workspace_id is not None`.
-  - `.env.example` — Added `SUPABASE_SERVICE_ROLE_KEY` documentation (HTTP JWT service-role key for Storage uploads, distinct from `SUPABASE_SERVICE_ROLE_URL` Postgres URL).
-  - `tests/test_storage_assets.py` (new) — 29 unit tests covering: upload mock, public URL return, fallback-to-base64 on network/auth error, desktop mode bypass (no URL / no key), existing-URL passthrough, header assertions, env-var reads, storage.py integration wiring.
+  - `scripts/migrate_to_supabase.py` (NEW) — Standalone migration script that reads legacy JSON from a configurable source directory and writes to the Supabase multi-tenant schema via `db.admin_transaction()`. Dry-run is the default; `--execute` is explicit. Handles projects→`projects`+`project_revisions`, announcements→`announcements`, songs→`songs`, settings→`workspace_settings`. Idempotent (ON CONFLICT DO NOTHING / upsert merge). Excludes OAuth token secrets from settings migration. Stable UUID derivation so re-runs produce same IDs.
+  - `MANUAL-STEPS.md` — Added "Supabase Data Migration (Issue 015)" section with step-by-step dry-run and execute commands, prerequisites, idempotency note, and data-safety callouts. Updated First-Run Server Setup to reference the new script.
 - Checks run:
-  - `python3.11 -c "import storage_assets; import storage; import server"` → pass.
-  - `.venv/bin/python3.11 -m pytest tests/test_storage_assets.py -v` → 29 passed.
-  - `ai-workflow checks --level issue` → PASS: 100 pytest passed; 71 vitest passed.
-  - `ai-workflow checks --level pr` → PASS: 100 pytest passed; 71 vitest passed; vite build clean.
+  - `python -m py_compile scripts/migrate_to_supabase.py` → compile OK
+  - Dry-run against live source `/Volumes/docker/bulletingenerator/` → exit 0; all source files are currently empty arrays/dicts (0 rows each) — confirmed by reading source files before implementation.
+  - `scripts/run_ai_workflow.py checks --level issue` → PASS (100 pytest, 71 vitest).
 - Decisions made:
-  - Introduced `SUPABASE_SERVICE_ROLE_KEY` as a new env var (HTTP JWT service-role key) rather than repurposing `SUPABASE_SERVICE_ROLE_URL` (which is a Postgres connection string). These are structurally different — the Storage REST API needs a JWT Bearer token, not a Postgres URL. See also docs/ai/decisions.md.
-  - Upload placed in `storage.py` `save_project` / `save_project_transactional` (before `_json.dumps`) so the stored JSONB state never contains base64 after a successful upload. This is the single controlled chokepoint for all project saves.
-  - `workspace_id is None` guard prevents upload attempts in un-scoped / desktop-mode calls.
-  - Desktop mode bypass: if either `SUPABASE_URL` or `SUPABASE_SERVICE_ROLE_KEY` is unset, `extract_and_upload_images` returns immediately — existing base64 preserved.
+  - Script targets the actual staging schema columns (no `imported_from_json` or `created_by_email` — those columns exist in `migrations/import_projects.py` but not in the real SQL migration). See docs/ai/decisions.md for the discrepancy note.
+  - Used `ON CONFLICT DO UPDATE SET settings = ... || EXCLUDED.settings` for `workspace_settings` (merge, not ignore) so incremental re-runs can add new keys without wiping existing ones.
+  - OAuth tokens excluded from settings migration; they must be re-issued for the multi-tenant deployment.
+  - The script lives in `scripts/` (not `migrations/`) to clearly separate the one-shot operator runbook tool from the unit-testable importer modules.
 - Deviations from spec:
-  - Issue spec named the env var `SUPABASE_SERVICE_ROLE_URL` for Storage HTTP calls; that is already a Postgres connection string. Introduced `SUPABASE_SERVICE_ROLE_KEY` (JWT) instead to avoid ambiguity. Documented in `.env.example` and decisions.md.
-  - `save_project_transactional` integration test not added (would require mocking the complex conflict-check / revision-insert SQL chain); the `save_project` integration test confirms the wiring pattern is identical and the unit tests cover the `extract_and_upload_images` function exhaustively.
+  - The issue says to use `admin_transaction()` — implemented as specified. The `migrations/run_all_migrations.py` uses `transaction()` instead; those are separate tools targeting a different schema variant.
+  - Source data at `/Volumes/docker/bulletingenerator/` is currently all empty (confirmed). Dry-run output shows 0 rows for all tables.
 - Concerns:
-  - `SUPABASE_SERVICE_ROLE_KEY` must be set in the deployment environment for uploads to work; without it, images will continue to be stored as base64 in JSONB (safe fallback, not a data-loss risk).
-  - The `project-assets` bucket must exist and be configured as public in the Supabase dashboard before URLs will render correctly. This is a manual setup step (out of scope for this issue).
-  - `staffLogoUrl` is a workspace-level setting (stored in `workspace_settings` via `/api/settings`), but the project dict also carries a copy (saved in project state for backward compat). The upload here covers the project-state copy. Deduplicated uploads are idempotent due to the `x-upsert: true` header.
+  - The `migrations/import_projects.py` SQL references columns (`imported_from_json`, `created_by_email`, `updated_by_email`, `created_by_name`, `updated_by_name`, `saved_by_email`, `saved_by_name`) that do not exist in the applied migrations. That module targets a schema variant that was never applied. The new `scripts/migrate_to_supabase.py` targets the actual applied schema. The `migrations/` modules may need reconciliation in a future issue.
+  - `workspace_settings` ON CONFLICT uses `DO UPDATE ... || EXCLUDED.settings`. If the existing row has keys that should be reset, a full overwrite may be needed instead. Current approach is conservative (merge, preserve existing).
 
 ### 2026-06-03 — frontend-supabase-login-token-attach (issue 007 / #263)
 - Files modified:

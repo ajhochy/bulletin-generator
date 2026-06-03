@@ -192,6 +192,68 @@ SESSION_SECRET=<64-char-random-hex>   # generate: python3 -c "import secrets; pr
 
 ---
 
+## 🗂️ Supabase Data Migration (Issue 015)
+
+Migrates the live Visalia CRC JSON data into the Supabase multi-tenant schema.
+
+**Target workspace:** Visalia CRC (`614505d2-0f12-4c00-afb1-9077a0dc94fe`)
+**Source data:** `/Volumes/docker/bulletingenerator/` (Synology NAS) or `./data/`
+**Script:** `scripts/migrate_to_supabase.py`
+
+### Prerequisites
+
+1. The Supabase schema migrations must already be applied to the staging project:
+   - `20260602000001_tenancy_foundation.sql`
+   - `20260602000002_data_tables.sql`
+2. `.env` must contain `SUPABASE_SERVICE_ROLE_URL` and `APP_MODE=server`.
+
+### Step 1 — Verify source data counts
+
+```bash
+# Quick pre-flight: count records in source JSON files (no DB)
+set -a && source .env && set +a
+.venv/bin/python scripts/migrate_to_supabase.py \
+  --source /Volumes/docker/bulletingenerator \
+  --dry-run
+```
+
+Expected output shows row counts per table. Errors mean malformed JSON.
+
+### Step 2 — Execute migration
+
+When the dry-run output looks correct:
+
+```bash
+set -a && source .env && set +a
+.venv/bin/python scripts/migrate_to_supabase.py \
+  --source /Volumes/docker/bulletingenerator \
+  --execute
+```
+
+The script is **idempotent** — re-running will not duplicate rows.
+`ON CONFLICT DO NOTHING` on `projects`, `announcements`, and `songs`; merge on `workspace_settings`.
+
+### Step 3 — Verify in Supabase Dashboard
+
+1. Open Supabase Dashboard → `bulletin-generator` → Table Editor.
+2. Confirm row counts in `projects`, `announcements`, `songs`, `workspace_settings`.
+3. Check `workspace_settings` for the correct `workspace_id` and `settings` JSONB.
+
+### Re-running is safe
+
+The script uses `ON CONFLICT DO NOTHING` (or merge) for every table.
+Running it again after a partial failure or a data re-upload will not create duplicates.
+
+### Data-safety notes
+
+- OAuth tokens (`pcoAccessToken`, `pcoRefreshToken`, `googleAccessToken`, `googleRefreshToken`)
+  are **excluded** from the migration. They are secrets and must be re-issued for
+  the multi-tenant deployment.
+- The `SUPABASE_SERVICE_ROLE_URL` is never logged by the script.
+- Source JSON files are never modified.
+
+---
+
 ## 🚀 First-Run Server Setup
 
 ```bash
@@ -201,14 +263,13 @@ docker compose up -d
 # 2. Check DB health
 curl http://localhost:8080/api/health
 
-# 3. Dry-run migration (verify counts before writing)
-docker compose exec app python -m migrations.run_all_migrations --dry-run
+# 3. Run Supabase data migration (see section above)
+set -a && source .env && set +a
+python scripts/migrate_to_supabase.py --source ./data --dry-run
+python scripts/migrate_to_supabase.py --source ./data --execute
 
-# 4. Run migration (imports all legacy JSON data)
-docker compose exec app python -m migrations.run_all_migrations
-
-# 5. Verify migration backup was created
-ls data/backups/
+# 4. Verify migration
+curl http://localhost:8080/api/health
 ```
 
 ---
