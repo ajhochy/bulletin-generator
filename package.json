@@ -12,12 +12,75 @@
     "test:watch": "vitest",
     "css:watch": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --watch",
     "css:build": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --minify",
-    "start:electron": "electron ."
+    "start:electron": "electron .",
+    "package:electron": "electron-builder"
+  },
+  "build": {
+    "appId": "com.visaliacrc.bulletin-generator",
+    "productName": "Bulletin Generator",
+    "extends": null,
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "src/**/*",
+      "dist/**/*",
+      "menubar-icon.png",
+      "menubar-icon@2x.png"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/server",
+        "to": "server"
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "ajhochy",
+      "repo": "bulletin-generator"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.plist",
+      "entitlementsInherit": "entitlements.plist",
+      "notarize": {
+        "teamId": "${APPLE_TEAM_ID}"
+      }
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signingHashAlgorithms": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "devDependencies": {
     "autoprefixer": "^10.5.0",
     "daisyui": "^4.12.24",
     "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "impeccable": "github:pbakaus/impeccable",
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
@@ -26,6 +89,7 @@
     "vitest": "^3.2.4"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.105.4"
+    "@supabase/supabase-js": "^2.105.4",
+    "electron-updater": "^6.3.9"
   }
 }

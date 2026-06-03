@@ -23,6 +23,7 @@ import http from 'http';
 import fs from 'fs';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import { autoUpdater } from 'electron-updater';
 
 // ESM equivalents for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -240,23 +241,8 @@ function createTray() {
 }
 
 // ── PDF generation via Electron (issue 012) ───────────────────────────────────
-//
-// The renderer calls window.electronAPI.generatePdf({ html, pageWidth,
-// pageHeight, filename }) (wired in preload.js) which sends the 'pdf:generate'
-// IPC message here.  We create an offscreen BrowserWindow, load the HTML,
-// call webContents.printToPDF() with the requested page dimensions, write the
-// result to a temp file, and resolve with the path so the renderer can trigger
-// a save-dialog or download.
-//
-// This replaces the headless-Chrome path in server.py for APP_MODE=electron.
-// The Python sidecar's /api/pdf route returns HTTP 501 in electron mode and
-// should never be reached from the renderer.
-//
-// Page dimensions are in inches (matching the existing server.py defaults of
-// 5.5 × 8.5 in for a half-sheet bulletin).
 
 ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, filename }) => {
-  // Validate inputs
   if (typeof html !== 'string' || !html.trim()) {
     throw new Error('pdf:generate — html must be a non-empty string');
   }
@@ -264,48 +250,67 @@ ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, fil
   const pageH = typeof pageHeight === 'number' ? pageHeight : 8.5;
   const safeName = (typeof filename === 'string' ? filename.trim() : '') || 'bulletin.pdf';
 
-  // Write the print HTML to a temp file so BrowserWindow can load it via
-  // a file:// URL (avoids Content-Security-Policy issues with data: URIs).
-  const tmpDir  = fs.mkdtempSync(path.join(os.tmpdir(), 'bulletin-pdf-'));
+  const tmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), 'bulletin-pdf-'));
   const htmlPath = path.join(tmpDir, 'input.html');
   const pdfPath  = path.join(tmpDir, safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`);
 
   fs.writeFileSync(htmlPath, html, 'utf8');
 
-  // Create a hidden, offscreen BrowserWindow for rendering.
   const win = new BrowserWindow({
-    width: Math.round(pageW * 96),   // 96 dpi — approximate pixel size
+    width: Math.round(pageW * 96),
     height: Math.round(pageH * 96),
     show: false,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      // No preload needed — this window only renders static print HTML.
-    },
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
   try {
     await win.loadFile(htmlPath);
-
-    // printToPDF dimensions are in microns; 1 inch = 25400 µm.
     const pdfData = await win.webContents.printToPDF({
-      pageSize: {
-        width:  Math.round(pageW * 25400),
-        height: Math.round(pageH * 25400),
-      },
+      pageSize: { width: Math.round(pageW * 25400), height: Math.round(pageH * 25400) },
       printBackground: true,
       margins: { marginType: 'none' },
     });
-
     fs.writeFileSync(pdfPath, pdfData);
     return pdfPath;
   } finally {
-    // Always destroy the hidden window — do not let it linger.
-    if (!win.isDestroyed()) {
-      win.destroy();
-    }
+    if (!win.isDestroyed()) win.destroy();
   }
 });
+
+// ── Auto-update (electron-updater, issue 014) ─────────────────────────────────
+
+function configureAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', ({ version }) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info', title: 'Update Available',
+      message: `Bulletin Generator ${version} is available.`,
+      detail: 'Downloading in the background. You will be notified when ready.',
+      buttons: ['OK'],
+    });
+  });
+
+  autoUpdater.on('update-downloaded', ({ version }) => {
+    dialog.showMessageBox(mainWindow, {
+      type: 'info', title: 'Update Ready',
+      message: `Bulletin Generator ${version} has been downloaded.`,
+      detail: 'Restart now to apply, or it will install on next quit.',
+      buttons: ['Restart Now', 'Later'], defaultId: 0, cancelId: 1,
+    }).then(({ response }) => { if (response === 0) autoUpdater.quitAndInstall(); });
+  });
+
+  autoUpdater.on('error', (err) => {
+    console.error('[auto-updater] error:', err.message || err);
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.error('[auto-updater] checkForUpdatesAndNotify failed:', err.message || err);
+  });
+}
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
@@ -326,6 +331,11 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
+
+  // Check for updates after the window is ready so dialogs have a parent.
+  mainWindow.webContents.once('did-finish-load', () => {
+    configureAutoUpdater();
+  });
 });
 
 app.on('window-all-closed', () => {

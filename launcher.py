@@ -6,6 +6,17 @@ Starts the local server on a fixed port and runs as a macOS menu bar app.
 Desktop mode always uses port 8765 so the PCO OAuth redirect URI is predictable.
 Register this in your PCO developer app:
   http://localhost:8765/oauth/pco/callback
+
+DEPRECATED (issue 014): This launcher is superseded by the Electron-based
+desktop app introduced in issue 011. As of the Electron packaging milestone
+(issue 014), the distribution artifact is an electron-builder .dmg (macOS)
+or NSIS .exe (Windows) that spawns server.py (or the PyInstaller-produced
+`server` binary) as a sidecar. The Electron main process (electron/main.js)
+handles window lifecycle, tray, auto-update, and deep-link auth.
+
+This file is retained because the Docker server-mode deployment still uses
+server.py directly and some developer tooling may reference it. Do NOT
+delete until all desktop users have migrated to the Electron build.
 """
 
 import os
