@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 013 verification PASS)_
+_Last updated: 2026-06-03 (issue 014 coding-agent complete, pending verification-gate)_
 
 ## Current focus
 
@@ -33,6 +33,36 @@ Issue 013 (Supabase Auth in Electron) is verified PASS (100 pytest, 71 vitest, v
 4. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — electron-packaging-auto-update (issue 014)
+- Files modified:
+  - `package.json` — added `"package:electron"` script; added `"build"` electron-builder config block (appId, productName, files, extraResources for dist/server binary, publish=github, mac dmg + notarize, win nsis + signingHashAlgorithms:null); added `"electron-builder": "^24.13.3"` devDependency; added `"electron-updater": "^6.3.9"` dependency.
+  - `electron/main.js` — added `import { autoUpdater } from 'electron-updater'`; added `configureAutoUpdater()` function (guarded by `app.isPackaged`, autoDownload=true, autoInstallOnAppQuit=true, update-available dialog, update-downloaded restart dialog, error logger, `checkForUpdatesAndNotify()`); called from `mainWindow.webContents.once('did-finish-load')` inside `app.whenReady`.
+  - `.github/workflows/release-electron.yml` (new) — two jobs: `electron-macos` (macos-latest: PyInstaller sidecar → import cert → `electron-builder --mac --publish always`) and `electron-windows` (windows-latest: PyInstaller sidecar → `electron-builder --win --publish always`). Triggered on `push: tags: v*`.
+  - `MANUAL-STEPS.md` — appended "Electron Packaging + Auto-Update Setup (Issue 014)" section: required secrets table, how to export/encode .p12, how to find Team ID, how to create app-specific password, trigger-a-release example, Windows signing TODO, launcher.py deprecation note.
+  - `launcher.py` — added DEPRECATED docstring comment explaining that the Electron build (issue 011+014) supersedes this launcher; do-not-delete note for Docker server-mode users.
+  - `docs/ai/project-state.md` — this entry.
+- Checks run:
+  - `node --check electron/main.js` → JS OK.
+  - `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-electron.yml'))"` → YAML valid.
+  - `python3 scripts/run_ai_workflow.py checks --level issue` → PASS (100 pytest, 71 vitest).
+- Decisions made:
+  - `electron-updater` added to `dependencies` (not `devDependencies`) because it is imported at runtime inside the packaged app.
+  - `electron-builder` added to `devDependencies` because it is only used to build the distributable, not at runtime.
+  - `autoUpdater` import uses `electron-updater` package (not the built-in `electron.autoUpdater`) — `electron-updater` supports GitHub Releases publish provider and is the standard choice with electron-builder.
+  - `configureAutoUpdater()` is no-op when `!app.isPackaged` — prevents errors in dev mode where no `app-update.yml` exists.
+  - `mac.identity: null` in package.json — electron-builder uses the `CSC_LINK` env var from CI (set via GitHub Secret); `null` allows the env-var path to take effect without hardcoding a team identity string.
+  - `dmg.sign: false` — electron-builder sometimes double-signs the outer DMG; the app bundle inside is already signed; `sign: false` avoids that.
+  - Windows `signingHashAlgorithms: null` — no Windows certificate available; documented as TODO in MANUAL-STEPS.md.
+  - PyInstaller `--onefile --name server` flags override the spec's default `COLLECT` layout to produce a single `dist/server` (or `dist/server.exe`) executable — this is what `extraResources` maps into the app bundle. The existing spec produces a directory layout (`dist/BulletinGenerator/`) which electron-builder cannot directly use as a single binary resource.
+  - See `docs/ai/decisions.md` for the D4 decision (electron-builder replaces PyInstaller+Watchtower for desktop distribution).
+- Deviations from spec:
+  - The issue spec says the PyInstaller spec bundles `launcher.py` as the entry point. The CI workflow overrides this with `--onefile --name server` to produce a single binary. This is consistent with how `electron/main.js` expects to find the sidecar at `<resourcesPath>/server`. The spec's `BUNDLE` step (which creates `Bulletin Generator.app`) is not used in the Electron build path.
+- Concerns:
+  - `electron-updater` is a `dependency` but the worktree `package-lock.json` won't include it until `npm install` is run. CI runs `npm ci` which reads the lock file — the lock file will need to be updated before merging. Run `npm install` locally to regenerate it.
+  - The PyInstaller `--onefile` flag is not in the existing spec and may not handle all `hiddenimports` (e.g. `rumps`) correctly on macOS. On Windows, `rumps` is not available at all and must be excluded. The CI macOS job installs `rumps` so PyInstaller can find it; the Windows job does not. The `--onefile` path may need a dedicated `server.spec` file rather than patching the existing spec at invocation time — monitor the first CI run.
+  - Notarization uses `mac.notarize.teamId: "${APPLE_TEAM_ID}"` — electron-builder interpolates this from env at build time. Confirm that `APPLE_TEAM_ID` secret is set before the first tag push.
+  - Windows builds produce an unsigned NSIS installer; SmartScreen will warn end-users. Documented as TODO in MANUAL-STEPS.md.
 
 ### 2026-06-03 — electron-auth-deep-link (issue 013)
 - Files modified:

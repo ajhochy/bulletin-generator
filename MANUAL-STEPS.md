@@ -496,3 +496,90 @@ docker compose up -d
 - **Font binaries** remain on disk (not in Postgres). Postgres only stores font metadata.
 - **OAuth tokens** (PCO, Google Calendar) are temporarily stored in `org_settings` under key `oauth_tokens`. A dedicated secrets store migration is planned for a future release.
 - **Session secret** (`SESSION_SECRET`) should be rotated if the server is compromised — this invalidates all active sessions.
+
+---
+
+## Electron Packaging + Auto-Update Setup (Issue 014)
+
+The `release-electron.yml` workflow builds signed + notarized macOS DMG and
+Windows NSIS installers via electron-builder when a version tag is pushed.
+The following GitHub Secrets must be present in the repository before the
+workflow runs.
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|---|---|
+| `CSC_LINK` | Base64-encoded Developer ID Application certificate (.p12) |
+| `CSC_KEY_PASSWORD` | Password for the .p12 certificate |
+| `APPLE_ID` | Apple ID email used for notarization (e.g. `you@example.com`) |
+| `APPLE_ID_PASSWORD` | App-specific password for that Apple ID (generate at appleid.apple.com → App-Specific Passwords) |
+| `APPLE_TEAM_ID` | Apple Developer Team ID (10-character string, e.g. `AB12CD34EF`) |
+| `PCO_CLIENT_ID` | Planning Center OAuth client ID (same as used in the legacy .app build) |
+| `PCO_CLIENT_SECRET` | Planning Center OAuth client secret |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+
+`GITHUB_TOKEN` is provided automatically by GitHub Actions (no setup needed).
+
+### How to export and encode the Developer ID certificate
+
+1. Open **Keychain Access** on your Mac.
+2. Find your **Developer ID Application** certificate (issued by Apple).
+3. Right-click → **Export** → choose **.p12** format.
+4. Set a strong export password — this becomes `CSC_KEY_PASSWORD`.
+5. Base64-encode the .p12 file:
+   ```bash
+   base64 -i ~/Desktop/DeveloperID.p12 | pbcopy
+   ```
+6. Paste the clipboard contents as the `CSC_LINK` secret in GitHub:
+   Settings → Secrets and variables → Actions → New repository secret.
+7. Delete the .p12 file from your Desktop once the secret is saved.
+
+### How to find your Apple Team ID
+
+- Log in to [developer.apple.com](https://developer.apple.com/account) →
+  Membership → Team ID (10-character alphanumeric).
+- Alternatively: `xcrun altool --list-providers -u "$APPLE_ID" -p "$APPLE_ID_PASSWORD"`
+
+### How to create an app-specific password (APPLE_ID_PASSWORD)
+
+1. Go to [appleid.apple.com](https://appleid.apple.com) → Sign-In and Security
+   → App-Specific Passwords → Generate.
+2. Label it "bulletin-generator-ci" (or similar).
+3. Add the generated password as the `APPLE_ID_PASSWORD` secret.
+
+### Triggering a release
+
+```bash
+git tag v1.13.0
+git push origin v1.13.0
+```
+
+Both `release.yml` (Docker + legacy PyInstaller .app) and `release-electron.yml`
+(Electron DMG + Windows NSIS) run in parallel. GitHub Releases artifacts will
+include both the legacy zip and the new DMG/.exe installers until the legacy
+workflow is retired.
+
+### Windows code signing (TODO)
+
+The Windows job currently skips code signing (`signingHashAlgorithms: null` in
+`package.json`). Windows SmartScreen will show an "Unknown publisher" warning
+until a Windows code-signing certificate (EV or OV) is added. When a certificate
+is obtained:
+
+1. Add `CSC_LINK_WIN` and `CSC_KEY_PASSWORD_WIN` secrets (or reuse `CSC_LINK` if
+   the certificate covers both platforms, which is uncommon).
+2. Remove `"signingHashAlgorithms": null` from the `win` section in `package.json`.
+3. Add the certificate env vars to the `electron-windows` job in
+   `.github/workflows/release-electron.yml`.
+
+### Note on launcher.py deprecation
+
+`launcher.py` is now deprecated for desktop distribution. It is retained because:
+- Docker server-mode does not use it but it lives in the repo root.
+- Some developer tooling may reference it.
+
+Do not delete `launcher.py` until all desktop users have migrated to the Electron
+build and no tooling depends on it. See the deprecation comment at the top of
+`launcher.py` for details.

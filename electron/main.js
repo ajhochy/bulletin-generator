@@ -22,6 +22,7 @@ import path from 'path';
 import http from 'http';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { autoUpdater } from 'electron-updater';
 
 // ESM equivalents for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -238,6 +239,66 @@ function createTray() {
   });
 }
 
+// ── Auto-update (electron-updater) ───────────────────────────────────────────
+//
+// Updates are checked once on startup after the main window loads.
+// electron-updater publishes / consumes GitHub Releases via the `publish`
+// config in package.json ("provider": "github", owner/repo set there).
+//
+// Update flow:
+//   update-available  → show notification; begin downloading in background
+//   update-downloaded → prompt user; install on quit or immediate restart
+//   error             → log silently; do not interrupt the user
+
+function configureAutoUpdater() {
+  // In dev mode (no asar, no appUpdate.yml) electron-updater would throw.
+  // Guard: only run the update check in a packaged build.
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('update-available', (info) => {
+    const { version } = info;
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Update Available',
+      message: `Bulletin Generator ${version} is available.`,
+      detail: 'Downloading update in the background. You will be notified when it is ready to install.',
+      buttons: ['OK'],
+    });
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    const { version } = info;
+    dialog
+      .showMessageBox(mainWindow, {
+        type: 'info',
+        title: 'Update Ready',
+        message: `Bulletin Generator ${version} has been downloaded.`,
+        detail: 'Restart the app now to apply the update, or it will be applied automatically on the next quit.',
+        buttons: ['Restart Now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+  });
+
+  autoUpdater.on('error', (err) => {
+    // Log quietly — update failures should not interrupt the user's workflow.
+    console.error('[auto-updater] error:', err.message || err);
+  });
+
+  // Check for updates; resolves immediately if already up-to-date.
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.error('[auto-updater] checkForUpdatesAndNotify failed:', err.message || err);
+  });
+}
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
@@ -257,6 +318,11 @@ app.whenReady().then(async () => {
 
   createWindow();
   createTray();
+
+  // Check for updates after the window is ready so dialogs have a parent.
+  mainWindow.webContents.once('did-finish-load', () => {
+    configureAutoUpdater();
+  });
 });
 
 app.on('window-all-closed', () => {
