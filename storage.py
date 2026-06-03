@@ -913,7 +913,12 @@ class PostgresStorageBackend(StorageBackend):
             ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
             params["workspace_id"] = self.workspace_id
 
-        with self._transaction() as conn:
+        # Transfer must bypass RLS: the WITH CHECK policy requires owner_user_id = auth.uid()
+        # on the NEW row, but after transfer the new owner_user_id is the target user.
+        # admin_transaction() uses the service role which skips RLS — ownership verification
+        # (caller must be current owner) is enforced by the WHERE clause below.
+        from db import admin_transaction  # noqa: PLC0415
+        with admin_transaction() as conn:
             cursor = conn.execute(
                 f"""
                 UPDATE projects
