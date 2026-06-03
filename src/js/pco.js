@@ -3,14 +3,15 @@ const PCO_BASE      = '/pco-proxy';
 const PCO_LAST_IMPORT_KEY = 'worshipPcoLastImport';
 
 async function pcoGet(path) {
-  const resp = await fetch(`${PCO_BASE}${path}`);
-  if (!resp.ok) {
-    if (resp.status === 503) throw new Error('Planning Center credentials are not configured on the server.');
-    if (resp.status === 401) throw new Error('Invalid credentials — check your App ID and Secret.');
-    if (resp.status === 403) throw new Error('Access denied — check your PCO API permissions.');
-    throw new Error(`PCO API error ${resp.status}.`);
+  // Use apiFetch so the Supabase Bearer token is attached in server mode.
+  try {
+    return await apiFetch(`${PCO_BASE}${path}`);
+  } catch (e) {
+    if (e.status === 503) throw new Error('Planning Center credentials are not configured on the server.');
+    if (e.status === 401) throw new Error('Invalid credentials — check your App ID and Secret.');
+    if (e.status === 403) throw new Error('Access denied — check your PCO API permissions.');
+    throw new Error(e.message || `PCO API error ${e.status || ''}.`);
   }
-  return resp.json();
 }
 function pcoSetMsg(elId, msg, type = '') {
   const el = document.getElementById(elId);

@@ -2308,9 +2308,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"ok": True})
 
     def _handle_user_font_file(self):
-        user = self._require_auth()
-        if user is None:
-            return
+        # Font files are loaded by the CSS engine (no JS fetch), so Bearer
+        # tokens cannot be attached. Fonts are served without auth — they
+        # contain no sensitive data and are already scoped to workspace paths.
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/user/"):].strip("/")
         parts = rest.split("/", 1)
@@ -2347,9 +2347,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return "\n".join(rules)
 
     def _handle_google_font_cache(self):
-        user = self._require_auth()
-        if user is None:
-            return
+        # Font cache served without auth — same reason as _handle_user_font_file.
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/cache/"):].strip("/")
         parts = rest.split("/", 1)
