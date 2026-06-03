@@ -555,6 +555,13 @@ class PostgresStorageBackend(StorageBackend):
         import json as _json  # noqa: PLC0415
 
         project_id = data["id"]
+
+        # Upload base64 cover/logo images to Supabase Storage (server mode only).
+        # Falls back to base64 silently if the upload fails or Storage is unconfigured.
+        if self.workspace_id is not None:
+            from storage_assets import extract_and_upload_images  # noqa: PLC0415
+            data = extract_and_upload_images(data, self.workspace_id, project_id)
+
         name = str(data.get("name") or "")
         state_json = _json.dumps(data, ensure_ascii=False)
         created_at = data.get("createdAt") or None
@@ -634,6 +641,13 @@ class PostgresStorageBackend(StorageBackend):
         from revisions import generate_summary  # noqa: PLC0415
 
         project_id = data["id"]
+
+        # Upload base64 cover/logo images to Supabase Storage (server mode only).
+        # Falls back to base64 silently if the upload fails or Storage is unconfigured.
+        if self.workspace_id is not None:
+            from storage_assets import extract_and_upload_images  # noqa: PLC0415
+            data = extract_and_upload_images(data, self.workspace_id, project_id)
+
         name = str(data.get("name") or "")
         state_json = _json.dumps(data, ensure_ascii=False)
 
