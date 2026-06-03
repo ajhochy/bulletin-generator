@@ -982,11 +982,23 @@ class PostgresStorageBackend(StorageBackend):
         """
         import json as _json  # noqa: PLC0415
 
-        if self.workspace_id is None:
-            raise RuntimeError(
-                "save_settings requires a workspace_id — "
-                "construct PostgresStorageBackend(workspace_id=...) first."
-            )
+        # When workspace_id is None (e.g. PCO/Google OAuth callbacks that have
+        # no auth context), fall back to the first workspace in the DB — same
+        # pattern as get_settings().  For single-workspace deployments this is
+        # safe; workspace-scoped callers always have workspace_id set.
+        ws_id = self.workspace_id
+        if ws_id is None:
+            from db import admin_transaction as _at  # noqa: PLC0415
+            with _at() as _conn:
+                row = _conn.execute(
+                    "SELECT workspace_id FROM workspace_settings LIMIT 1"
+                ).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    "save_settings: no workspace_settings row found — "
+                    "seed the workspace first."
+                )
+            ws_id = str(row[0])
 
         with self._transaction() as conn:
             conn.execute(
@@ -997,7 +1009,7 @@ class PostgresStorageBackend(StorageBackend):
                     settings = EXCLUDED.settings
                 """,
                 {
-                    "workspace_id": self.workspace_id,
+                    "workspace_id": ws_id,
                     "settings": _json.dumps(data, ensure_ascii=False),
                 },
             )
