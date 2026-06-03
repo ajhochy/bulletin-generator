@@ -23,7 +23,8 @@ In Supabase Dashboard → `bulletin-generator` → Authentication → URL Config
   `redirectTo` / `emailRedirectTo`:
   - `http://localhost:8766`
   - `http://localhost:8766/auth/callback` if issue 007 adds a browser callback route
-  - `bulletingen://auth-callback` only after issue 013 implements the Electron protocol handler
+  - `bulletingen://auth-callback` (issue 013 — Electron deep-link handler is now implemented;
+    add this URL to the allow-list before running Electron auth smoke tests)
 - Keep production URLs out until the production host is known.
 
 ### 2. Enable Google OAuth in Supabase Auth
@@ -189,6 +190,50 @@ WHERE settings ? 'allowed_domains';
   no-op and the subsequent SELECT returns the already-inserted row.
 - Auto-provisioned users receive the `editor` role. To grant `owner` or `viewer`,
   update the row manually after provisioning.
+
+---
+
+## Electron Auth Deep-Link Setup (Issue 013)
+
+Issue 013 registers `bulletingen` as a custom URL protocol in the Electron
+main process so OAuth and magic-link redirects can complete inside the app.
+These manual steps must be done before running Electron auth smoke tests.
+
+### 1. Add bulletingen://auth-callback to Supabase redirect allow-list
+
+In Supabase Dashboard → `bulletin-generator` → Authentication → URL Configuration
+→ Redirect URLs, add:
+
+```
+bulletingen://auth-callback
+```
+
+Without this entry Supabase will refuse to redirect to the custom protocol and
+Google OAuth / magic-link flows will silently fail.
+
+### 2. Smoke test: Google OAuth flow in Electron
+
+1. `npm run start:electron` (dev mode, requires Python 3 + server.py deps in PATH).
+2. On the login screen, click **Sign in with Google**.
+3. The OS default browser should open the Google OAuth consent page.
+4. Complete consent with a valid test Google account.
+5. The OS routes the `bulletingen://auth-callback#...` redirect back to Electron.
+6. The app window should come to the front and show the authenticated user in the
+   nav bar (avatar + name + "Sign out" button).
+
+### 3. Smoke test: magic-link flow in Electron
+
+1. On the login screen, enter a test email address and click **Send magic link**.
+2. A message "Check your email for a sign-in link." should appear.
+3. Open the email in the OS default mail client and click the link.
+4. The OS routes the `bulletingen://auth-callback#...` redirect back to Electron.
+5. The app window should come to the front and show the authenticated user.
+
+### 4. Smoke test: single-instance behaviour (Windows)
+
+On Windows, open the app, then click a `bulletingen://` link from the browser.
+The already-running app window should focus and the auth flow should complete.
+A second Electron instance should not open.
 
 ---
 

@@ -8,6 +8,9 @@
  *   3. Show a tray icon with a "Quit" menu item.
  *   4. Kill the sidecar cleanly on app quit.
  *   5. Show an error dialog and quit if the sidecar crashes.
+ *   6. Register the `bulletingen` custom URL protocol and forward deep-link
+ *      auth callbacks (bulletingen://auth-callback#...) to the renderer via
+ *      IPC so Supabase can complete OAuth / magic-link sign-in.
  *
  * Port 8765 matches the existing desktop default so PCO OAuth redirect URIs
  * (http://localhost:8765/oauth/pco/callback) require no change.
@@ -85,6 +88,40 @@ function waitForServer(timeoutMs) {
 
     probe();
   });
+}
+
+// ── Auth deep-link handling ───────────────────────────────────────────────────
+
+/**
+ * Register `bulletingen` as this app's custom URL protocol so the OS routes
+ * bulletingen://auth-callback#... links here after OAuth/magic-link redirects.
+ *
+ * Must be called before app.whenReady() so it takes effect on first launch.
+ * On Windows this also ensures single-instance behaviour (see second-instance
+ * handler below).
+ */
+app.setAsDefaultProtocolClient('bulletingen');
+
+/**
+ * Extract the raw deep-link URL from a process.argv array.
+ * On Windows, Electron relaunches a second instance with the protocol URL as
+ * the last command-line argument when the app is already running.
+ */
+function extractDeepLinkUrl(argv) {
+  return argv.find((arg) => arg.startsWith('bulletingen://')) || null;
+}
+
+/**
+ * Forward a deep-link URL to the renderer window via IPC.
+ * The preload script exposes window.electronAuth.onCallback so auth-ui.js
+ * can call supabase.auth.setSession / exchangeCodeForSession.
+ */
+function handleDeepLink(url) {
+  if (!url) return;
+  if (mainWindow) {
+    mainWindow.focus();
+    mainWindow.webContents.send('auth:callback', { url });
+  }
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -241,4 +278,34 @@ app.on('activate', () => {
 
 app.on('before-quit', () => {
   killSidecar();
+});
+
+// ── Deep-link auth callbacks ──────────────────────────────────────────────────
+
+// macOS: the OS sends bulletingen:// URLs to an already-running instance via
+// the 'open-url' event on the app object.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// Windows / Linux: Electron relaunches a second instance with the protocol URL
+// appended to argv.  Request single-instance lock so the second instance
+// hands its argv to the first instance and exits immediately.
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  // This is the second instance — quit after passing the URL via the lock.
+  app.quit();
+}
+
+app.on('second-instance', (_event, argv) => {
+  // The first instance receives the second instance's argv here.
+  const url = extractDeepLinkUrl(argv);
+  if (url) handleDeepLink(url);
+
+  // Also bring the window to front on Windows.
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
 });
