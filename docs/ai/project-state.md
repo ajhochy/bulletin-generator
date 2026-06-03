@@ -44,6 +44,24 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — issue-021-owner-only-writes-transfer
+- Files modified:
+  - `storage.py` — added `PostgresStorageBackend.transfer_project_owner(project_id, from_user_id, to_user_id)` method using `UPDATE ... WHERE owner_user_id=from RETURNING ...`.
+  - `server.py` — rewrote `_handle_post_projects` server-mode block: drops `save_project_transactional`; calls `save_project` for both new and existing projects; enforces owner-only writes on existing projects (403 if `owner_user_id != caller_id`); `_clientRevision` is silently discarded. Added `_handle_post_transfer_project(project_id)` handler for `POST /api/projects/{id}/transfer`; wired into `_handle_post_projects_sub`.
+  - `tests/test_project_ownership.py` — rewrote: updated helper and `TestExistingProjectUpdate`; added `test_non_owner_gets_403`, `test_client_revision_ignored`, `test_project_with_no_owner_is_allowed`; added `TestTransferProjectOwner` class (6 tests).
+- Checks run:
+  - `pytest tests/test_project_ownership.py -v` → 18 passed (red-green confirmed for new tests)
+  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest)
+- Decisions made:
+  - Switched to `save_project` (upsert) for all writes, removing `save_project_transactional` call site. Dead code remains in `storage.py` (other tests reference it).
+  - `owner_user_id is None` (legacy unowned project) allows any authenticated user to save — consistent with `_handle_share_project` behavior.
+  - Transfer membership check uses direct `admin_transaction()` SQL (same pattern as `resolve_workspace_membership`), checking specific workspace_id/user_id pair.
+  - Desktop mode: both handlers bypass ownership checks (IS_DESKTOP branch unchanged in save; transfer returns 404).
+- Deviations from spec: none. All 6 acceptance criteria addressed.
+- Concerns:
+  - TOCTOU window in the new/existing detection: `get_project` → None → INSERT. Mitigated by DB upsert semantics (owner set only on INSERT). No regression vs. prior code.
+  - `_clientRevision` is now ignored in server mode. Frontend conflict detection UI still works via the `/api/projects/revisions` stale poll; the 409 response path is gone. Frontend `_clientRevision` append code can be cleaned up as a follow-up.
+
 ### 2026-06-03 — issue-020-private-default-rls
 - Files modified:
   - `supabase/migrations/20260603000002_private_default_rls.sql` (new) — changes `projects.visibility` DEFAULT to `'private'`; replaces `projects_update` policy to `owner_user_id = auth.uid()` only.
