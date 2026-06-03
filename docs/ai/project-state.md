@@ -1,12 +1,12 @@
 # Project State
 
-_Last updated: 2026-06-03 (volunteer-roles storage → workspace_settings JSONB)_
+_Last updated: 2026-06-03 (issue 020: private-by-default + owner-only update RLS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session. Volunteer roles storage has been moved to `workspace_settings` JSONB (verification PASS: 100 pytest, 71 vitest, vite build).
+Issues 001–020 are implemented and automated-verified on this branch. Issue 016 (QA matrix) is DONE — automated items pass, manual items documented in `docs/ai/qa-matrix-m5.md`. Issue 020 (private-by-default + tighten RLS write policy) is DONE — migration applied to staging, 25/25 RLS isolation tests pass.
 
 ## Recently completed (this branch)
 
@@ -16,6 +16,7 @@ All code issues (001–019) are implemented and automated-verified on this branc
 - **013** — Supabase Auth in Electron (deep-link OAuth + magic link).
 - **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
 - **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
+- **020** — Private-by-default + owner-only update RLS. `supabase/migrations/20260603000002_private_default_rls.sql` (new). `projects.visibility` DEFAULT changed to `'private'`; `projects_update` policy tightened to owner-only. Applied to staging. Verification PASS: 25/25 RLS tests, 100 pytest, 71 vitest, vite build.
 - **volunteer-roles-storage** — `_handle_get/post_volunteer_roles` now reads/writes `workspace_settings.settings['volunteerRoles']` via `_get_settings()/_save_settings()`. `VOLUNTEER_ROLES_FILE`, `VOLUNTEER_ROLES_EXAMPLE_FILE` constants removed; `_initialize_local_file` call removed from startup. `scripts/migrate_to_supabase.py` updated to migrate `volunteer-roles.json` → `volunteerRoles` key in the settings blob. Verification PASS: 100 pytest, 71 vitest, vite build.
 
 ## In progress
