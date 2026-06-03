@@ -256,11 +256,15 @@ DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service'
 # Desktop mode disables multi-user collaboration features.
 # Server mode disables desktop-only packaging/update features.
 APP_MODE = os.environ.get("APP_MODE", "server").strip().lower()
-if APP_MODE not in ("server", "desktop"):
+if APP_MODE not in ("server", "desktop", "electron"):
     print(f"  [config] Unknown APP_MODE '{APP_MODE}', defaulting to 'server'")
     APP_MODE = "server"
 
-IS_DESKTOP = APP_MODE == "desktop"
+IS_DESKTOP = APP_MODE in ("desktop", "electron")
+# Electron mode: server runs as sidecar inside Electron. PDF generation is
+# handled by webContents.printToPDF() in the Electron main process via IPC
+# (see electron/main.js), so headless Chrome is not required.
+IS_ELECTRON = APP_MODE == "electron"
 
 
 def _validate_server_config():
@@ -520,7 +524,11 @@ def _find_chrome():
         'environment variable to your Chrome/Chromium binary path.'
     )
 
-CHROME_PATH = _find_chrome()
+# In electron mode the sidecar delegates PDF generation to Electron's
+# webContents.printToPDF(), so Chrome is not required at startup.
+# For all other modes, resolve Chrome eagerly so a missing binary fails
+# fast rather than at the first PDF request.
+CHROME_PATH = None if os.environ.get("APP_MODE", "").strip().lower() == "electron" else _find_chrome()
 
 _lock = threading.Lock()
 
@@ -2558,6 +2566,24 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             filename += ".pdf"
         page_w = float(body.get("pageWidth",  5.5))
         page_h = float(body.get("pageHeight", 8.5))
+
+        # ── Electron mode ──────────────────────────────────────────────────────
+        # In APP_MODE=electron the sidecar server does not have access to a
+        # headless Chrome binary. PDF generation is handled by the Electron main
+        # process via the IPC channel `pdf:generate` (see electron/main.js).
+        # The renderer calls window.electronAPI.generatePdf() directly, so this
+        # HTTP route should never be reached from the Electron renderer.
+        #
+        # TODO (issue 013): if a non-renderer caller (e.g. a service script) ever
+        # needs to hit /api/pdf in electron mode, wire a live IPC call here using
+        # a local socket or named pipe so the main process can fulfil the request.
+        if IS_ELECTRON:
+            self._send_json(
+                {"error": "PDF generation in Electron mode is handled by the main process via IPC (pdf:generate). Call window.electronAPI.generatePdf() from the renderer instead."},
+                501,
+            )
+            return
+        # ── Headless Chrome path (server / desktop modes) ──────────────────────
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
