@@ -33,6 +33,33 @@ Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small),
 
 ## Recent coding-agent runs
 
+### 2026-06-03 — issue-023-presence-badge-readonly (PASS)
+- Files modified:
+  - `src/js/modules/projects-core.js` — removed `deriveProjectSaveSuccess` (no longer needed); updated `buildProjectSaveRequest` to drop `_clientRevision`; updated `deriveProjectSaveFailure` to handle 403 → "forbidden" type; restored `deriveStartupRestore` export (was accidentally dropped).
+  - `src/js/main.js` — updated import block: removed `deriveProjectSaveSuccess`; added `deriveStartupRestore`.
+  - `src/js/state.js` — replaced `_loadedRevision`/`_staleCheckTimer` with `_presenceTimer`/`_isReadOnly`.
+  - `src/js/projects.js` — removed: `_updateFileDirtyDot`, `buildConflictSummary`, `showConflictDialog`, `_closeConflictDialog`, `buildSyncDiffMessage`, `startStaleCheck`, `_loadedRevision` references. Added: `enterReadOnlyMode`, `exitReadOnlyMode`, `_duplicateProjectForCurrentUser`, `_startPresenceHeartbeat`, `_stopPresenceHeartbeat`, `_showPresenceBadge`, `_hidePresenceBadge`. Updated: `saveProjectToServer` (403 → toast, no conflict branch), `autosaveProjectState` (skip when `_isReadOnly`), `loadProjectById` (owner check → read-only, starts presence), `restoreOnStartup` (uses `deriveStartupRestoreCore`), `saveCurrentProject` (remove `_loadedRevision = null`), `clearEditorForNewProject` (stop presence + exit read-only), `initProjects` (pagehide/beforeunload listeners for presence DELETE).
+  - `index.html` — removed `stale-banner` and `conflict-banner` divs; added `presence-badge` div inside File dropdown; added `readonly-banner` div between editor toolbar and main editor.
+  - `tests/projects-core.spec.js` — removed revision/conflict tests; added 403-forbidden toast test and _clientRevision-absence assertion.
+- Checks run:
+  - `node --check src/js/projects.js` → PASS
+  - `node --check src/js/state.js` → PASS
+  - `node --check src/js/main.js` → PASS
+  - `python -c "import server"` → PASS
+  - `npm test` (worktree) → 30/30 PASS
+  - `npm run build` (worktree) → clean build
+  - `ai-workflow checks --level issue` (main repo) → PASS (100 pytest, 71 vitest)
+- Decisions made:
+  - `presence-badge` placed inside the File dropdown panel (same row as project-meta) — most visible without taking permanent toolbar space.
+  - `readonly-banner` placed as a narrow strip between editor-toolbar and the main editor, always visible when non-owner is viewing.
+  - `_stopPresenceHeartbeat` sends `DELETE /api/presence` best-effort (no await, errors swallowed) — consistent with "best-effort" spec requirement.
+  - `restoreOnStartup` in the worktree had a hand-rolled startup flow (not using `deriveStartupRestoreCore`); updated to match the pattern already established in the shared checkout.
+- Deviations from spec: none. All acceptance criteria addressed.
+- Concerns:
+  - The `deriveStartupRestore` function was inadvertently dropped from `projects-core.js` during the edit and caught by the vite build check. Restored before commit.
+  - Read-only mode only checks `project.owner_user_id` from the loaded project object. If the server sends the project without that field (legacy projects), read-only mode won't activate (safe default — non-owners can't save anyway since server enforces 403).
+  - Manual smoke needed: open a workspace project as a non-owner and verify: readonly-banner appears, editing is visually inhibited, Duplicate creates a private copy, presence badge shows when owner is active.
+
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:
   - `server.py` — added `_project_revision_summary(projects)` helper and `_handle_get_project_revisions` handler + exact-match GET route `/api/projects/revisions` (metadata-only: id/revision/updatedAt/updatedBy, omits heavy base64-image `state`).
