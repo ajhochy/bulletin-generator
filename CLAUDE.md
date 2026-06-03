@@ -77,19 +77,12 @@ Load → GET /api/projects → applyProjectState(state)  [projects.js]
      → triggers renderPreview()
 ```
 
-### Conflict Detection (Server Mode)
+### Ownership model (Server Mode)
 
-```
-Both editors load project at revision=5
-Editor A saves → server bumps to revision=6
-Editor B saves with _clientRevision=5 → server returns 409:
-  { serverRevision: 6, serverUpdatedAt: ..., serverUpdatedBy: "Editor A" }
-UI shows conflict banner with "Reload latest" link
-```
-
-- `_loadedRevision` (projects.js) tracks the last known server revision
-- `apiFetch()` in `api.js` attaches `e.status = res.status` to thrown errors so callers can check `err.status === 409`
-- Conflict banner uses `innerHTML = ''` before rebuild — no duplicate links
+- Only the project owner can save (server enforces; non-owner POST → 403).
+- Non-owners viewing a workspace project enter read-only mode: autosave is suppressed, a "Viewing · X's bulletin" banner is shown with a Duplicate button.
+- `apiFetch()` in `api.js` attaches `e.status = res.status` to thrown errors; save handler checks `err.status === 403` → toast.
+- Presence heartbeat: POST `/api/presence/heartbeat` every 30s while a project is open; a "● User X is editing" badge appears if another user is active. All presence calls are best-effort (errors swallowed).
 
 ### Autosave + Preview Refresh
 

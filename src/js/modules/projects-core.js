@@ -20,41 +20,19 @@ export function cloneItemsData(list) {
   });
 }
 
-export function buildProjectSaveRequest(project, { isServerMode, editorDisplayName, loadedRevision }) {
+export function buildProjectSaveRequest(project, { isServerMode, editorDisplayName }) {
   const requestProject = { ...project };
   if (isServerMode && editorDisplayName) {
     requestProject.updatedBy = editorDisplayName;
   }
-  if (isServerMode) {
-    requestProject._clientRevision = loadedRevision;
-  }
   return requestProject;
 }
 
-export function deriveProjectSaveSuccess({ result, isServerMode, currentLoadedRevision, storedProject }) {
-  let loadedRevision = currentLoadedRevision;
-  let storedRevision = storedProject && typeof storedProject.revision === 'number'
-    ? storedProject.revision
-    : null;
-
-  if (isServerMode && result && typeof result.revision === 'number') {
-    loadedRevision = result.revision;
-    storedRevision = result.revision;
-  }
-
-  return {
-    loadedRevision,
-    storedRevision,
-    hideStaleBanner: true,
-    hideConflictBanner: true,
-  };
-}
-
 export function deriveProjectSaveFailure({ errorStatus, isDesktopMode }) {
-  if (errorStatus === 409) {
+  if (errorStatus === 403) {
     return {
-      type: 'conflict',
-      message: 'This bulletin was updated by someone else.',
+      type: 'forbidden',
+      message: 'Only the project owner can edit this bulletin.',
     };
   }
 
@@ -75,25 +53,18 @@ export function deriveProjectSaveFailure({ errorStatus, isDesktopMode }) {
  *     statusMessage: string }              — id remembered but project missing / inaccessible
  *   { action: 'load-newest', project }    — desktop only: no remembered, fall back to newest
  *
- * The caller decides how to present the statusMessage and whether to clear
- * the stored project ID from localStorage.
- *
  * Rules:
  * - Server mode: NEVER auto-loads a workspace project when no id is remembered.
- *   Doing so would silently open another user's work in a fresh browser session.
- * - Desktop mode: preserves the legacy behavior of loading the newest project as
- *   a convenience fallback (single-user environment, no privacy concern).
+ * - Desktop mode: preserves the legacy behavior of loading the newest project.
  */
 export function deriveStartupRestore({ rememberedId, projects, isServerMode }) {
   const projectList = Array.isArray(projects) ? projects : [];
 
-  // Case 1: a project was remembered for this browser session.
   if (rememberedId) {
     const found = projectList.find(p => p.id === rememberedId) || null;
     if (found) {
       return { action: 'load', project: found };
     }
-    // Remembered project is gone or inaccessible (deleted, 403/404, or wrong user).
     return {
       action: 'blank',
       reason: 'not-found',
@@ -101,14 +72,10 @@ export function deriveStartupRestore({ rememberedId, projects, isServerMode }) {
     };
   }
 
-  // Case 2: no remembered project.
   if (isServerMode) {
-    // Server mode: start blank. Do NOT auto-load the newest workspace project —
-    // it may belong to a different user and would surprise them with unexpected content.
     return { action: 'blank', reason: 'none-remembered' };
   }
 
-  // Desktop mode: single-user environment, load the newest project as a convenience.
   if (projectList.length > 0) {
     const newest = projectList
       .slice()

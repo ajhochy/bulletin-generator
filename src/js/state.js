@@ -75,11 +75,11 @@ let linkedPreviewTimer = null;
 let suppressLinkedFocusSync = false;
 
 // ─── Collaboration state (server mode) ────────────────────────────────────────
-let _loadedRevision = null;   // revision of the project as loaded from server
 let _editorDisplayName = '';  // local editor identity
-let _staleCheckTimer = null;
 let _saveInFlight = false;    // true while a save request is awaiting response
 let _pendingSaveProject = null; // latest full project object deferred during an in-flight save
+let _presenceTimer = null;    // interval id for 30s heartbeat
+let _isReadOnly = false;      // true when a non-owner opens a workspace project
 
 // Note: both server mode and desktop mode persist projects through the local
 // Python server API (data/projects.json). localStorage is only used to track

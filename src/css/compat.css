@@ -272,8 +272,8 @@ body {
 }
 /* Hide preview text when panel is expanded */
 .panel-section:not(.collapsed) .section-preview { display: none; }
-/* Hide all panel content when collapsed, except the label and any banners */
-.panel-section.collapsed > :not(.section-label):not(#stale-banner):not(#conflict-banner) { display: none !important; }
+/* Hide all panel content when collapsed, except the label */
+.panel-section.collapsed > :not(.section-label) { display: none !important; }
 
 /* ─── Order of Worship Item Cards ────────────────────────────────────────────
    Item card styles from editor.css (deleted). Tailwind added .btn/.btn-ghost
