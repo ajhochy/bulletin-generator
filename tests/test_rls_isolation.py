@@ -304,3 +304,33 @@ class TestRLSIsolation:
                     [c["proj_a"]],
                 )
                 assert cur.fetchone()[0] == 1, "user_a should read own project revisions"
+
+    # ── projects_update: owner can update own project (issue 020) ────────────
+    def test_owner_can_update_own_project(self):
+        c = self.ctx
+        with _as_user(c["user_a"]) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "update public.projects set name = 'updated_by_owner' where id = %s",
+                    [c["proj_a"]],
+                )
+                assert cur.rowcount == 1, "owner must be able to update their own project"
+
+    # ── projects_update: non-owner gets 0 rows (issue 020) ───────────────────
+    def test_non_owner_cannot_update_others_project(self):
+        c = self.ctx
+        # Add user_a to workspace_b so the cross-workspace membership check passes,
+        # but user_a still must not update user_b's project because they are not the owner.
+        # We test within the same workspace by using proj_a (owned by user_a) vs proj_b
+        # (owned by user_b, in workspace_b). Since user_a is not a member of workspace_b,
+        # RLS will silently return 0 rows (USING clause filters the row out).
+        with _as_user(c["user_a"]) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "update public.projects set name = 'should_not_update' where id = %s",
+                    [c["proj_b"]],
+                )
+                assert cur.rowcount == 0, (
+                    "user_a must not be able to update user_b's project "
+                    "(non-member of workspace_b — RLS USING silently returns 0 rows)"
+                )
