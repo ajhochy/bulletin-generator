@@ -24,8 +24,8 @@ import {
 import {
   cloneItemsData as cloneItemsDataCore,
   buildProjectSaveRequest as buildProjectSaveRequestCore,
-  deriveProjectSaveSuccess as deriveProjectSaveSuccessCore,
   deriveProjectSaveFailure as deriveProjectSaveFailureCore,
+  deriveStartupRestore as deriveStartupRestoreCore,
 } from './modules/projects-core.js';
 import {
   mapPcoItemType as mapPcoItemTypeCore,
@@ -52,8 +52,8 @@ Object.assign(globalThis, {
   deriveCalendarFetchErrorStateCore,
   cloneItemsDataCore,
   buildProjectSaveRequestCore,
-  deriveProjectSaveSuccessCore,
   deriveProjectSaveFailureCore,
+  deriveStartupRestoreCore,
   mapPcoItemTypeCore,
 });
 

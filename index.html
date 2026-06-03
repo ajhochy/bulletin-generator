@@ -59,8 +59,7 @@
         <button class="btn btn-xs btn-error" id="project-delete-btn" type="button">Delete</button>
       </div>
       <div class="project-meta text-xs text-base-content/50 mt-1" id="project-meta">Unsaved draft autosaves in this browser.</div>
-      <div id="stale-banner" style="display:none;color:#7a5c45;" class="text-xs mt-1"></div>
-      <div id="conflict-banner" style="display:none;" class="text-xs mt-1 text-error"></div>
+      <div id="presence-badge" style="display:none;" class="text-xs mt-1 text-info"></div>
       <button class="btn btn-ghost btn-xs files-browse-btn mt-1" id="project-browse-btn" type="button">Browse &amp; manage projects →</button>
       <select id="project-select" style="display:none;">
         <option value="__draft__">Unsaved Draft</option>
@@ -187,6 +186,8 @@
 
   <div class="flex-1"></div>
 </div>
+<!-- Read-only mode banner (shown when a non-owner views a workspace project) -->
+<div id="readonly-banner" style="display:none;" class="flex items-center gap-2 px-4 py-1.5 text-xs bg-warning/10 border-b border-warning/30 text-base-content/70 flex-shrink-0"></div>
 <!-- ════════════════════════════════════════════════════════════════════════ -->
 
 <main>
