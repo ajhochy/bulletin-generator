@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'electron-supabase-beta-v*'
 
 jobs:
   # ── Job 1: macOS — build Python sidecar, sign, notarize, package DMG ─────────
@@ -59,15 +60,22 @@ jobs:
           PYEOF
 
       # ── Build Python sidecar with PyInstaller ─────────────────────────────────
-      # The spec bundles launcher.py; the resulting one-file executable is the
-      # sidecar that electron-builder copies into the .app via extraResources.
-      # Output: dist/BulletinGenerator (single executable, no .app wrapper here —
-      # electron-builder creates the final .app around it).
+      # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
+      # not the deprecated launcher.py from bulletin-generator.spec.
       - name: Build Python sidecar with PyInstaller
         env:
           APP_VERSION: ${{ github.ref_name }}
         run: |
-          pyinstaller bulletin-generator.spec --onefile --name server --distpath dist
+          pyinstaller --onefile --name server --distpath dist \
+            --add-data "index.html:." \
+            --add-data "src:src" \
+            --add-data "data/projects.example.json:data" \
+            --add-data "data/announcements.example.json:data" \
+            --add-data "data/settings.example.json:data" \
+            --add-data "desktop_config.py:." \
+            --hidden-import encodings.idna \
+            --hidden-import certifi \
+            server.py
           ls -lh dist/server
 
       # ── Import signing certificate ────────────────────────────────────────────
@@ -161,13 +169,22 @@ jobs:
           print("desktop_config.py written.")
 
       # ── Build Python sidecar with PyInstaller ─────────────────────────────────
-      # On Windows `rumps` is macOS-only and must be excluded from the spec.
-      # We use --onefile + --name server so electron-builder finds dist/server.exe.
+      # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
+      # not the deprecated macOS-only launcher.py from bulletin-generator.spec.
       - name: Build Python sidecar with PyInstaller
         env:
           APP_VERSION: ${{ github.ref_name }}
         run: |
-          pyinstaller bulletin-generator.spec --onefile --name server --distpath dist
+          pyinstaller --onefile --name server --distpath dist `
+            --add-data "index.html;." `
+            --add-data "src;src" `
+            --add-data "data/projects.example.json;data" `
+            --add-data "data/announcements.example.json;data" `
+            --add-data "data/settings.example.json;data" `
+            --add-data "desktop_config.py;." `
+            --hidden-import encodings.idna `
+            --hidden-import certifi `
+            server.py
           dir dist
 
       # ── Build + publish Windows NSIS installer via electron-builder ───────────

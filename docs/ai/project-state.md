@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03 (Electron icon options added)_
+_Last updated: 2026-06-03 (Electron beta release workflow trigger prep)_
 
 ## Current focus
 
@@ -10,6 +10,7 @@ Issues 001–023 are implemented and automated-verified on this branch. Issue 02
 
 ## Recently completed
 
+- **Electron beta release workflow prep** — `release-electron.yml` now accepts `electron-supabase-beta-v*` tags, builds the Electron sidecar from `server.py` directly instead of the deprecated `launcher.py` spec, and handles Windows `server.exe` packaging. Added `scripts/watch_github_release_run.py` to poll a release run by tag and notify on pass/fail.
 - **Electron icon options** — Added three app icon candidates under `assets/app-icons/electron/` (`bulletin-blueprint`, `bulletin-warm-print`, `bulletin-calendar-slate`) with SVG sources, 1024 PNG previews, and macOS ICNS outputs. `bulletin-blueprint` is wired as the Electron macOS/Windows package icon in `package.json`; a Windows ICO was generated for that default.
 - **001–021** — See earlier run entries (Supabase schema, RLS, auth, owner-only writes, transfer endpoint, volunteer-roles consolidation).
 - **022** — Presence heartbeat API on server (`POST /api/presence/heartbeat`, `GET /api/presence`, `DELETE /api/presence`).

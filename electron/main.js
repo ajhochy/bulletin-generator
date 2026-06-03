@@ -54,7 +54,7 @@ const READY_POLL_INTERVAL_MS = 200;
  */
 function resolveSidecar() {
   // Packaged: resourcesPath points to <app>.app/Contents/Resources/
-  const packagedBin = path.join(process.resourcesPath, 'server');
+  const packagedBin = path.join(process.resourcesPath, process.platform === 'win32' ? 'server.exe' : 'server');
   if (process.resourcesPath && fs.existsSync(packagedBin)) {
     return { cmd: packagedBin, args: [] };
   }

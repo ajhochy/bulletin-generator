@@ -29,8 +29,12 @@
     ],
     "extraResources": [
       {
-        "from": "dist/server",
-        "to": "server"
+        "from": "dist",
+        "to": ".",
+        "filter": [
+          "server",
+          "server.exe"
+        ]
       }
     ],
     "publish": {
