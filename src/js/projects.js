@@ -701,9 +701,6 @@ function renderFilesList() {
   const countEl = document.getElementById('files-count');
   if (!list) return;
 
-  // Track per-project owner IDs so we can detect when a project is newly
-  // handed off to the current user.  Read the stored map BEFORE overwriting it.
-  const _prevOwners = (() => { try { return JSON.parse(localStorage.getItem('_projectOwners') || '{}'); } catch(_){return {};} })();
 
   const sorted = projects.slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
 
@@ -746,12 +743,14 @@ function renderFilesList() {
     const currentUserId = currentUser?.id || currentUser?.user_id || null;
     const isOwner = !isServerMode() || !project.owner_user_id ||
                     (currentUserId && String(project.owner_user_id) === String(currentUserId));
-    // "New to you" badge: the project's owner changed to the current user
-    // since the last time we rendered this list.
-    const prevOwner = _prevOwners[project.id];
-    const isNewToYou = isOwner
-                       && prevOwner !== undefined          // we've seen this project before
-                       && prevOwner !== String(currentUserId); // owner just became us
+    // "New to you" badge: I own it, but someone else last modified it
+    // (set by the transfer), and it was within the last 10 minutes.
+    const updatedMs = project.updatedAt ? new Date(project.updatedAt).getTime() : 0;
+    const updatedByMe = !project.updated_by_user_id
+                        || String(project.updated_by_user_id) === String(currentUserId);
+    const isNewToYou = isOwner && currentUserId
+                       && !updatedByMe
+                       && (Date.now() - updatedMs) < 600_000;
     const isSel = selectedProjectIds.has(project.id);
     const card = document.createElement('div');
     card.className = 'file-card flex items-center gap-3 border border-base-300 rounded-lg mb-2 px-3 py-2 bg-base-100 hover:bg-base-200 cursor-pointer'
@@ -792,10 +791,6 @@ function renderFilesList() {
     list.appendChild(card);
   });
 
-  // Persist current owner map so the next render can detect changes.
-  const ownerSnapshot = {};
-  sorted.forEach(p => { ownerSnapshot[p.id] = String(p.owner_user_id || ''); });
-  try { localStorage.setItem('_projectOwners', JSON.stringify(ownerSnapshot)); } catch(_) {}
 }
 
 function downloadProjectJson(id) {

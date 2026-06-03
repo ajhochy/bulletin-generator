@@ -541,20 +541,16 @@ class PostgresStorageBackend(StorageBackend):
             # Exclude `state` from the list query — state blobs can be many MB
             # each and are not needed for the file picker.  Full state is
             # fetched on-demand by get_project() when a project is opened.
+            # Only JOIN the owner profile — created_by/updated_by are not
+            # shown in the list and each extra JOIN costs ~100ms over the WAN.
             cursor = conn.execute(
                 f"""
                 SELECT p.id, p.name, p.owner_user_id, p.visibility,
                        p.revision, p.created_at, p.updated_at,
-                       p.created_by_user_id, p.updated_by_user_id,
-                       pc.email AS created_by_email,
-                       pu.email AS updated_by_email,
-                       pc.display_name AS created_by_name,
-                       pu.display_name AS updated_by_name,
+                       p.updated_by_user_id,
                        po.display_name AS owner_display_name,
                        po.email AS owner_email
                 FROM projects p
-                LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
-                LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
                 LEFT JOIN public.profiles po ON po.id = p.owner_user_id
                 WHERE (
                     visibility = 'workspace'
@@ -923,7 +919,8 @@ class PostgresStorageBackend(StorageBackend):
                 f"""
                 UPDATE projects
                 SET owner_user_id = %(to)s::uuid,
-                    updated_at = NOW()
+                    updated_at = NOW(),
+                    updated_by_user_id = %(from)s::uuid
                 WHERE id = %(id)s
                   AND owner_user_id = %(from)s::uuid
                   {ws_clause}
@@ -1666,6 +1663,8 @@ def _pg_row_to_project(row: dict) -> dict:
     # These come from the profiles JOIN; may be None when JOIN is not performed.
     state["created_by_email"] = row.get("created_by_email") or None
     state["updated_by_email"] = row.get("updated_by_email") or None
+    upd_uid = row.get("updated_by_user_id")
+    state["updated_by_user_id"] = str(upd_uid) if upd_uid else None
 
     # ── Legacy camelCase keys for frontend backward compatibility ─────────────
     if row.get("created_at"):
