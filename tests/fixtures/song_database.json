@@ -1,0 +1,18 @@
+[
+  {
+    "title": "Amazing Grace",
+    "author": "Newton",
+    "lyrics": "Amazing grace...",
+    "copyright": "Public Domain",
+    "source": "manual"
+  },
+  {
+    "title": "Holy Holy Holy",
+    "author": "Heber",
+    "dateAdded": "2024-01-15"
+  },
+  {
+    "title": "Duplicate Test",
+    "author": "Author A"
+  }
+]

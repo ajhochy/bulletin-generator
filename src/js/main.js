@@ -26,6 +26,7 @@ import {
   buildProjectSaveRequest as buildProjectSaveRequestCore,
   deriveProjectSaveSuccess as deriveProjectSaveSuccessCore,
   deriveProjectSaveFailure as deriveProjectSaveFailureCore,
+  deriveStartupRestore as deriveStartupRestoreCore,
 } from './modules/projects-core.js';
 import {
   mapPcoItemType as mapPcoItemTypeCore,
@@ -54,6 +55,7 @@ Object.assign(globalThis, {
   buildProjectSaveRequestCore,
   deriveProjectSaveSuccessCore,
   deriveProjectSaveFailureCore,
+  deriveStartupRestoreCore,
   mapPcoItemTypeCore,
 });
 
@@ -76,6 +78,9 @@ export const LEGACY_SCRIPT_PATHS = [
   '/src/js/pco.js',
   '/src/js/update.js',
   '/src/js/templates.js',
+  '/src/js/supabase-browser.js',
+  '/src/js/supabase-config.js',
+  '/src/js/auth-ui.js',
   '/src/js/app.js',
 ];
 

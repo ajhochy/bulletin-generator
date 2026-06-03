@@ -29,6 +29,10 @@ class StubHandler:
     def _send_json(self, body, status=200):
         self._responses.append((body, status))
 
+    def _require_auth(self):
+        # Simulate an authenticated user so auth-gated handlers proceed.
+        return {"id": "test-user", "email": "tester@example.com"}
+
     # Bind the real methods from server.Handler
     _apply_update_server = server.Handler._apply_update_server
     _handle_update_status = server.Handler._handle_update_status

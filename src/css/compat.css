@@ -1128,3 +1128,21 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ── Auth: user-info chip in navbar ──────────────────────────────────────── */
+#user-info .user-info-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+#user-info .user-info-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}

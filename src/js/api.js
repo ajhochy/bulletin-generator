@@ -2,6 +2,10 @@
 // ─── Server API ────────────────────────────────────────────────────────────
 async function apiFetch(path, method = 'GET', body = null) {
   const opts = { method, headers: {} };
+  const session = typeof getSession === 'function' ? getSession() : null;
+  if (session?.access_token) {
+    opts.headers.Authorization = `Bearer ${session.access_token}`;
+  }
   if (body !== null) {
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -15,6 +19,7 @@ async function apiFetch(path, method = 'GET', body = null) {
     e.status = res.status;
     e.code = errData?.code || null;
     e.detail = errData?.detail || null;
+    e.responseBody = errData || null;
     throw e;
   }
   return res.json();
