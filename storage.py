@@ -549,10 +549,13 @@ class PostgresStorageBackend(StorageBackend):
                        pc.email AS created_by_email,
                        pu.email AS updated_by_email,
                        pc.display_name AS created_by_name,
-                       pu.display_name AS updated_by_name
+                       pu.display_name AS updated_by_name,
+                       po.display_name AS owner_display_name,
+                       po.email AS owner_email
                 FROM projects p
                 LEFT JOIN public.profiles pc ON pc.id = p.created_by_user_id
                 LEFT JOIN public.profiles pu ON pu.id = p.updated_by_user_id
+                LEFT JOIN public.profiles po ON po.id = p.owner_user_id
                 WHERE (
                     visibility = 'workspace'
                     OR owner_user_id = %(user_id)s::uuid
@@ -1641,8 +1644,9 @@ def _pg_row_to_project(row: dict) -> dict:
     # ── Ownership & visibility ────────────────────────────────────────────────
     owner_uid = row.get("owner_user_id")
     state["owner_user_id"] = str(owner_uid) if owner_uid is not None else None
-    # owner_email: prefer profiles.email for created_by, fall back to None.
-    state["owner_email"] = row.get("created_by_email") or None
+    # owner_display_name / owner_email from profiles JOIN on owner_user_id.
+    state["owner_display_name"] = row.get("owner_display_name") or None
+    state["owner_email"] = row.get("owner_email") or row.get("created_by_email") or None
     state["visibility"] = row.get("visibility") or "workspace"
     # imported_from_json is not in the new schema; preserve if present in the row
     # (backward compat with old schema rows / test fixtures) or state blob.

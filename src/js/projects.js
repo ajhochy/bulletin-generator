@@ -708,11 +708,14 @@ function renderFilesList() {
     const isActive = project.id === activeProjectId;
     const date     = state.svcDate  || '';
     const title    = state.svcTitle || '';
-    const count    = Array.isArray(state.items) ? state.items.length : 0;
+    // Owner display: prefer display_name, fall back to first part of email.
+    const ownerRaw = project.owner_display_name || project.owner_email || '';
+    const ownerLabel = ownerRaw.includes('@') ? ownerRaw.split('@')[0] : ownerRaw;
+    const updatedLabel = `updated ${shortTimestamp(project.updatedAt) || '—'}`;
     const metaParts = [
       date && title ? `${date} · ${title}` : (date || title || null),
-      `${count} item${count === 1 ? '' : 's'}`,
-      `updated ${shortTimestamp(project.updatedAt) || '—'}`,
+      ownerLabel ? ownerLabel : null,
+      updatedLabel,
     ].filter(Boolean);
 
     const isSel = selectedProjectIds.has(project.id);
