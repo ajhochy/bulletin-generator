@@ -1,0 +1,131 @@
+{
+  "run_id": "2026-06-03-issue-007",
+  "issue": 263,
+  "local_issue": "007",
+  "date": "2026-06-03",
+  "smoke_result": "pass",
+  "verification_claimed": "FAIL",
+  "divergence": false,
+  "criteria_results": [
+    {
+      "criterion_id": "issue-007-c1",
+      "text": "@supabase/supabase-js is added and public Supabase URL/anon key are injected without hardcoding secrets.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "Verified by package changes, server-served config script, and prior automated checks."
+    },
+    {
+      "criterion_id": "issue-007-c2",
+      "text": "auth-ui exports initAuth, signInWithGoogle, signInWithMagicLink, signOut, and getSession.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "Covered by auth-ui tests and served-file inspection."
+    },
+    {
+      "criterion_id": "issue-007-c3",
+      "text": "apiFetch attaches Authorization: Bearer <access_token> when a Supabase session exists.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "Manual Google OAuth and magic-link smoke passed, which exercises authenticated app data loading through apiFetch."
+    },
+    {
+      "criterion_id": "issue-007-c4",
+      "text": "Login screen appears when no session exists and app UI appears after authentication.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "Screenshot /tmp/bulletin-generator-verification/issue-007-login-after-005.png shows unauthenticated login gate; user reported Google OAuth and magic-link login pass."
+    },
+    {
+      "criterion_id": "issue-007-c5",
+      "text": "signOut clears the session and returns to login screen.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "User reported sign-out pass."
+    },
+    {
+      "criterion_id": "issue-007-c6",
+      "text": "Issue-required syntax, build, and vitest checks pass.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "2026-06-03 rerun: static JS/Python import checks passed; ai-workflow checks --level issue passed; ai-workflow checks --level pr passed."
+    },
+    {
+      "criterion_id": "issue-007-c7",
+      "text": "Manual smoke: Google OAuth completes and app loads.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "User reported: Google OAuth pass."
+    },
+    {
+      "criterion_id": "issue-007-c8",
+      "text": "Manual smoke: magic link completes and app loads.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "User reported: magic-link pass."
+    },
+    {
+      "criterion_id": "issue-007-c9",
+      "text": "Manual smoke: unauthenticated /api/projects returns 401; authenticated /api/projects returns 200.",
+      "contract_status": "absent",
+      "smoke_status": "pass",
+      "category": "none",
+      "notes": "Unauthenticated 401 was verified by curl during verification. Authenticated data loading is inferred from the reported successful OAuth and magic-link app-load smoke."
+    }
+  ],
+  "process_issues": [],
+  "workflow_adherence": {
+    "overall_score": "partial",
+    "expected_chain": [
+      "workflow-orchestrator",
+      "acceptance-contract",
+      "coding-agent",
+      "verification-gate",
+      "project-state-updater",
+      "failure-postmortem"
+    ],
+    "observed_chain": [
+      "workflow-orchestrator",
+      "coding-agent",
+      "verification-gate",
+      "failure-triage",
+      "project-state-updater",
+      "failure-postmortem"
+    ],
+    "skipped_skills": [
+      "acceptance-contract"
+    ],
+    "issues": [
+      {
+        "workflow_category": "W1",
+        "affected_skill": "workflow-orchestrator",
+        "description": "Issue 007 had no docs/ai/contracts/issue-007.json contract file even though auth issues in this workflow warrant acceptance-contract before coding-agent.",
+        "detected_by": "docs/ai/contracts contains no issue-007 contract; issue body acceptance criteria were used as the smoke checklist source."
+      }
+    ]
+  },
+  "implementation_files": [
+    ".env.example",
+    "index.html",
+    "package-lock.json",
+    "package.json",
+    "server.py",
+    "src/js/api.js",
+    "src/js/auth-ui.js",
+    "src/js/main.js",
+    "src/js/supabase-browser.js",
+    "src/js/supabase-config.js",
+    "tests/auth-ui.spec.js",
+    "tests/main.spec.js"
+  ],
+  "failure_output": "",
+  "overall_category": "none",
+  "suggested_follow_up": "Add acceptance-contract coverage for future auth issues before coding-agent so manual smoke criteria are represented by durable contract tests."
+}

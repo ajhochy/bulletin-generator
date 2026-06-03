@@ -12,6 +12,7 @@ Run branch: `feat/supabase-multitenant-electron` (stacking all issues; one PR fo
 - **004 (#260) — DONE.** `storage.py` PostgresStorageBackend rewritten for the multi-tenant schema (commit `04cffe0`, coding-agent + verification-gate). `__init__(workspace_id=None, user_claims=None)` **both optional → fully backward-compatible** (no-arg `get_storage()` + server.py routes + 87 tests unchanged). Methods use `db.transaction(claims)`, add `workspace_id` scoping. Schema reconciliation: `projects.id` is **text** (dropped `::uuid` casts), `created_by_user_id`/`updated_by_user_id` replace old email columns; **attribution preserved via LEFT JOIN to `public.profiles` aliased to legacy keys** (`updatedBy`/`createdBy`, 409 conflict payload, revision `saved_by_*`). Removed dead `_pg_upsert_org_setting`. `tests/test_storage_multi_tenant.py` (12 tests). **262 pass w/o DB; 219 pass on staging** (full DB suite incl. the previously-red `test_migrations` integration tests, now green). **Critical path 001→004 COMPLETE.**
 - **005 (#261) — DONE / MANUALLY VALIDATED.** `MANUAL-STEPS.md` documents staging Supabase Auth provider setup: URL configuration, Google OAuth callback URL, email magic-link validation, custom SMTP fields and built-in-mailer limits, leaked-password protection, and manual v1 workspace membership seeding. User reported issue 005 validation complete on 2026-06-03: Google OAuth provider, email magic-link provider/session issuance, SMTP/staging-mailer decision, leaked-password protection status, and seeded membership prerequisites are no longer blocking issue 007. No `server.py`/`auth.py` changes were made for issue 005.
 - **006 (#262) — DONE.** Commit `bfd0f44` replaces collab-v1 cookie auth with server-side Supabase JWT verification, resolves workspace membership through `db.admin_transaction()`, scopes protected storage access with `get_storage(workspace_id, user_claims)`, returns `/api/me` identity, disables legacy `/auth/google/*`, and auth-gates `/api/projects/revisions` through scoped storage. Verification on `bfd0f44`: imports OK; stale-reference grep clean; auth/project regression suite 198 passed; `scripts/run_ai_workflow.py checks --level issue` PASS; `checks --level pr` PASS; server-mode smoke returned 401 for unauthenticated `/api/me`, `/api/projects/revisions`, and `/api/bootstrap`; live DB migration integration (`set -a; source .env; APP_MODE=server pytest tests/test_migrations.py -m integration`) passed 2/2 with escalated network.
+- **007 (#263) — DONE / MANUAL SMOKE PASS.** Commits `e3bd69e` and `db2ceac` add frontend Supabase login/logout, magic-link support, Bearer token attachment, runtime public Supabase config, and ES256 JWT/PKCE session handling. Verification: static checks pass; `ai-workflow checks --level issue` PASS; `ai-workflow checks --level pr` PASS; login-gate screenshots captured at `/tmp/bulletin-generator-verification/issue-007-login-fixed.png` and `/tmp/bulletin-generator-verification/issue-007-login-after-005.png`. Manual smoke reported by user on 2026-06-03: Google OAuth pass, magic-link pass, sign-out pass. Post-smoke artifact: `.agent-stack/postmortems/2026-06-03-issue-007.json`.
 
 ## Current focus
 
@@ -42,7 +43,7 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Open risks
 
-- stale-poll JS now uses `/api/projects/${id}/revision` (collab-v1, per-project, requires auth). In desktop mode auth is bypassed, so this works fine. In Postgres mode, issue 007 now attaches a Supabase Bearer token from `apiFetch()`; app-level live login smoke still needs to confirm authenticated `/api/projects` responses in the browser.
+- stale-poll JS now uses `/api/projects/${id}/revision` (collab-v1, per-project, requires auth). In desktop mode auth is bypassed, so this works fine. In Postgres mode, issue 007 now attaches a Supabase Bearer token from `apiFetch()` and auth smoke has passed.
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through.
 - Two DB-dependent integration tests in `tests/test_migrations.py` (`TestIntegration::test_fresh_db_creates_all_tables`, `TestIntegration::test_second_run_is_idempotent`) require `APP_MODE=server` + live DATABASE_URL loaded from `.env`. They pass against staging when run with network access; they still fail/skip in sandboxed or DB-less runs.
 - Minor: `server.py` imports the `cgi` module (DeprecationWarning; removed in Python 3.13). Pre-existing; replace before any 3.13 bump.
@@ -51,7 +52,7 @@ Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9
 
 ## Next step
 
-Complete issue 007 (#263) app-level browser smoke now that issue 005 provider validation is complete: Google OAuth, magic link, sign-out, unauthenticated 401, and authenticated `/api/projects` 200.
+Move to issue 008 (#264): membership provisioning on first login. Decide per-workspace allow-list shape before coding (separate `workspace_invites` table vs JSONB on `workspace_settings`).
 
 ## Resume in a new session
 
@@ -59,7 +60,7 @@ Complete issue 007 (#263) app-level browser smoke now that issue 005 provider va
 - **Python:** use a 3.11 venv (`python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest`); system `python3` is 3.9 and cannot import `auth.py`.
 - **Supabase:** staging project `dgydekhfzrmeoscpgmvo` (Visalia CRC, us-west-1). `.env` (gitignored) has `DATABASE_URL` via the **session pooler** `aws-1-us-west-1.pooler.supabase.com:5432`. GitHub repo secrets set: `DATABASE_URL`, `SUPABASE_DATABASE_PW`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`. MCP config `.mcp.json` is scoped to the project (re-auth via `/mcp` if `mcp__supabase__*` tools are missing).
 - **Issues:** 19 local files in `docs/ai/generated-issues/` (001–019). To create them on GitHub: `bash scripts/create_migration_issues.sh` (idempotent; milestone "Supabase + Multi-tenant + Electron", label `supabase-migration`). NNN prefixes in titles keep the "Depends on" cross-refs resolvable.
-- **Start here:** issue **007** verification/app-level browser smoke. Issue 005 provider validation is complete as of 2026-06-03.
+- **Start here:** issue **008** membership provisioning on first login. Issue 005 provider validation and issue 007 frontend auth smoke are complete as of 2026-06-03.
 - **Decide before coding 008:** per-workspace allow-list shape — separate `workspace_invites` table vs JSONB on `workspace_settings`.
 - **Do NOT redo (already done):** branch merge, Supabase provisioning, app↔DB connection, tenancy foundation (`workspaces`/`workspace_members`/`profiles`/`projects` + RLS + cross-tenant isolation proven; captured in `supabase/migrations/20260602000001_tenancy_foundation.sql`).
 
@@ -96,9 +97,9 @@ Complete issue 007 (#263) app-level browser smoke now that issue 005 provider va
   - `initAuth()` confirms an active Supabase session against `/api/me` before showing the app, so server-side workspace membership from issue 006 still gates data access.
 - Deviations from spec: none known.
 - Concerns:
-  - Issue 005 provider validation is complete as of 2026-06-03; issue 007 still needs app-level browser smoke proving the local app completes Google OAuth and magic-link login, then authenticated API calls return data.
+  - Issue 005 provider validation and issue 007 app-level auth smoke are complete as of 2026-06-03.
   - Existing `src/js/auth.js` is now unused by the loader but left in place to avoid broad cleanup outside issue 007.
-  - Previous verification-gate blocker was external provider setup; that blocker is cleared by the user’s 2026-06-03 validation update. Remaining smoke is app-level interaction requiring a real Google/email session.
+  - Issue 007 had no dedicated `docs/ai/contracts/issue-007.json`; the post-smoke artifact records this as a workflow-adherence gap for future auth issues.
 
 ### 2026-06-02 — supabase-jwt-middleware (issue 006 / #262)
 - Files modified:
