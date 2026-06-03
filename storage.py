@@ -181,6 +181,35 @@ class StorageBackend(ABC):
         """Return a single font metadata dict by slug, or None if not found."""
         ...
 
+    @abstractmethod
+    def save_font(
+        self,
+        name: str,
+        filename: str,
+        data: bytes,
+        mime_type: str,
+    ) -> dict:
+        """Upload a font binary and persist its metadata.
+
+        Returns a dict with at minimum: ``id``, ``name``, ``url``.
+        In desktop mode the binary is written to the local user-fonts directory
+        and ``url`` is the local CSS helper path.  In server mode the binary is
+        uploaded to Supabase Storage and ``url`` is the public Storage URL.
+        """
+        ...
+
+    @abstractmethod
+    def delete_font(self, font_id: str) -> bool:
+        """Delete a font by id.
+
+        In desktop mode *font_id* is treated as the slug/family-dir name and
+        the directory is removed.  In server mode the Storage object and the
+        ``fonts`` table row are both deleted.
+
+        Returns True if the font existed and was removed, False otherwise.
+        """
+        ...
+
     # ── Project revisions ──────────────────────────────────────────────────────
 
     def get_project_revisions(self, project_id: str) -> list:
@@ -366,6 +395,42 @@ class JsonStorageBackend(StorageBackend):
             if font.get("slug") == slug:
                 return font
         return None
+
+    def save_font(
+        self,
+        name: str,
+        filename: str,
+        data: bytes,
+        mime_type: str,
+    ) -> dict:
+        """Write font binary to the local user-fonts directory.
+
+        Desktop mode only — writes to ``<data_dir>/fonts/user/<slug>/<filename>``.
+        Returns ``{id, name, url}`` where ``url`` is the local CSS helper path.
+        """
+        import re as _re
+        slug = _re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-") or "font"
+        safe_name = _re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}.font"
+        dest_dir = self._data_dir / "fonts" / "user" / slug
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / safe_name).write_bytes(data)
+        css_url = f"/fonts/user/{slug}/font.css"
+        return {"id": slug, "name": name, "url": css_url}
+
+    def delete_font(self, font_id: str) -> bool:
+        """Remove a local user-font directory by slug.
+
+        Desktop mode only — removes ``<data_dir>/fonts/user/<slug>/``.
+        Returns True if the directory existed.
+        """
+        import re as _re
+        import shutil as _shutil
+        slug = _re.sub(r"[^a-z0-9]+", "-", font_id.strip().lower()).strip("-") or "font"
+        target = self._data_dir / "fonts" / "user" / slug
+        if target.exists():
+            _shutil.rmtree(target)
+            return True
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1248,6 +1313,100 @@ class PostgresStorageBackend(StorageBackend):
             cols = [d[0] for d in cursor.description]
         return _pg_row_to_font(dict(zip(cols, row)))
 
+    def save_font(
+        self,
+        name: str,
+        filename: str,
+        data: bytes,
+        mime_type: str,
+    ) -> dict:
+        """Upload font binary to Supabase Storage and insert a ``fonts`` row.
+
+        Storage path: ``workspace-fonts/<workspace_id>/<filename>``.
+        Uses the Supabase Storage REST API with the service-role key
+        (``SUPABASE_SERVICE_ROLE_KEY``) so the upload bypasses RLS.
+        The ``fonts`` table INSERT runs under the user's JWT claims so RLS
+        still applies to the metadata row.
+
+        Returns ``{id, name, url}`` where ``url`` is the Storage public URL.
+
+        Raises RuntimeError when workspace_id is None or Supabase env vars are
+        missing.
+        """
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "save_font requires workspace_id — use a scoped storage backend."
+            )
+        storage_path = f"workspace-fonts/{self.workspace_id}/{filename}"
+        storage_url = _supabase_storage_upload(storage_path, data, mime_type)
+
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO fonts (workspace_id, name, storage_path, mime_type)
+                VALUES (%(workspace_id)s::uuid, %(name)s, %(storage_path)s, %(mime_type)s)
+                RETURNING id
+                """,
+                {
+                    "workspace_id": self.workspace_id,
+                    "name": name,
+                    "storage_path": storage_path,
+                    "mime_type": mime_type,
+                },
+            )
+            row = cursor.fetchone()
+            font_id = str(row[0])
+
+        return {"id": font_id, "name": name, "url": storage_url}
+
+    def delete_font(self, font_id: str) -> bool:
+        """Delete the Storage object and the ``fonts`` table row for *font_id*.
+
+        *font_id* is the UUID primary key of the ``fonts`` row.  The Storage
+        object path is fetched first; if the row is not found or belongs to a
+        different workspace, returns False without deleting anything.
+
+        Returns True if the font was found and deleted.
+        """
+        if self.workspace_id is None:
+            raise RuntimeError(
+                "delete_font requires workspace_id — use a scoped storage backend."
+            )
+
+        # Fetch storage_path while asserting workspace ownership.
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                """
+                SELECT storage_path FROM fonts
+                WHERE id = %(font_id)s::uuid
+                  AND workspace_id = %(workspace_id)s::uuid
+                """,
+                {"font_id": font_id, "workspace_id": self.workspace_id},
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return False
+            storage_path = row[0]
+
+            # Delete the metadata row.
+            conn.execute(
+                """
+                DELETE FROM fonts
+                WHERE id = %(font_id)s::uuid
+                  AND workspace_id = %(workspace_id)s::uuid
+                """,
+                {"font_id": font_id, "workspace_id": self.workspace_id},
+            )
+
+        # Delete the Storage object (best-effort; log on failure).
+        if storage_path:
+            try:
+                _supabase_storage_delete(storage_path)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  [storage] warn: Storage delete failed for {storage_path}: {exc}")
+
+        return True
+
     # ── Project revisions ──────────────────────────────────────────────────────
 
     def get_project_revisions(self, project_id: str) -> list:
@@ -1503,6 +1662,102 @@ def _pg_row_to_song(row: dict) -> dict:
     }
 
 
+def _supabase_storage_url(storage_path: str) -> str:
+    """Return the Supabase Storage public URL for *storage_path*.
+
+    Uses ``SUPABASE_URL`` from the environment.  Returns an empty string when
+    ``SUPABASE_URL`` is unset (e.g. in desktop mode or tests).
+    """
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    if not supabase_url or not storage_path:
+        return ""
+    return f"{supabase_url}/storage/v1/object/public/{storage_path}"
+
+
+def _supabase_storage_upload(storage_path: str, data: bytes, mime_type: str) -> str:
+    """Upload *data* to Supabase Storage at *storage_path*.
+
+    Requires ``SUPABASE_URL`` and ``SUPABASE_SERVICE_ROLE_KEY`` in the
+    environment.  Uses the REST API with a service-role Bearer token so the
+    upload is not gated by Storage RLS policies (which are enforced at the DB
+    level separately).
+
+    Returns the public URL of the uploaded object.
+
+    Raises RuntimeError when env vars are missing or the upload fails.
+    """
+    import urllib.request as _urllib_request  # noqa: PLC0415
+
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not supabase_url:
+        raise RuntimeError("SUPABASE_URL is not set — cannot upload to Storage.")
+    if not service_role_key:
+        raise RuntimeError(
+            "SUPABASE_SERVICE_ROLE_KEY is not set — cannot upload to Storage."
+        )
+
+    # Supabase Storage REST endpoint:
+    # PUT /storage/v1/object/<bucket>/<path>  with upsert=true header
+    api_url = f"{supabase_url}/storage/v1/object/{storage_path}"
+    req = _urllib_request.Request(
+        api_url,
+        data=data,
+        method="POST",
+    )
+    req.add_header("Authorization", f"Bearer {service_role_key}")
+    req.add_header("Content-Type", mime_type)
+    req.add_header("x-upsert", "true")
+
+    try:
+        with _urllib_request.urlopen(req, timeout=30) as resp:
+            if resp.status not in (200, 201):
+                raise RuntimeError(
+                    f"Storage upload returned HTTP {resp.status} for {storage_path}"
+                )
+    except Exception as exc:
+        raise RuntimeError(f"Storage upload failed for {storage_path}: {exc}") from exc
+
+    return _supabase_storage_url(storage_path)
+
+
+def _supabase_storage_delete(storage_path: str) -> None:
+    """Delete an object from Supabase Storage.
+
+    Uses the REST API ``DELETE /storage/v1/object/<path>`` with a service-role
+    Bearer token.  Raises RuntimeError on failure (caller decides whether to
+    propagate or log-and-continue).
+    """
+    import json as _json  # noqa: PLC0415
+    import urllib.request as _urllib_request  # noqa: PLC0415
+
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip().rstrip("/")
+    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not supabase_url or not service_role_key:
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for Storage delete."
+        )
+
+    # Supabase Storage bulk-delete endpoint:
+    # DELETE /storage/v1/object/<bucket>  body: {"prefixes": ["<relative-path>"]}
+    # storage_path is "<bucket>/<relative-path>"; split on first slash.
+    parts = storage_path.split("/", 1)
+    if len(parts) != 2:
+        raise RuntimeError(f"Invalid storage_path for delete: {storage_path!r}")
+    bucket, relative_path = parts
+    api_url = f"{supabase_url}/storage/v1/object/{bucket}"
+    body = _json.dumps({"prefixes": [relative_path]}).encode("utf-8")
+    req = _urllib_request.Request(api_url, data=body, method="DELETE")
+    req.add_header("Authorization", f"Bearer {service_role_key}")
+    req.add_header("Content-Type", "application/json")
+
+    try:
+        with _urllib_request.urlopen(req, timeout=15):
+            pass
+    except Exception as exc:
+        raise RuntimeError(f"Storage delete failed for {storage_path}: {exc}") from exc
+
+
 def _pg_row_to_font(row: dict) -> dict:
     """Convert a raw Postgres fonts row dict into a font metadata dict.
 
@@ -1512,19 +1767,24 @@ def _pg_row_to_font(row: dict) -> dict:
     We map ``name`` → ``slug`` and ``name`` → ``family`` as best-effort for
     backward compatibility with frontend consumers that expect these keys.
     The ``storage_path`` is surfaced as ``file_path`` for the same reason.
+    Adds a ``url`` key — the Supabase Storage public URL (empty string when
+    ``SUPABASE_URL`` is unset or storage_path is absent).
     """
     # Support both old and new column shapes.
     name = row.get("name") or ""
     slug = row.get("slug") or name
     family = row.get("family") or name
+    storage_path = row.get("storage_path") or row.get("file_path") or ""
     return {
         "id": str(row["id"]),
+        "name": name,
         "slug": slug,
         "family": family,
         "source": row.get("source") or "user",
+        "url": _supabase_storage_url(storage_path),
         "css_url": row.get("css_url") or "",
-        "file_path": row.get("file_path") or row.get("storage_path") or "",
-        "storage_path": row.get("storage_path") or row.get("file_path") or "",
+        "file_path": row.get("file_path") or storage_path,
+        "storage_path": storage_path,
         "mime_type": row.get("mime_type") or "",
         "upload_metadata": {},
         "cached_at": _ts(row.get("cached_at")),

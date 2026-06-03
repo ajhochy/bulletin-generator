@@ -1138,16 +1138,23 @@ async function buildPrintDocHtml(pagesHtml, title) {
   // Embed font files as base64 data URIs so headless Chrome (running as file://) needs
   // no network access for fonts. Absolute-path URLs like /fonts/cache/... resolve to
   // file:///fonts/... in a file:// context, which doesn't exist on disk.
+  // Also embed server-mode Supabase Storage font URLs (absolute https://) so the PDF
+  // does not depend on external network access during Chrome headless rendering.
+  const inlineCss = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n');
+  const allCssForFontScan = rawLinkedCss + '\n' + inlineCss;
   const fontUrlRe = /url\((['"]?)(\/fonts\/[^)'"\s]+)\1\)/g;
-  const fontUrls = [...new Set([...rawLinkedCss.matchAll(fontUrlRe)].map(m => m[2]))];
+  const fontUrlAbsRe = /url\((['"]?)(https?:\/\/[^)'"\s]+\.(?:woff2?|ttf|otf)[^)'"\s]*)\1\)/gi;
+  const localFontUrls = [...new Set([...rawLinkedCss.matchAll(fontUrlRe)].map(m => m[2]))];
+  const absFontUrls = [...new Set([...allCssForFontScan.matchAll(fontUrlAbsRe)].map(m => m[2]))];
   const fontDataMap = {};
-  await Promise.allSettled(fontUrls.map(async path => {
+  await Promise.allSettled([...localFontUrls, ...absFontUrls].map(async path => {
     try {
       const resp = await fetch(path);
       if (!resp.ok) return;
       const buf  = await resp.arrayBuffer();
       const b64  = btoa(String.fromCharCode(...new Uint8Array(buf)));
-      const ext  = path.split('.').pop().toLowerCase();
+      const urlNoQuery = path.split('?')[0].split('#')[0];
+      const ext  = urlNoQuery.split('.').pop().toLowerCase();
       const mime = ext === 'woff2' ? 'font/woff2' : ext === 'woff' ? 'font/woff'
                  : ext === 'ttf'   ? 'font/truetype' : 'font/opentype';
       fontDataMap[path] = `data:${mime};base64,${b64}`;
@@ -1156,8 +1163,11 @@ async function buildPrintDocHtml(pagesHtml, title) {
   const linkedCss = rawLinkedCss.replace(fontUrlRe, (_, q, path) =>
     fontDataMap[path] ? `url(${q}${fontDataMap[path]}${q})` : `url(${q}${path}${q})`
   );
-  const inlineCss = [...document.querySelectorAll('style')].map(s => s.textContent).join('\n');
-  const css       = linkedCss + '\n' + inlineCss;
+  // Replace Storage URLs in inline CSS blocks (from tpl-font-storage-* <style> elements).
+  const embeddedInlineCss = inlineCss.replace(fontUrlAbsRe, (_, q, url) =>
+    fontDataMap[url] ? `url(${q}${fontDataMap[url]}${q})` : `url(${q}${url}${q})`
+  );
+  const css       = linkedCss + '\n' + embeddedInlineCss;
 
   const safeTitle = escAttr(title || 'Bulletin');
   const { w, h } = getPageDims();

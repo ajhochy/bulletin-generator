@@ -112,6 +112,18 @@ const SYSTEM_TEMPLATE_FONTS = new Set(['system-ui', 'arial', 'helvetica', 'georg
 let activeDocTemplate = { pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] };
 let templates = [];  // all saved templates loaded from /api/templates  OWNER: templates.js
 
+// Registry of user-uploaded font Storage URLs: Map<family-name, url>
+// Populated by templates.js when /api/fonts returns storage-backed fonts (server mode).
+// Used by syncTemplateFontLinks to inject @font-face blocks for fonts not served locally.
+const _storageFontRegistry = new Map();
+
+function registerStorageFont(family, url) {
+  if (family && url) _storageFontRegistry.set(family, url);
+}
+function unregisterStorageFonts() {
+  _storageFontRegistry.clear();
+}
+
 function getPageDims() {
   return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];
 }
@@ -137,9 +149,31 @@ function collectTemplateFontFamilies(template) {
 
 function syncTemplateFontLinks(template) {
   const wanted = new Set();
+  const wantedStyleIds = new Set();
   collectTemplateFontFamilies(template).forEach(name => {
     const slug = templateFontSlug(name);
     if (!slug) return;
+
+    // Server mode: if the font is backed by a Supabase Storage URL, inject a
+    // @font-face <style> block instead of (or in addition to) the local link.
+    const storageUrl = _storageFontRegistry.get(name);
+    if (storageUrl) {
+      const styleId = `tpl-font-storage-${slug}`;
+      wantedStyleIds.add(styleId);
+      let style = document.getElementById(styleId);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        document.head.appendChild(style);
+      }
+      const ext = storageUrl.split('?')[0].split('.').pop().toLowerCase();
+      const fmt = ext === 'woff2' ? 'woff2' : ext === 'woff' ? 'woff'
+               : ext === 'ttf'   ? 'truetype' : 'opentype';
+      const rule = `@font-face { font-family: "${name}"; src: url("${storageUrl}") format("${fmt}"); font-weight: 100 900; font-style: normal; font-display: swap; }`;
+      if (style.textContent !== rule) style.textContent = rule;
+      return; // skip local link injection for this family
+    }
+
     [
       [`tpl-font-user-${slug}`, `/fonts/user/${slug}/font.css`],
       [`tpl-font-cache-${slug}`, `/fonts/cache/${slug}/font.css`],
@@ -157,6 +191,9 @@ function syncTemplateFontLinks(template) {
   });
   document.querySelectorAll('link[id^="tpl-font-user-"], link[id^="tpl-font-cache-"]').forEach(link => {
     if (!wanted.has(link.id)) link.remove();
+  });
+  document.querySelectorAll('style[id^="tpl-font-storage-"]').forEach(style => {
+    if (!wantedStyleIds.has(style.id)) style.remove();
   });
 }
 
