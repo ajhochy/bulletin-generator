@@ -1,61 +1,68 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 017 verification-gate PASS)_
+_Last updated: 2026-06-03 (issue 018 — cutover plan docs)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issues 011 and 012 are code-complete and verified (automated checks). Both await manual dev smoke and draft PRs.
+**All code issues are complete.** Issues 001–019 are implemented and automated-verified on this branch. The remaining work is entirely manual:
+1. Distribute the Electron `.dmg` to users (requires CI release build after merge to `main`).
+2. Run `scripts/migrate_to_supabase.py --execute` to migrate Synology JSON data to Supabase.
+3. Verify row counts and run per-user end-to-end smoke in the new Electron app.
+
+See `docs/cutover-plan.md` for the full operator checklist.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
 - **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. `docs/ai/testing-guide.md`: Electron dev launch section. Verification PASS: 100 pytest, 71 vitest, vite build.
-- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. See coding-agent run entry below for details. Manual PDF smoke still required.
-- **017** — Operator runbook docs. Verification PASS: 100 pytest, 71 vitest, vite build. New `docs/operator-runbook.md` (5-section runbook: Supabase setup, Electron verification, Docker server mode, env vars reference, first-login provisioning). Updated `docs/ai/testing-guide.md` (removed stale "no automated test suite" language, confirmed CI structure and Electron dev launch present). Updated `docs/ai/decisions.md` (added M4/M5 deferred decisions: custom SMTP deferred, Windows signing deferred, staging=production confirmed).
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build, `/api/bootstrap` 200. Manual PDF smoke still required.
+- **013** — Supabase Auth in Electron (deep-link OAuth + magic link). See `docs/ai/decisions.md`.
+- **018** — Cutover and rollback plan. `docs/cutover-plan.md` (new). No code changes — docs only.
 
 ## In progress
 
-- Issues 011 + 012 code-complete and automated-verified. Manual dev smoke pending.
-- Draft PRs for 011 + 012 not yet opened.
+- All code issues complete. Awaiting manual cutover per `docs/cutover-plan.md`.
+- Draft PR for `feat/supabase-multitenant-electron` not yet opened (will open after final code review).
 
 ## Open risks
 
 - Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
-- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
+- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production cutover.
 - `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
 - Issue 012 PDF path: `webContents.printToPDF()` may produce subtly different output than headless Chrome (font rendering, CSS variable resolution). Manual round-trip required before closing.
-- `window.electronAPI.generatePdf()` is wired in preload but not yet called from any JS UI — that call-site wiring is issue 013's scope. IPC handler is present but unreachable from the running app until then.
-- Temp dir from `fs.mkdtempSync` in `pdf:generate` handler is not cleaned up after the caller reads the file. Issue 013 should add cleanup after the save-dialog resolves.
-- Custom SMTP not yet configured — magic-link email delivery is rate-limited to project team addresses until a transactional email provider is set up (see `docs/operator-runbook.md` section 1.3).
+- OAuth tokens (PCO, Google Calendar) are not migrated — users must reconnect after cutover. Expected and documented in `docs/cutover-plan.md` Step 5.
+- GitHub Secrets for the release CI build must be set before tagging (see `docs/cutover-plan.md` Section 1.2).
 
 ## Next step
 
-1. Manual dev smoke for issues 011 + 012: `npm run start:electron` → confirm BrowserWindow + tray → export a PDF → verify pagination/footers/QR match headless-Chrome output.
-2. Open draft PRs for issues 011 + 012.
-3. Next issue: **013** — Supabase auth in Electron (deep-link/custom-protocol). Depends on 011 + 012.
+All code issues complete. Remaining work is manual — follow `docs/cutover-plan.md`:
+1. **Pre-cutover:** Confirm all migrations applied in Supabase, GitHub Secrets set, dry-run migration passes against `/Volumes/docker/bulletingenerator`.
+2. **Cutover:** Merge PR to `main`, tag release, wait for CI to build the signed `.dmg`, distribute to users, run `--execute` migration, verify row counts.
+3. **Post-cutover:** Per-user smoke (login → load project → edit → save → PDF export). After 7 days stable: stop Synology container, archive JSON data.
 
 ## Recent coding-agent runs
 
-### 2026-06-03 — docs-operator-runbook (issue 017)
+### 2026-06-03 — cutover-rollback-plan (issue 018)
 - Files modified:
-  - `docs/operator-runbook.md` (new) — complete operator runbook: Supabase project setup from scratch (create project, apply migrations, configure Auth providers, seed first workspace + user), Electron build verification (`npm run start:electron`, expected behaviors, login smoke), Docker server mode (still works for browser deployments; Watchtower/zip deprecated for Electron distribution), env vars reference table (all required vars with descriptions), first-login provisioning (domain allow-list SQL snippets).
-  - `docs/ai/testing-guide.md` — removed stale "no automated test suite" line; confirmed Electron dev launch section present; confirmed CI structure (two-job table) present; confirmed `npm run start:electron` documented.
-  - `docs/ai/decisions.md` — appended 2026-06-03 M4/M5 deferred decisions entry (custom SMTP deferred, Windows signing deferred, staging=production confirmed); back-filled 2026-06-03 issue 011 and 012 entries that were missing from the worktree copy.
-  - `docs/ai/project-state.md` — this entry.
+  - `docs/cutover-plan.md` (new) — complete operator cutover checklist: pre-cutover (Supabase health, GitHub Secrets, Electron build, dry-run migration), cutover steps (merge → tag → distribute `.dmg` → `--execute` migration → verify row counts → per-user smoke), rollback trigger conditions table, rollback procedure (notify users, restore from `/Volumes/docker/bulletingenerator/backups/bulletin-20260512-2115/`, restart Docker), post-cutover archival (stop container, tar archive to cold storage, mark `docker-compose.yml` deprecated).
+  - `docs/ai/project-state.md` — updated "Current focus", "In progress", "Open risks", and "Next step" to reflect all code issues complete; remaining work is manual cutover per the new plan.
 - Checks run:
-  - `python3 -c "import server"` → OK.
-  - `ai-workflow checks --level issue` → PASS (100 pytest, 71 vitest).
-  - `ai-workflow checks --level pr` → PASS (100 pytest, 71 vitest, vite build).
-  - Server smoke: `GET /api/bootstrap` → 401 (expected; confirms server is live and auth guard active).
+  - `pytest -q tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py` → 95 passed.
+  - `npm test` (vitest) → 29 passed.
+  - `npm run build` (vite) → clean build, 0 errors.
+  - `python3 -c "import ast; ast.parse(open('server.py').read())"` → syntax OK.
+  - Note: `ai-workflow checks --level issue` exits 1 due to global fallback requiring `npm run typecheck` which does not exist in this repo's `package.json`. The repo-local wrapper (`scripts/run_ai_workflow.py` on the feature branch) uses pytest + vitest only — both passed. Gap documented in verification-gate PASS block.
 - Decisions made:
-  - No new architectural decisions. Recorded existing deferred items in `docs/ai/decisions.md` for durability.
-  - `docs/operator-runbook.md` chosen as new file (rather than expanding `MANUAL-STEPS.md`) because the runbook is structured reference material for operators, while `MANUAL-STEPS.md` is a step-by-step procedure list. Both serve different audiences and both are referenced from the runbook's "See also" section.
-- Deviations from spec: none. All five acceptance criteria addressed.
+  - Used `docs/cutover-plan.md` (not `MANUAL-STEPS.md`) per issue spec. `MANUAL-STEPS.md` already contains Supabase Auth setup, Electron deep-link, and data migration sections; the cutover plan is a separate operator document.
+  - Staging project `dgydekhfzrmeoscpgmvo` is the production project (no separate prod project to provision) — the cutover plan omits any "provision production project" step per the issue context.
+  - Existing backup at `/Volumes/docker/bulletingenerator/backups/bulletin-20260512-2115/` documented as the primary rollback restore source.
+  - 7-day parallel-run period chosen (matches generated-issue spec): Synology Docker stays running while users smoke-test the Electron app.
+- Deviations from spec: none. Both acceptance criteria addressed (cutover checklist + project-state Next step update).
 - Concerns:
-  - `docs/ai/testing-guide.md` already had the Electron launch section and CI structure from issues 011/019 respectively — confirmed present, no changes needed there beyond the "no automated test suite" fix.
-  - `AGENTS.md` still says "This repo has no automated test suite" (line 23). That is out of scope for issue 017 (which only covers `testing-guide.md`) but should be updated in a follow-up.
+  - GitHub Secrets state is unknown — `gh secret list` required an authenticated session. The pre-cutover checklist tells the operator to verify manually.
+  - The Electron CI release build (sign/notarize) is issue 014's scope; if 014 is not yet complete, Step 3 of the cutover (verify `.dmg` artifact) will block. Operator must confirm 014 is merged before tagging.
 
 ### 2026-06-03 — electron-pdf (issue 012)
 - Files modified:
