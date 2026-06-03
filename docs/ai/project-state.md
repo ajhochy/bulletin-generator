@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 023: presence badge + read-only mode — PASS)_
+_Last updated: 2026-06-03 (Electron icon options added)_
 
 ## Current focus
 
@@ -10,6 +10,7 @@ Issues 001–023 are implemented and automated-verified on this branch. Issue 02
 
 ## Recently completed
 
+- **Electron icon options** — Added three app icon candidates under `assets/app-icons/electron/` (`bulletin-blueprint`, `bulletin-warm-print`, `bulletin-calendar-slate`) with SVG sources, 1024 PNG previews, and macOS ICNS outputs. `bulletin-blueprint` is wired as the Electron macOS/Windows package icon in `package.json`; a Windows ICO was generated for that default.
 - **001–021** — See earlier run entries (Supabase schema, RLS, auth, owner-only writes, transfer endpoint, volunteer-roles consolidation).
 - **022** — Presence heartbeat API on server (`POST /api/presence/heartbeat`, `GET /api/presence`, `DELETE /api/presence`).
 - **023** — Frontend: removed `_clientRevision` / `_loadedRevision` / `startStaleCheck` / conflict banner/dialog. Added presence heartbeat, 30s interval, `DELETE` on unload. Non-owner viewing workspace project enters read-only mode (autosave blocked, banner + Duplicate button). 403 on save shows toast. Verification PASS: 30 vitest (worktree), 71 vitest (main), 100 pytest, vite build.

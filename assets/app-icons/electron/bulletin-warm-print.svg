@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Bulletin Generator icon option: warm print</title>
+  <desc id="desc">A warm rounded app icon with a bulletin booklet, cross, and print layout marks.</desc>
+  <defs>
+    <linearGradient id="bg" x1="176" y1="132" x2="852" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c2d12"/>
+      <stop offset=".48" stop-color="#be123c"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="sheetA" x1="253" y1="166" x2="513" y2="842" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff7ed"/>
+      <stop offset="1" stop-color="#fed7aa"/>
+    </linearGradient>
+    <linearGradient id="sheetB" x1="462" y1="202" x2="767" y2="828" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ffedd5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="26" stdDeviation="25" flood-color="#111827" flood-opacity=".3"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <circle cx="780" cy="190" r="132" fill="#ffffff" opacity=".12"/>
+  <circle cx="230" cy="818" r="178" fill="#ffffff" opacity=".1"/>
+
+  <g filter="url(#shadow)">
+    <path d="M258 188c0-26 24-45 49-39l286 70c25 6 43 29 43 55v558c0 25-23 44-48 38l-286-69c-26-6-44-29-44-55V188Z" fill="url(#sheetA)"/>
+    <path d="M429 220c0-28 27-48 53-39l280 89c22 7 37 27 37 50v532c0 27-27 47-53 39l-280-88c-22-7-37-28-37-51V220Z" fill="url(#sheetB)"/>
+  </g>
+
+  <path d="M514 344h70v120h112v70H584v186h-70V534H402v-70h112V344Z" fill="#9f1239"/>
+  <g fill="#7c2d12" opacity=".58">
+    <rect x="612" y="616" width="116" height="24" rx="12"/>
+    <rect x="612" y="674" width="116" height="24" rx="12"/>
+    <rect x="612" y="732" width="92" height="24" rx="12"/>
+  </g>
+  <g stroke="#9f1239" stroke-width="18" stroke-linecap="round" opacity=".52">
+    <path d="M339 292h108"/>
+    <path d="M339 353h72"/>
+    <path d="M339 646h96"/>
+    <path d="M339 707h122"/>
+  </g>
+</svg>
