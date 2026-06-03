@@ -1,35 +1,45 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-03 (issue 023: presence badge + read-only mode — PASS)_
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
+Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
-
-- #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
-- #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
+Issues 001–023 are implemented and automated-verified on this branch. Issue 023 (remove conflict detection, add presence heartbeat + read-only mode for non-owners) is DONE.
 
 ## Recently completed
 
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
+- **001–021** — See earlier run entries (Supabase schema, RLS, auth, owner-only writes, transfer endpoint, volunteer-roles consolidation).
+- **022** — Presence heartbeat API on server (`POST /api/presence/heartbeat`, `GET /api/presence`, `DELETE /api/presence`).
+- **023** — Frontend: removed `_clientRevision` / `_loadedRevision` / `startStaleCheck` / conflict banner/dialog. Added presence heartbeat, 30s interval, `DELETE` on unload. Non-owner viewing workspace project enters read-only mode (autosave blocked, banner + Duplicate button). 403 on save shows toast. Verification PASS: 30 vitest (worktree), 71 vitest (main), 100 pytest, vite build.
 
 ## In progress
 
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+- Manual smoke for issue 023 pending — requires live Supabase session + two users:
+  1. Owner opens workspace project → no readonly-banner, autosave fires.
+  2. Non-owner opens same project → readonly-banner appears, edits suppressed, Duplicate creates private copy.
+  3. Network tab: 30s `POST /api/presence/heartbeat`, `DELETE /api/presence` on tab close.
+  4. Presence badge `● X is editing` visible when another user has project open.
+- Draft PR for `feat/supabase-multitenant-electron` not yet opened.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
+- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production cutover.
+- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only. Monitor for electron patch releases.
+- Issue 013: `exchangeCodeForSession(url)` requires PKCE enabled in the Supabase project. Confirm PKCE is active in the dashboard before Electron auth smoke.
+- Windows NSIS installer is unsigned. SmartScreen will warn until a Windows EV/OV certificate is obtained.
+- `package-lock.json` needs regeneration: `electron-updater` added to `dependencies` but lock file not updated. Run `npm install` before merging.
+- `worship-booklet.html` (9111-line legacy standalone file) still contains old `_loadedRevision`/`startStaleCheck` code — it is not part of the active modular codebase and would need a separate migration. Not a runtime risk.
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
+1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
+2. Manual items (issue 023 presence smoke, Electron smoke, first-login domain provisioning).
+3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
+4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
 
