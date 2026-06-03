@@ -14,6 +14,7 @@ Tables written:
     project_revisions  — one initial revision per newly inserted project
     announcements      — one row per announcement (ON CONFLICT (id) DO NOTHING)
     songs              — one row per song (ON CONFLICT (id) DO NOTHING)
+    templates          — one row per template (ON CONFLICT (id) DO NOTHING)
     workspace_settings — one upsert for the whole settings blob (includes
                          volunteerRoles migrated from volunteer-roles.json)
 
@@ -60,6 +61,7 @@ WORKSPACE_ID = "614505d2-0f12-4c00-afb1-9077a0dc94fe"
 _PROJECT_NS = uuid.NAMESPACE_DNS
 _ANN_NS = uuid.UUID("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
 _SONG_NS = uuid.UUID("c0ffee00-d400-4db0-0000-000000000000")
+_TPL_NS = uuid.UUID("b2c3d4e5-f6a7-8901-bcde-f12345678901")
 
 
 def _stable_uuid(raw_id: str, namespace: uuid.UUID) -> str:
@@ -224,6 +226,7 @@ def _print_dry_run_summary(
     projects: list[dict],
     announcements: list[dict],
     songs: list[dict],
+    templates: list[dict],
     settings: dict,
     errors: list[str],
 ) -> None:
@@ -237,6 +240,7 @@ def _print_dry_run_summary(
     print(f"  project_revisions : {len(projects):>6} initial revisions would be inserted")
     print(f"  announcements     : {len(announcements):>6} rows would be inserted")
     print(f"  songs             : {len(songs):>6} rows would be inserted")
+    print(f"  templates         : {len(templates):>6} rows would be inserted")
 
     settings_row = 1 if settings else 0
     volunteer_roles_count = len(settings.get('volunteerRoles', []))
@@ -268,6 +272,8 @@ def _print_execute_summary(
     announcements_skipped: int,
     songs_imported: int,
     songs_skipped: int,
+    templates_imported: int,
+    templates_skipped: int,
     settings_upserted: bool,
     errors: list[str],
 ) -> None:
@@ -281,6 +287,8 @@ def _print_execute_summary(
           f"{announcements_skipped:>6} skipped")
     print(f"  songs             : {songs_imported:>6} imported  "
           f"{songs_skipped:>6} skipped")
+    print(f"  templates         : {templates_imported:>6} imported  "
+          f"{templates_skipped:>6} skipped")
     settings_label = "upserted" if settings_upserted else "no settings file"
     print(f"  workspace_settings: {settings_label}")
     print()
@@ -430,6 +438,38 @@ def _upsert_song(conn, row: dict, workspace_id: str) -> bool:
     return cursor.rowcount == 1
 
 
+def _parse_template(item: dict, idx: int) -> dict:
+    """Normalise a legacy template dict into a DB-ready row."""
+    if not isinstance(item, dict):
+        raise ValueError(f"expected a dict at index {idx}, got {type(item).__name__}")
+    raw_id = item.get("id") or ""
+    tpl_id = _coerce_uuid(raw_id, _TPL_NS)
+    name = str(item.get("name") or "")
+    is_default = bool(item.get("builtIn", False))
+    return {"id": tpl_id, "name": name, "is_default": is_default, "template_data": item}
+
+
+def _upsert_template(conn, row: dict, workspace_id: str) -> bool:
+    """Insert template row; return True if a new row was created."""
+    sql = """
+        INSERT INTO templates (
+            id, workspace_id, name, template_data, is_default, created_at, updated_at
+        ) VALUES (
+            %(id)s::uuid, %(workspace_id)s::uuid, %(name)s,
+            %(template_data)s::jsonb, %(is_default)s, now(), now()
+        )
+        ON CONFLICT (id) DO NOTHING
+    """
+    cursor = conn.execute(sql, {
+        "id": row["id"],
+        "workspace_id": workspace_id,
+        "name": row["name"],
+        "template_data": json.dumps(row["template_data"], ensure_ascii=False),
+        "is_default": row["is_default"],
+    })
+    return cursor.rowcount == 1
+
+
 def _upsert_workspace_settings(conn, settings: dict, workspace_id: str) -> None:
     """Upsert the workspace_settings row (one row per workspace)."""
     sql = """
@@ -492,6 +532,11 @@ def migrate(source_dir: str, execute: bool = False) -> int:
         errors.append(err)
         volunteer_roles_raw = []
 
+    templates_raw, err = _read_json(src / "templates.json", list)
+    if err:
+        errors.append(err)
+        templates_raw = []
+
     # ── 2. Parse rows ─────────────────────────────────────────────────────────
     projects: list[dict] = []
     for idx, item in enumerate(projects_raw):
@@ -514,6 +559,13 @@ def migrate(source_dir: str, execute: bool = False) -> int:
         except Exception as exc:
             errors.append(f"songs[{idx}]: {exc}")
 
+    templates: list[dict] = []
+    for idx, item in enumerate(templates_raw):
+        try:
+            templates.append(_parse_template(item, idx))
+        except Exception as exc:
+            errors.append(f"templates[{idx}]: {exc}")
+
     settings = _extract_settings(settings_raw) if settings_raw else {}
 
     # Merge volunteerRoles from volunteer-roles.json into the settings blob.
@@ -524,7 +576,7 @@ def migrate(source_dir: str, execute: bool = False) -> int:
 
     # ── 3. Dry-run: print and exit ────────────────────────────────────────────
     if not execute:
-        _print_dry_run_summary(projects, announcements, songs, settings, errors)
+        _print_dry_run_summary(projects, announcements, songs, templates, settings, errors)
         return 1 if errors else 0
 
     # ── 4. Execute: write to DB ───────────────────────────────────────────────
@@ -549,6 +601,7 @@ def migrate(source_dir: str, execute: bool = False) -> int:
     projects_imported = projects_skipped = 0
     announcements_imported = announcements_skipped = 0
     songs_imported = songs_skipped = 0
+    templates_imported = templates_skipped = 0
     settings_upserted = False
 
     try:
@@ -587,6 +640,17 @@ def migrate(source_dir: str, execute: bool = False) -> int:
                 except Exception as exc:
                     errors.append(f"song {row.get('id', '?')}: {exc}")
 
+            # Templates
+            for row in templates:
+                try:
+                    inserted = _upsert_template(conn, row, WORKSPACE_ID)
+                    if inserted:
+                        templates_imported += 1
+                    else:
+                        templates_skipped += 1
+                except Exception as exc:
+                    errors.append(f"template {row.get('id', '?')}: {exc}")
+
             # Settings
             if settings:
                 try:
@@ -603,6 +667,7 @@ def migrate(source_dir: str, execute: bool = False) -> int:
         projects_imported, projects_skipped,
         announcements_imported, announcements_skipped,
         songs_imported, songs_skipped,
+        templates_imported, templates_skipped,
         settings_upserted,
         errors,
     )
