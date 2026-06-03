@@ -1,37 +1,61 @@
 # Project State
 
-_Last updated: 2026-05-28_
+_Last updated: 2026-06-03 (issue 016 — M5 QA matrix)_
 
 ## Current focus
 
-Performance/bandwidth fix: the 30s stale-check poll was downloading the full ~8.6 MB `projects.json` every cycle (root cause of ~279 GB transferred over a few weeks). Fixed on branch `fix/lightweight-projects-poll` — see "Recent coding-agent runs" below and the 2026-05-28 entry in `decisions.md`. Pending: manual smoke + draft PR.
+Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Prior focus — stabilizing the Volunteer Roles feature added in releases 1.12.9 / 1.12.10 (PRs #251, #252). Recent fixes:
+All code issues (001–019) are implemented and automated-verified on this branch. Issue 016 (QA matrix) is now DONE — automated items pass, manual items are documented in `docs/ai/qa-matrix-m5.md` for the cutover session.
 
-- #252 — Volunteer Roles cards now render after server data loads (deferred-render bug).
-- #251 — Volunteer Roles render in preview + added Document menu toggle.
-- (in flight) #253 — Volunteer Roles elements are selectable / formattable in the Template Designer canvas. Branch `fix/template-editor-volunteer-roles-not-selectable`.
+## Recently completed (this branch)
 
-## Recently completed
-
-- 1.12.10 release tagged (commit `b0b5f32`).
-- Watchtower scope label typo + periodic polling enabled (`d09dbce`).
+- **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
+- **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). Verification PASS: 100 pytest, 71 vitest, vite build.
+- **012** — PDF via Electron printToPDF. Verification PASS: 100 pytest + 14 new tests, 71 vitest, vite build.
+- **013** — Supabase Auth in Electron (deep-link OAuth + magic link).
+- **014** — Electron packaging + auto-update. `.github/workflows/release-electron.yml` (new).
+- **016** — M5 QA matrix. `docs/ai/qa-matrix-m5.md` (new). Automated items pass; manual items documented for cutover.
 
 ## In progress
 
-- `fix/lightweight-projects-poll` — lightweight stale-check endpoint. Verified (pytest 95, vitest 83, vite build, server smoke). Awaiting draft PR + manual smoke (observe Network tab: 30s poll should hit `/api/projects/revisions`, small response).
-- Draft PR #253 awaiting manual smoke + merge.
+- Manual smoke for issues 011, 013, 014 pending — all require `npm run start:electron` (human). See `MANUAL-STEPS.md` and `docs/ai/qa-matrix-m5.md`.
+- Draft PR for `feat/supabase-multitenant-electron` not yet opened.
 
 ## Open risks
 
-- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic, but UI behavior (rendering, Template Designer, poll timer) is not automated and needs manual click-through. Easy to miss regressions in adjacent zones (Announcements, Calendar, Staff, Serving) when touching shared code.
-- Memory note re: "Do NOT create PRs unless explicitly asked" is overly broad and has caused agents to skip the workflow's terminal step. Should be scoped to "without an explicit instruction or workflow that requires it."
+- Automated coverage is partial: pytest covers server.py utilities/handlers and vitest covers `src/js/modules/*` pure logic; UI behavior and Electron launch are manual-only.
+- `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production cutover.
+- `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only. Monitor for electron patch releases.
+- Issue 013: `exchangeCodeForSession(url)` requires PKCE enabled in the Supabase project. Confirm PKCE is active in the dashboard before Electron auth smoke.
+- Windows NSIS installer is unsigned. SmartScreen will warn until a Windows EV/OV certificate is obtained.
+- `package-lock.json` needs regeneration: `electron-updater` added to `dependencies` but lock file not updated. Run `npm install` before merging.
 
 ## Next step
 
-Manual smoke the poll fix (confirm `/api/projects/revisions` is used and small), open its draft PR. Then manual smoke #253, merge, and close out 1.12.x by tagging a release if any further volunteer-roles polish lands.
+Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
+1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
+2. Manual items (Electron smoke, conflict detection, first-login domain provisioning)
+3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator`
+4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
+
+### 2026-06-03 — m5-qa-matrix (issue 016)
+- Files modified:
+  - `docs/ai/qa-matrix-m5.md` (new) — structured QA checklist covering Security (S1-S6: cross-tenant read/write isolation, 401/403 auth tests, first-login provisioning), Collaboration (C1-C3: conflict detection, stale-check banner, revision history), Electron (E1-E4: dev smoke, OAuth, PDF export, auto-update deferred), and Data migration (D1-D2: dry-run exit 0, post-execute row count verification). Includes exact pytest commands for all automated items. Includes a pre-cutover gate block and cutover readiness checklist.
+  - `docs/ai/project-state.md` (this file) — updated focus, recently completed, in progress, open risks, next step.
+- Checks run:
+  - `ai-workflow checks --level pr` → PASS (100 pytest, 71 vitest, vite build).
+- Decisions made:
+  - Noted that staging Supabase project IS the production project (no separate staging environment) — reflected in the qa-matrix intro.
+  - Automated items S1-S5 and S3-S4 directly map to existing `test_rls_isolation.py` and `test_auth_middleware.py` tests. No new test code needed for this issue.
+  - E4 (auto-update smoke) marked DEFERRED per issue spec — requires a tagged CI release build, which is out of scope for the QA matrix document itself.
+  - D1 dry-run listed as "Automated / Manual" because it can be run as a check command but requires `/Volumes/docker/bulletingenerator` mounted (manual human prerequisite).
+- Deviations from spec: none. All acceptance criteria addressed.
+- Concerns:
+  - The manual items (S6, C1-C3, E1-E3, D2) require live human testing. They are documented but not yet executed. The project-state marks issue 016 DONE with the note that automated items pass and manual items are documented for the cutover session — per the issue spec.
+  - `package-lock.json` still needs `npm install` before merging (noted in Open risks, carried from issue 014).
 
 ### 2026-05-28 — lightweight-projects-poll
 - Files modified:
