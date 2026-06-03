@@ -1,22 +1,25 @@
 # Project State
 
-_Last updated: 2026-06-03 (issue 014 coding-agent complete, pending verification-gate)_
+_Last updated: 2026-06-03 (issue 014 verification PASS)_
 
 ## Current focus
 
 Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant + Electron (#30).
 
-Issue 013 (Supabase Auth in Electron) is verified PASS (100 pytest, 71 vitest, vite build, `node --check` all files). Awaiting manual smoke (Google OAuth + magic-link in Electron) and draft PR before marking fully closed. See `MANUAL-STEPS.md` — "Electron Auth Deep-Link Setup" for the smoke checklist.
+Issues 011, 013, and 014 are code-complete and automated-verified. All three await manual dev smoke and draft PRs. Issue 012 (PDF via Electron printToPDF) is complete on the parallel PR branch and merged into the worktree history.
 
 ## Recently completed (this branch)
 
 - **001–008, 019** — Supabase schema, RLS, db.py, storage, auth, frontend auth, first-login provisioning, CI DB integration. See earlier run entries.
 - **011** — Electron scaffold. `electron/main.js` + `electron/preload.js` (new). `package.json`: `"main"`, `"start:electron"`, `"electron": "^28.3.3"` devDep. Verification PASS: 100 pytest, 71 vitest, vite build.
-- **013** — Supabase Auth in Electron. `electron/main.js`: `bulletingen` protocol + `open-url` (macOS) + `second-instance` (Windows) handlers. `electron/preload.js`: `contextBridge.exposeInMainWorld('electronAuth', { onCallback })`. `src/js/auth-ui.js`: `_isElectronMode()`, `_authRedirectUrl()` returns `bulletingen://auth-callback` in Electron, `initAuth()` registers `electronAuth.onCallback` + calls `exchangeCodeForSession(url)`. `MANUAL-STEPS.md`: redirect allow-list step activated + Issue 013 smoke section added. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **013** — Supabase Auth in Electron. `bulletingen://` protocol deep-link, `open-url`/`second-instance` handlers, `electronAuth.onCallback` preload bridge, `exchangeCodeForSession` in `auth-ui.js`. Verification PASS: 100 pytest, 71 vitest, vite build.
+- **014** — Electron packaging + auto-update. `electron-builder` config in `package.json` (macOS DMG + notarize, Windows NSIS, extraResources sidecar, GitHub publish), `electron-updater` wired in `electron/main.js`, `.github/workflows/release-electron.yml` (new), `MANUAL-STEPS.md` secrets setup section, `launcher.py` deprecated. Verification PASS: 100 pytest, 71 vitest, vite build, `node --check`, YAML valid.
 
 ## In progress
 
-- Manual smoke for issue 013 pending (Electron auth flows require human to run `npm run start:electron`).
+- Manual smoke for issues 011, 013, 014 pending — all require `npm run start:electron` (human). See `MANUAL-STEPS.md` for each checklist.
+- Draft PRs for 011, 013, 014 not yet opened.
+- `package-lock.json` needs regeneration: `electron-updater` added to `dependencies` but lock file not updated. Run `npm install` before merging.
 
 ## Open risks
 
@@ -24,13 +27,17 @@ Issue 013 (Supabase Auth in Electron) is verified PASS (100 pytest, 71 vitest, v
 - `provision_first_login` (issue 008) has no live-DB integration test. Seed a `workspace_settings` row with `allowed_domains` on staging before production.
 - `npm audit` reports vulnerabilities in electron's transitive deps (3 moderate, 2 high, 1 critical). All are in devDependencies only; not in the runtime app surface. Monitor for electron patch releases.
 - Issue 013: `exchangeCodeForSession(url)` requires PKCE enabled in the Supabase project. Confirm PKCE is active in the dashboard before Electron auth smoke. See `docs/ai/decisions.md` for rationale.
+- Issue 014 PyInstaller `--onefile` path: the CI workflow passes `--onefile --name server` to override the spec's default `COLLECT` layout. This may require a dedicated `server.spec` file if `hiddenimports` (e.g. `rumps` on macOS, excluded on Windows) don't resolve correctly. Monitor first CI run on a tag push.
+- Windows NSIS installer is unsigned (`signingHashAlgorithms: null`). SmartScreen will show "Unknown publisher" warning until a Windows EV/OV certificate is obtained. Documented as TODO in `MANUAL-STEPS.md`.
+- Notarization uses `mac.notarize.teamId: "${APPLE_TEAM_ID}"` — requires `APPLE_TEAM_ID` GitHub Secret to be set before the first tag push.
 
 ## Next step
 
-1. Add `bulletingen://auth-callback` to the Supabase dashboard redirect allow-list (see `MANUAL-STEPS.md` — Electron Auth Deep-Link Setup section, step 1).
-2. Manual smoke for issue 013: `npm run start:electron` → Google OAuth → magic-link in Electron.
-3. Open draft PR for issues 011 + 013.
-4. Next issue: **012** — PDF generation via `Electron webContents.printToPDF` (replaces headless Chrome in `/api/pdf`). Depends on 011.
+1. Run `npm install` to regenerate `package-lock.json` with `electron-updater` entry, then commit the updated lock file.
+2. Add `bulletingen://auth-callback` to the Supabase dashboard redirect allow-list (see `MANUAL-STEPS.md` — Electron Auth Deep-Link Setup section, step 1).
+3. Manual smoke for issues 011 + 013 + 014: `npm run start:electron` → confirm window + tray → Google OAuth → magic-link → confirm update check fires on next packaged build.
+4. Open draft PRs for issues 011, 013, 014.
+5. Next automated issue: **015** — workspace seeding + data migration (depends on 001–008).
 
 ## Recent coding-agent runs
 
