@@ -685,9 +685,30 @@ function startFilesAutoRefresh() {
   _filesRefreshTimer = setInterval(async () => {
     try {
       const res = await apiFetch('/api/projects');
+      const prev = projects.slice();
       setProjects(res.projects || []);
       renderProjectSelect();
       renderFilesList();
+
+      // Toast for any project newly handed off to the current user.
+      const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      const currentUserId = currentUser?.id || currentUser?.user_id || null;
+      if (currentUserId) {
+        (res.projects || []).forEach(p => {
+          const updatedMs = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+          const updatedByMe = !p.updated_by_user_id || String(p.updated_by_user_id) === String(currentUserId);
+          const isNewToYou = String(p.owner_user_id) === String(currentUserId)
+                             && !updatedByMe
+                             && (Date.now() - updatedMs) < 600_000;
+          if (isNewToYou) {
+            const prevEntry = prev.find(old => old.id === p.id);
+            const wasAlreadyMine = prevEntry && String(prevEntry.owner_user_id) === String(currentUserId);
+            if (!wasAlreadyMine) {
+              setStatus(`"${p.name}" was handed off to you.`, 'success');
+            }
+          }
+        });
+      }
     } catch (_) { /* silent */ }
   }, 30_000);
 }
