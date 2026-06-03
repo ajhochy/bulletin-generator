@@ -666,9 +666,10 @@ function renderPreview() {
     // preview and PDF always match — no more overflow-only-in-print surprises.
     const annAvailH = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
 
-    // Build the welcome section (always on the first page)
+    // Build the welcome section (conditionally on the first page)
     const welcomeSection = document.createElement('div');
     welcomeSection.className = 'welcome-section';
+    if (!optWelcome.checked) welcomeSection.style.display = 'none';
 
     const welcomeTitle = document.createElement('div');
     welcomeTitle.className = 'welcome-title';

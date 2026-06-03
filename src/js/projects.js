@@ -140,6 +140,7 @@ function collectCurrentProjectState() {
     svcDate: svcDate.value,
     svcChurch: svcChurch.value,
     optCover: !!optCover.checked,
+    optWelcome: !!optWelcome.checked,
     optFooter: !!optFooter.checked,
     optCal: !!optCal.checked,
     optBookletSize: optBookletSize.value,
@@ -183,6 +184,7 @@ function applyProjectState(state) {
   }
   annRender();
   optCover.checked = safe.optCover !== false;
+  optWelcome.checked = safe.optWelcome !== false;
   optFooter.checked = safe.optFooter === true;
   optCal.checked = safe.optCal !== false;
   optBookletSize.value = safe.optBookletSize || 'auto';
@@ -537,6 +539,7 @@ function clearEditorForNewProject() {
   volTeamFilter = {};
   volRender();
   optCover.checked = true;
+  optWelcome.checked = true;
   optFooter.checked = false;
   optCal.checked = true;
   optBookletSize.value = 'auto';
@@ -845,6 +848,7 @@ function applyProjectStateForExport(state) {
   welcomeHeading = typeof safe.welcomeHeading === 'string' ? safe.welcomeHeading : '';
   welcomeItems = Array.isArray(safe.welcomeItems) ? safe.welcomeItems.slice() : [...WELCOME_ITEMS];
   optCover.checked = safe.optCover !== false;
+  optWelcome.checked = safe.optWelcome !== false;
   optFooter.checked = safe.optFooter === true;
   optCal.checked = safe.optCal !== false;
   optBookletSize.value = safe.optBookletSize || 'auto';

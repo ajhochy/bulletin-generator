@@ -282,6 +282,7 @@ const coverImgThumb        = document.getElementById('cover-img-thumb');
 const coverImgName         = document.getElementById('cover-img-name');
 const coverImgClear        = document.getElementById('cover-img-clear');
 const optCover             = document.getElementById('opt-cover');
+const optWelcome           = document.getElementById('opt-welcome');
 const optFooter            = document.getElementById('opt-footer');
 const optCal               = document.getElementById('opt-cal');
 const optBookletSize       = document.getElementById('opt-booklet-size');
