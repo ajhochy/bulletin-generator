@@ -4,16 +4,20 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
-## 2026-06-03 — SUPABASE_SERVICE_ROLE_KEY (HTTP JWT) vs SUPABASE_SERVICE_ROLE_URL (Postgres) for Storage uploads
+## 2026-06-03 — Issue 008: allow-list stored as JSONB in workspace_settings (not a new table)
 
-**Context.** Issue 009 calls for server-initiated uploads to Supabase Storage using "SUPABASE_SERVICE_ROLE_URL". That variable is already defined in `db.py` as a Postgres connection string (`postgresql://postgres.<ref>:<pw>@pooler.supabase.com:5432/...`). The Supabase Storage REST API requires an HTTP Bearer token (a JWT), not a Postgres connection string.
+**Context.** Issue 008 needed a per-workspace domain allow-list for first-login auto-provisioning. The `project-state.md` "Next step" for 008 deferred the shape decision: "separate `workspace_invites` table vs JSONB on `workspace_settings`."
 
-**Decision.** Introduce `SUPABASE_SERVICE_ROLE_KEY` as a separate env var for the HTTP service-role JWT. This is the "service_role" key shown in Supabase Dashboard → Settings → API → Project API keys. `SUPABASE_SERVICE_ROLE_URL` (Postgres) is unchanged and still used by `db.admin_transaction()`.
+**Decision.** Used the existing `workspace_settings.settings` JSONB column (key `allowed_domains`, type `text[]`). No new migration file needed.
+
+**Alternatives.**
+- Separate `workspace_invites` / `workspace_allowed_domains` table. Rejected for v1 — the allow-list is operator-managed (service_role SQL only), not user-visible, and is read once per login. A separate table adds a migration and FK with no benefit at this scale.
+- A new column `allowed_domains text[]` on `workspaces`. Rejected — adding a column would require a migration; the flexible JSONB key on `workspace_settings` avoids DDL changes for a single-value key.
 
 **Consequences.**
-- Operators must set two service-role secrets: `SUPABASE_SERVICE_ROLE_URL` (Postgres admin) and `SUPABASE_SERVICE_ROLE_KEY` (Storage HTTP). Both are server-side-only; neither goes into the Electron bundle.
-- If `SUPABASE_SERVICE_ROLE_KEY` is unset, `extract_and_upload_images()` is a no-op and images stay as base64 — safe fallback, no data loss.
-- Documented in `.env.example` alongside existing secrets.
+- Provisioning SQL queries `jsonb_array_elements_text(COALESCE(ws.settings->'allowed_domains', '[]'::jsonb))`. The `COALESCE` guard prevents errors on rows where the key is absent.
+- Allow-list management is documented in `MANUAL-STEPS.md` section 7 (INSERT/UPDATE/verify SQL snippets).
+- Domain is derived from the **verified JWT email claim** (`claims["email"]`), never from user-editable `user_metadata`.
 
 ---
 
@@ -96,20 +100,3 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 - Future agent sessions can skip the bootstrap step and dispatch specialists directly.
 - `project-state.md` becomes the source of truth for "what's in flight" — must be updated by `project-state-updater` after every completed unit of work, not just at release time.
 - Anyone editing `CLAUDE.md` should sanity-check that `architecture.md` / `repo-map.md` haven't drifted.
-
----
-
-## 2026-06-03 — Two separate migration tools for two separate schema variants
-
-**Context.** The `migrations/` directory contains `import_projects.py` (and siblings) that reference columns not in the applied Supabase SQL migrations (`imported_from_json`, `created_by_email`, `updated_by_email`, `saved_by_email`, `saved_by_name`). These modules target a schema variant that was designed but never applied to the staging DB.
-
-**Decision.** Rather than reconcile `migrations/import_*.py` in issue 015, a new standalone `scripts/migrate_to_supabase.py` was created that targets only columns actually present in the applied migrations (`20260602000001` + `20260602000002`). The `migrations/` modules are left as-is since they have their own unit tests that mock away the DB; reconciling them is a separate concern.
-
-**Alternatives.**
-- Patch `migrations/import_projects.py` to match actual schema. Rejected — would break their unit tests and expand scope beyond issue 015.
-- Add the missing columns in a new migration. Rejected — the columns serve a logging purpose that the new architecture doesn't need; `state` JSONB captures provenance instead.
-
-**Consequences.**
-- `scripts/migrate_to_supabase.py` is the authoritative operator runbook tool for the Supabase migration.
-- `migrations/run_all_migrations.py` and its importers remain as legacy/unused code unless a future issue reconciles them. They should not be called as part of the Supabase migration.
-- A future cleanup issue should either delete `migrations/import_*.py` or update them to match the actual schema.

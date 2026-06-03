@@ -200,12 +200,96 @@ def resolve_workspace_membership(user_id: str) -> dict[str, str] | None:
     }
 
 
+def provision_first_login(user_id: str, email: str) -> dict[str, str] | None:
+    """Auto-provision workspace membership for a new user on first login.
+
+    If no membership exists for ``user_id`` AND the user's email domain matches
+    a domain in the ``allowed_domains`` list stored in any workspace's
+    ``workspace_settings.settings`` JSONB key, inserts a
+    ``workspace_members`` row with ``role = 'editor'`` and returns the
+    resolved membership dict.
+
+    Domain matching is derived from the **verified email claim in the JWT**,
+    never from user-editable ``user_metadata``.  Provisioning uses
+    ``db.admin_transaction()`` (service-role, bypasses RLS) because this is a
+    trust-boundary decision made before user-scoped RLS is established.
+
+    Returns ``None`` if the domain is not on any allow-list.
+    """
+    from db import admin_transaction  # noqa: PLC0415
+
+    # Derive domain from the verified email; guard against malformed addresses.
+    if not email or "@" not in email:
+        return None
+    domain = email.split("@", 1)[1].lower().strip()
+    if not domain:
+        return None
+
+    with admin_transaction() as conn:
+        # Find the first workspace that allows this email domain.
+        # allowed_domains is a JSON array of strings inside the JSONB settings column.
+        ws_row = conn.execute(
+            """
+            SELECT ws.workspace_id
+            FROM public.workspace_settings ws
+            WHERE EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(
+                    COALESCE(ws.settings -> 'allowed_domains', '[]'::jsonb)
+                ) AS d
+                WHERE lower(d) = %s
+            )
+            ORDER BY ws.workspace_id ASC
+            LIMIT 1
+            """,
+            (domain,),
+        ).fetchone()
+
+        if ws_row is None:
+            return None
+
+        workspace_id = str(ws_row[0])
+
+        # Insert the membership, ignoring a race-condition duplicate.
+        conn.execute(
+            """
+            INSERT INTO public.workspace_members (workspace_id, user_id, role)
+            VALUES (%s::uuid, %s::uuid, 'editor')
+            ON CONFLICT (workspace_id, user_id) DO NOTHING
+            """,
+            (workspace_id, user_id),
+        )
+
+        # Fetch the now-guaranteed membership row (includes profile data).
+        row = conn.execute(
+            """
+            SELECT wm.workspace_id, wm.role, p.email, p.display_name, p.avatar_url
+            FROM public.workspace_members wm
+            LEFT JOIN public.profiles p ON p.id = wm.user_id
+            WHERE wm.workspace_id = %s::uuid AND wm.user_id = %s::uuid
+            LIMIT 1
+            """,
+            (workspace_id, user_id),
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return {
+        "workspace_id": str(row[0]),
+        "role": str(row[1] or ""),
+        "email": row[2] or "",
+        "display_name": row[3] or "",
+        "avatar_url": row[4] or "",
+    }
+
+
 def authenticate_authorization_header(authorization_header: str | None) -> tuple[int, dict[str, Any] | None]:
     """Verify Authorization header and resolve workspace membership.
 
     Returns ``(200, identity)`` on success, ``(401, None)`` for missing/invalid
     tokens, and ``(403, None)`` when the token is valid but the user has no
-    workspace membership.
+    workspace membership and is not on a domain allow-list.
     """
     token = extract_bearer_token(authorization_header)
     claims = _verify_supabase_jwt(token or "")
@@ -213,7 +297,12 @@ def authenticate_authorization_header(authorization_header: str | None) -> tuple
         return 401, None
 
     user_id = str(claims["sub"])
+    email = claims.get("email") or ""
+
     membership = resolve_workspace_membership(user_id)
+    if membership is None:
+        # Attempt domain-based auto-provisioning for first-time logins.
+        membership = provision_first_login(user_id, email)
     if membership is None:
         return 403, None
 
