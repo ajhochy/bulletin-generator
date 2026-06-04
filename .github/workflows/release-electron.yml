@@ -233,8 +233,8 @@ jobs:
         with:
           name: electron-windows
           path: |
-            dist/*.exe
-            dist/*.exe.blockmap
+            dist/*Setup*.exe
+            dist/*Setup*.exe.blockmap
             dist/latest.yml
           if-no-files-found: error
 
