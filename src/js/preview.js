@@ -662,6 +662,13 @@ function renderPreview() {
   }
 
   function renderAnnouncementsZone() {
+    // Nothing to show: no announcements AND no welcome section. Bail out before
+    // emitting anything. Otherwise this zone would still render one empty
+    // booklet-page and mark lastRenderedBinding='announcements', causing OOW to
+    // "merge" onto that empty page — which reserves a page's worth of space and
+    // leaves a large gap above the first order-of-worship item.
+    if (!hasAnn && !optWelcome.checked) return;
+
     // Announcements are measured and packed like order-of-worship chunks so the
     // preview and PDF always match — no more overflow-only-in-print surprises.
     const annAvailH = Math.round((getPageDims().h - 0.35 - 0.45 - (optFooter.checked ? 0.55 : 0)) * 96);
