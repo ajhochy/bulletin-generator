@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <!-- Required for Electron/V8: on Apple Silicon V8 allocates its JIT code range
+         via MAP_JIT, which under hardened runtime requires this entitlement. macOS
+         enforces it strictly — without it V8 aborts at Isolate::Init with
+         FatalProcessOutOfMemory (CodeRange allocation failure) and the app never starts. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
     <!-- Required for PyInstaller: Python interpreter needs unsigned executable memory -->
     <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
     <true/>
