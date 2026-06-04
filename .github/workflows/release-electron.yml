@@ -120,7 +120,6 @@ jobs:
           GH_TOKEN:               ${{ secrets.GITHUB_TOKEN }}
           APPLE_API_KEY_ID:       ${{ secrets.APPLE_NOTARY_KEY_ID }}
           APPLE_API_ISSUER:       ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
-          APPLE_TEAM_ID:          ${{ secrets.APPLE_TEAM_ID }}
           APP_VERSION:            ${{ github.ref_name }}
         run: |
           npx electron-builder --mac --publish always

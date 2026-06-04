@@ -56,10 +56,7 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "entitlements.plist",
-      "entitlementsInherit": "entitlements.plist",
-      "notarize": {
-        "teamId": "${APPLE_TEAM_ID}"
-      }
+      "entitlementsInherit": "entitlements.plist"
     },
     "dmg": {
       "sign": false
