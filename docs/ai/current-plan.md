@@ -2,6 +2,8 @@
 
 _Last updated: 2026-06-03_
 
+> **⚠️ SUPERSEDED in part (2026-06-04):** the shipped model is **A — workspace-visible by default + hand-off** (see `decisions.md` 2026-06-04). "Private-by-default" and "share to workspace" below were **abandoned**: `save_project` keeps `visibility='workspace'`, there is no Share UI/endpoint, and ownership transfer (hand-off) is the only reassignment path. Read the rest of this file as historical planning context, not current behavior.
+
 > **Active effort:** Project ownership and sharing model — private-by-default,
 > workspace sharing, ownership transfer, lightweight presence badge, and removal
 > of 409 conflict detection.

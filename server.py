@@ -1593,13 +1593,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True, "revision": saved.get("revision")})
 
     def _handle_post_projects_sub(self):
-        """Dispatch POST /api/projects/{id}/share|restore|transfer and any future sub-routes."""
+        """Dispatch POST /api/projects/{id}/restore|transfer and any future sub-routes."""
         path = self.path.split("?")[0]
-        # Strip the /api/projects/ prefix to get the remainder: "{id}/share"
+        # Strip the /api/projects/ prefix to get the remainder: "{id}/restore"
         remainder = path[len("/api/projects/"):]
-        if remainder.endswith("/share"):
-            self._handle_share_project()
-        elif remainder.endswith("/restore"):
+        if remainder.endswith("/restore"):
             project_id = remainder[: -len("/restore")]
             self._handle_project_restore(project_id)
         elif remainder.endswith("/transfer"):
@@ -1607,56 +1605,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._handle_post_transfer_project(project_id)
         else:
             self._send_json({"error": "not found"}, 404)
-
-    def _handle_share_project(self):
-        """POST /api/projects/{id}/share — share a private project to the workspace.
-
-        Server mode only.  Auth required.  Only the project owner (or any
-        authenticated user when owner_user_id is NULL, i.e. legacy imports)
-        may share a project.
-
-        Returns:
-            200  {"ok": True, "project": <updated project dict>}
-            401  if unauthenticated
-            403  if the authenticated user does not own the project
-            404  if the project is not found, or in desktop mode
-        """
-        if IS_DESKTOP:
-            self._send_json({"error": "not found"}, 404)
-            return
-
-        user = self._require_auth()
-        if user is None:
-            return
-
-        path = self.path.split("?")[0]
-        # path: /api/projects/{id}/share
-        remainder = path[len("/api/projects/"):]
-        project_id = remainder[: -len("/share")]
-        if not project_id:
-            self._send_json({"error": "missing project id"}, 400)
-            return
-
-        store = self._storage_for_user(user)
-        project = store.get_project(project_id)
-        if project is None:
-            self._send_json({"error": "project not found"}, 404)
-            return
-
-        owner_user_id = project.get("owner_user_id")
-        # Allow if:
-        #   - The project has no owner (legacy import) — any authenticated user may share
-        #   - The authenticated user is the owner
-        if owner_user_id is not None and str(owner_user_id) != str(user.get("id", "")):
-            self._send_json({"error": "forbidden"}, 403)
-            return
-
-        updated = store.share_project_to_workspace(project_id)
-        if updated is None:
-            self._send_json({"error": "project not found"}, 404)
-            return
-
-        self._send_json({"ok": True, "project": updated})
 
     def _handle_post_transfer_project(self, project_id: str):
         """POST /api/projects/{id}/transfer — transfer project ownership to another workspace member.
