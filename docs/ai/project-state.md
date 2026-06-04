@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-03 (Electron beta release workflow PASS + exact-tag publishing fix)_
+_Last updated: 2026-06-04 (Electron beta release workflow PASS with Intel + arm64 macOS DMGs)_
 
 ## Current focus
 
@@ -10,7 +10,7 @@ Issues 001–023 are implemented and automated-verified on this branch. Issue 02
 
 ## Recently completed
 
-- **Electron beta release run** — Tag `electron-supabase-beta-v0.0.1` was triggered from PR branch `feat/supabase-multitenant-electron` without merging to `main`. After iterating on signing/notarization, Actions run `26921045651` passed for both macOS DMG and Windows NSIS. Follow-up fix routes artifacts through `actions/upload-artifact` + a final `softprops/action-gh-release` job so assets attach to the beta release instead of Electron Builder's default `v0.0.0` draft release. A retry hit a macOS `hdiutil` detach failure while packaging the second DMG architecture in the same job, and the attempted Intel matrix job stayed queued on `macos-13`; latest run `26926424163` passed end-to-end with macOS DMGs, Windows NSIS, and the final publish job. The draft release is named/tagged `electron-supabase-beta-v0.0.1`, currently appears at a GitHub `untagged-*` draft URL, and publishes only DMG/installer/update metadata assets.
+- **Electron beta release run with Intel Mac support** — Tag `electron-supabase-beta-v0.0.1` was re-pointed to PR branch `feat/supabase-multitenant-electron` without merging to `main`. Workflow commits `557036b` and `e774624` split macOS into a matrix (`x64` on `macos-15-intel`, `arm64` on `macos-latest`) and removed the package-level mac arch list so `--mac --x64` / `--mac --arm64` are authoritative. First retry run `26927056676` failed because Electron Builder still packaged arm64 inside the x64 job; final retry run `26927391284` passed with Windows, macOS arm64, macOS x64, and publish jobs all successful. Draft prerelease `electron-supabase-beta-v0.0.1` contains Intel DMG (`Bulletin.Generator-0.0.1.dmg`), arm64 DMG (`Bulletin.Generator-0.0.1-arm64.dmg`), blockmaps, Windows installer, `latest.yml`, and `latest-mac.yml`; no raw `server.exe` asset is published.
 - **Electron beta release workflow prep** — `release-electron.yml` now accepts `electron-supabase-beta-v*` tags, builds the Electron sidecar from `server.py` directly instead of the deprecated `launcher.py` spec, handles Windows `server.exe` packaging, and maps existing Apple signing/notary secrets (`APPLE_CERTIFICATE*`, `APPLE_NOTARY_KEY_*`) to Electron Builder inputs. Added `scripts/watch_github_release_run.py` to poll a release run by tag and notify on pass/fail.
 - **Electron icon options** — Added three app icon candidates under `assets/app-icons/electron/` (`bulletin-blueprint`, `bulletin-warm-print`, `bulletin-calendar-slate`) with SVG sources, 1024 PNG previews, and macOS ICNS outputs. `bulletin-blueprint` is wired as the Electron macOS/Windows package icon in `package.json`; a Windows ICO was generated for that default.
 - **001–021** — See earlier run entries (Supabase schema, RLS, auth, owner-only writes, transfer endpoint, volunteer-roles consolidation).
