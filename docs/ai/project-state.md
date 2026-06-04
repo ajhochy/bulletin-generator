@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-04 (Electron beta release workflow PASS with Intel + arm64 macOS DMGs)_
+_Last updated: 2026-06-04 (v0.0.4 packaged app boots & verified working on macOS 26.5/arm64 — 5 latent build defects fixed)_
 
 ## Current focus
 
@@ -10,6 +10,15 @@ Issues 001–023 are implemented and automated-verified on this branch. Issue 02
 
 ## Recently completed
 
+- **Packaged Electron app made to actually boot (v0.0.4, verified working).** The released DMGs (v0.0.1) had never been boot-tested; five latent build defects surfaced in sequence on macOS 26.5/arm64. All fixed on `feat/supabase-multitenant-electron`, shipped via tags `electron-supabase-beta-v0.0.2/3/4` (draft prereleases):
+  1. `release-electron.yml` never `pip install -r requirements.txt` → `ModuleNotFoundError: psycopg`. Fixed: install requirements + `--collect-all psycopg --collect-all psycopg_binary` (commit `bc64b19`).
+  2. No Supabase/DB config bundled (`desktop_config.py` is only read by deprecated `launcher.py`, unused by Electron). Fixed: workflow writes `.env` from secrets + `--add-data ".env:."`; `server.py:309` `_load_dotenv(BASE_DIR/.env)` loads it (`bc64b19`).
+  3. Packaged `resolveSidecar()` passed no port arg → `server.py:3441` defaulted to 8080 while Electron polls 8765. Fixed: `args:[String(PORT)]` in `electron/main.js` (`bc64b19`).
+  4. `entitlements.plist` missing `com.apple.security.cs.allow-jit` → under hardened runtime on Apple Silicon V8 aborts at `Isolate::Init` (`FatalProcessOutOfMemory`, CodeRange). Fixed: added entitlement (`acecadf`). Verified by ad-hoc re-signing the .app with the entitlement (survived past V8 init).
+  5. `@supabase/supabase-js` UMD served by `server.py` from `node_modules/` (404 in bundle) → broke the renderer module graph → window loads but auth never starts, inert UI. Fixed: `--add-data` the UMD (`4963cbe`). Verified locally: route serves 200 / 203 KB.
+  - Also fixed preview bug (`9020e2d`): empty announcements zone rendered a blank page that OOW merged onto, leaving a gap above the first OOW item — `renderAnnouncementsZone()` now bails when no announcements + no welcome. User-confirmed.
+  - v0.0.4 manual smoke PASS: app opens (slow — onefile unpack), PCO creds inherited, PDF export works, Google Calendar required one-time re-auth (expected: per-install tokens, fresh data dir). `APP_MODE=server` is correct (Supabase-connected); no app rewiring needed.
+  - **Recurring lesson:** every defect was "packaged build doesn't replicate what dev provides" (deps / `.env` / `node_modules` assets / entitlements / port). Boot-test packaged builds, don't just build them. The dev path (`npm run start:electron`) masks all of these because it has the venv, repo `.env`, repo `node_modules`, no hardened runtime, and passes the port arg.
 - **Electron beta release run with Intel Mac support** — Tag `electron-supabase-beta-v0.0.1` was re-pointed to PR branch `feat/supabase-multitenant-electron` without merging to `main`. Workflow commits `557036b` and `e774624` split macOS into a matrix (`x64` on `macos-15-intel`, `arm64` on `macos-latest`) and removed the package-level mac arch list so `--mac --x64` / `--mac --arm64` are authoritative. First retry run `26927056676` failed because Electron Builder still packaged arm64 inside the x64 job; final retry run `26927391284` passed with Windows, macOS arm64, macOS x64, and publish jobs all successful. Draft prerelease `electron-supabase-beta-v0.0.1` contains Intel DMG (`Bulletin.Generator-0.0.1.dmg`), arm64 DMG (`Bulletin.Generator-0.0.1-arm64.dmg`), blockmaps, Windows installer, `latest.yml`, and `latest-mac.yml`; no raw `server.exe` asset is published.
 - **Electron beta release workflow prep** — `release-electron.yml` now accepts `electron-supabase-beta-v*` tags, builds the Electron sidecar from `server.py` directly instead of the deprecated `launcher.py` spec, handles Windows `server.exe` packaging, and maps existing Apple signing/notary secrets (`APPLE_CERTIFICATE*`, `APPLE_NOTARY_KEY_*`) to Electron Builder inputs. Added `scripts/watch_github_release_run.py` to poll a release run by tag and notify on pass/fail.
 - **Electron icon options** — Added three app icon candidates under `assets/app-icons/electron/` (`bulletin-blueprint`, `bulletin-warm-print`, `bulletin-calendar-slate`) with SVG sources, 1024 PNG previews, and macOS ICNS outputs. `bulletin-blueprint` is wired as the Electron macOS/Windows package icon in `package.json`; a Windows ICO was generated for that default.
@@ -35,6 +44,11 @@ Issues 001–023 are implemented and automated-verified on this branch. Issue 02
 - Windows NSIS installer is unsigned. SmartScreen will warn until a Windows EV/OV certificate is obtained.
 - `package-lock.json` needs regeneration: `electron-updater` added to `dependencies` but lock file not updated. Run `npm install` before merging.
 - `worship-booklet.html` (9111-line legacy standalone file) still contains old `_loadedRevision`/`startStaleCheck` code — it is not part of the active modular codebase and would need a separate migration. Not a runtime risk.
+- **🔴 Chrome required at startup (not yet fixed).** `server.py:529` resolves `_find_chrome()` eagerly at import in `APP_MODE=server`; it raises if Chrome/Chromium is absent → sidecar exits 1 → "Server Error" on any machine without Google Chrome. PDF export also always POSTs `/api/pdf` (server-side Chrome); the Electron `printToPDF` IPC bridge in `electron/preload.js` is dead code (`server.py:2754` TODO confirms). Recommended: make Chrome resolution lazy (resolve in `_handle_pdf` at request time, clear error if missing) so the app starts everywhere; longer-term wire renderer → `window.electronAPI.generatePdf`. Not blocking the developer (has Chrome); a distribution landmine.
+- **🔴 Extractable DB creds in DMG (issue [#277](https://github.com/ajhochy/bulletin-generator/issues/277)).** Bundled `.env` contains `DATABASE_URL` (DB-owner role, bypasses RLS) — extractable from the distributed binary. Accepted as ship-now tradeoff for a *private* distribution. Keep releases draft/non-public; rotate DB password if a build leaks. Proper fix = anon-key + RLS data path (renderer via supabase-js).
+- **Orphaned sidecar holds port 8765.** If the app crashes (vs. clean quit), its Python sidecar can be orphaned and keep 8765 bound, causing "Exit code 1" on the next launch (bind fails). `main.js` before-quit kills the sidecar but a crash bypasses it. Harden: sidecar should fail fast with a clear message on bind error, and/or main process should detect/clear a stale listener on startup.
+- **Slow startup** — PyInstaller `--onefile` unpacks the runtime to a temp dir every launch. Switch to `--onedir` (packaged inside the .app) for faster cold start if startup time matters.
+- **Old draft betas carry secrets** — delete draft prereleases `electron-supabase-beta-v0.0.1/2/3` (their DMGs bundle the extractable `DATABASE_URL`); keep only the latest verified build.
 
 ## Next step
 
