@@ -56,7 +56,11 @@ function resolveSidecar() {
   // Packaged: resourcesPath points to <app>.app/Contents/Resources/
   const packagedBin = path.join(process.resourcesPath, process.platform === 'win32' ? 'server.exe' : 'server');
   if (process.resourcesPath && fs.existsSync(packagedBin)) {
-    return { cmd: packagedBin, args: [] };
+    // Pass the port explicitly: server.py reads the port from argv[1] and
+    // defaults to 8080 otherwise (it does not read the PORT env var), but
+    // waitForServer polls PORT (8765). Without this arg the packaged sidecar
+    // binds 8080 and the app never connects.
+    return { cmd: packagedBin, args: [String(PORT)] };
   }
 
   // Dev: repo root is one directory above electron/

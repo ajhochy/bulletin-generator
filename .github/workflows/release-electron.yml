@@ -40,8 +40,12 @@ jobs:
           cache: npm
 
       # ── Install dependencies ──────────────────────────────────────────────────
+      # requirements.txt is mandatory: psycopg / cryptography are imported lazily
+      # in db.py / auth.py, so PyInstaller only bundles them when they are actually
+      # installed (and via the --collect-all flags below). Without them the
+      # packaged sidecar crashes with ModuleNotFoundError: psycopg at startup.
       - name: Install Python dependencies
-        run: pip install "pyinstaller==6.19.0" rumps certifi
+        run: pip install "pyinstaller==6.19.0" rumps certifi -r requirements.txt
 
       - name: Install Node dependencies
         run: npm ci
@@ -54,30 +58,44 @@ jobs:
           fi
           echo "ELECTRON_BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
 
-      # ── Write desktop_config.py from secrets ─────────────────────────────────
-      - name: Write desktop_config.py
+      # ── Write .env from secrets ──────────────────────────────────────────────
+      # The Electron sidecar entry point is server.py, which loads credentials via
+      # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
+      # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
+      # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
+      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
+      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      - name: Write .env
         env:
           PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
           PCO_CLIENT_SECRET:    ${{ secrets.PCO_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
         run: |
           python - <<'PYEOF'
           import os
-          lines = [
-              'PCO_CLIENT_ID = "{}"\n'.format(os.environ.get("PCO_CLIENT_ID", "")),
-              'PCO_CLIENT_SECRET = "{}"\n'.format(os.environ.get("PCO_CLIENT_SECRET", "")),
-              'GOOGLE_CLIENT_ID = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_ID", "")),
-              'GOOGLE_CLIENT_SECRET = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_SECRET", "")),
+          keys = [
+              "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
+              "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+              "SUPABASE_URL", "SUPABASE_ANON_KEY",
+              "DATABASE_URL",
           ]
-          with open("desktop_config.py", "w") as f:
-              f.writelines(lines)
-          print("desktop_config.py written.")
+          with open(".env", "w") as f:
+              for k in keys:
+                  f.write("{}={}\n".format(k, os.environ.get(k, "")))
+          populated = sum(1 for k in keys if os.environ.get(k))
+          print(".env written ({} of {} values populated).".format(populated, len(keys)))
           PYEOF
 
       # ── Build Python sidecar with PyInstaller ─────────────────────────────────
       # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
       # not the deprecated launcher.py from bulletin-generator.spec.
+      # --collect-all psycopg(_binary): db.py imports psycopg lazily, so PyInstaller's
+      # static analysis misses it; collect-all forces the driver + bundled libpq in.
       - name: Build Python sidecar with PyInstaller
         env:
           APP_VERSION: ${{ github.ref_name }}
@@ -88,7 +106,9 @@ jobs:
             --add-data "data/projects.example.json:data" \
             --add-data "data/announcements.example.json:data" \
             --add-data "data/settings.example.json:data" \
-            --add-data "desktop_config.py:." \
+            --add-data ".env:." \
+            --collect-all psycopg \
+            --collect-all psycopg_binary \
             --hidden-import encodings.idna \
             --hidden-import certifi \
             server.py
@@ -172,8 +192,12 @@ jobs:
           cache: npm
 
       # ── Install dependencies ──────────────────────────────────────────────────
+      # requirements.txt is mandatory: psycopg / cryptography are imported lazily
+      # in db.py / auth.py, so PyInstaller only bundles them when installed (and via
+      # the --collect-all flags below). Without them the packaged sidecar crashes
+      # with ModuleNotFoundError: psycopg at startup.
       - name: Install Python dependencies
-        run: pip install "pyinstaller==6.19.0" certifi
+        run: pip install "pyinstaller==6.19.0" certifi -r requirements.txt
 
       - name: Install Node dependencies
         run: npm ci
@@ -187,29 +211,43 @@ jobs:
           }
           "ELECTRON_BUILD_VERSION=$version" >> $env:GITHUB_ENV
 
-      # ── Write desktop_config.py from secrets ─────────────────────────────────
-      - name: Write desktop_config.py
+      # ── Write .env from secrets ──────────────────────────────────────────────
+      # The Electron sidecar entry point is server.py, which loads credentials via
+      # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
+      # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
+      # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
+      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
+      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      - name: Write .env
         env:
           PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
           PCO_CLIENT_SECRET:    ${{ secrets.PCO_CLIENT_SECRET }}
           GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
         shell: python
         run: |
           import os
-          lines = [
-              'PCO_CLIENT_ID = "{}"\n'.format(os.environ.get("PCO_CLIENT_ID", "")),
-              'PCO_CLIENT_SECRET = "{}"\n'.format(os.environ.get("PCO_CLIENT_SECRET", "")),
-              'GOOGLE_CLIENT_ID = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_ID", "")),
-              'GOOGLE_CLIENT_SECRET = "{}"\n'.format(os.environ.get("GOOGLE_CLIENT_SECRET", "")),
+          keys = [
+              "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
+              "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+              "SUPABASE_URL", "SUPABASE_ANON_KEY",
+              "DATABASE_URL",
           ]
-          with open("desktop_config.py", "w") as f:
-              f.writelines(lines)
-          print("desktop_config.py written.")
+          with open(".env", "w") as f:
+              for k in keys:
+                  f.write("{}={}\n".format(k, os.environ.get(k, "")))
+          populated = sum(1 for k in keys if os.environ.get(k))
+          print(".env written ({} of {} values populated).".format(populated, len(keys)))
 
       # ── Build Python sidecar with PyInstaller ─────────────────────────────────
       # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
       # not the deprecated macOS-only launcher.py from bulletin-generator.spec.
+      # --collect-all psycopg(_binary): db.py imports psycopg lazily, so PyInstaller's
+      # static analysis misses it; collect-all forces the driver + bundled libpq in.
       - name: Build Python sidecar with PyInstaller
         env:
           APP_VERSION: ${{ github.ref_name }}
@@ -220,7 +258,9 @@ jobs:
             --add-data "data/projects.example.json;data" `
             --add-data "data/announcements.example.json;data" `
             --add-data "data/settings.example.json;data" `
-            --add-data "desktop_config.py;." `
+            --add-data ".env;." `
+            --collect-all psycopg `
+            --collect-all psycopg_binary `
             --hidden-import encodings.idna `
             --hidden-import certifi `
             server.py
