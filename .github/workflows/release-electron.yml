@@ -107,6 +107,7 @@ jobs:
             --add-data "data/announcements.example.json:data" \
             --add-data "data/settings.example.json:data" \
             --add-data ".env:." \
+            --add-data "node_modules/@supabase/supabase-js/dist/umd/supabase.js:node_modules/@supabase/supabase-js/dist/umd" \
             --collect-all psycopg \
             --collect-all psycopg_binary \
             --hidden-import encodings.idna \
@@ -259,6 +260,7 @@ jobs:
             --add-data "data/announcements.example.json;data" `
             --add-data "data/settings.example.json;data" `
             --add-data ".env;." `
+            --add-data "node_modules/@supabase/supabase-js/dist/umd/supabase.js;node_modules/@supabase/supabase-js/dist/umd" `
             --collect-all psycopg `
             --collect-all psycopg_binary `
             --hidden-import encodings.idna `
