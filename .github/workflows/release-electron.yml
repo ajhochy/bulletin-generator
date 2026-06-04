@@ -11,8 +11,16 @@ on:
 jobs:
   # ── Job 1: macOS — build Python sidecar, sign, notarize, package DMG ─────────
   electron-macos:
-    name: macOS DMG (arm64, signed + notarized)
-    runs-on: macos-latest
+    name: macOS DMG (${{ matrix.arch }}, signed + notarized)
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-latest
     permissions:
       contents: read
 
@@ -129,12 +137,12 @@ jobs:
           APPLE_API_ISSUER:       ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
           APP_VERSION:            ${{ github.ref_name }}
         run: |
-          npx electron-builder --mac --arm64 --publish never --config.extraMetadata.version="$ELECTRON_BUILD_VERSION"
+          npx electron-builder --mac --${{ matrix.arch }} --publish never --config.extraMetadata.version="$ELECTRON_BUILD_VERSION"
 
       - name: Upload macOS release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: electron-macos-arm64
+          name: electron-macos-${{ matrix.arch }}
           path: |
             dist/*.dmg
             dist/*.dmg.blockmap
