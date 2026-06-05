@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { AppShell } from '../pages/AppShell';
+import { createAndSaveProject, openToolbarMenu } from '../pages/common';
 import { assertValidPdf } from '../helpers/pdf';
 
 test.describe('@core harness smoke', () => {
@@ -14,18 +15,11 @@ test.describe('@core harness smoke', () => {
     }
 
     // Create + persist a project, proving the full frontend -> server.py ->
-    // Supabase write path. Autosave only fires once a project is active
-    // (projects.js:345), so a fresh user must explicitly Save first: open the
-    // File menu (a <details>), name the bulletin, click Save, await the POST.
+    // Supabase write path. (createAndSaveProject opens the File menu, names the
+    // bulletin, Saves, and awaits the POST — the canonical persistable-project
+    // flow, since autosave only fires once a project is active.)
     await shell.switchTo('editor');
-    await page.locator('#editor-toolbar-file summary').click();
-    await page.locator('#bulletin-title').fill('E2E Smoke Bulletin');
-    const saved = page.waitForResponse(
-      (r) => r.url().includes('/api/projects') && r.request().method() === 'POST' && r.ok(),
-      { timeout: 15_000 },
-    );
-    await page.locator('#project-save-btn').click();
-    await saved;
+    await createAndSaveProject(page, 'E2E Smoke Bulletin');
 
     // Confirm it persisted: the saved project appears in the Projects list.
     await shell.switchTo('files');
@@ -52,7 +46,7 @@ test.describe('@live real-integration smoke', () => {
     await shell.expectAuthenticated();
     // PCO connected (inherited from worship@'s workspace) → the import view
     // (hidden until connected) is visible. Read-only: we never trigger an import.
-    await page.locator('#editor-toolbar-sync summary').click();
+    await openToolbarMenu(page, 'sync');
     await expect(page.locator('#pco-import-view')).toBeVisible();
   });
 });
