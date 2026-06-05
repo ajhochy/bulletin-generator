@@ -36,3 +36,18 @@ export async function createAndSaveProject(page: Page, name: string): Promise<vo
 export function row(page: Page, area: string, index: number): Locator {
   return page.locator(`[data-testid="${area}-row"][data-index="${index}"]`);
 }
+
+/**
+ * Expand an editor sidebar section card (they start collapsed; editor.js:595).
+ * Clicking the `.section-label` toggles `.collapsed`. Idempotent.
+ */
+export async function expandSection(page: Page, labelText: string): Promise<Locator> {
+  const section = page
+    .locator('aside .panel-section')
+    .filter({ has: page.locator('.section-label', { hasText: labelText }) })
+    .first();
+  const collapsed = await section.evaluate((el) => el.classList.contains('collapsed'));
+  if (collapsed) await section.locator('.section-label').first().click();
+  await expect(section).not.toHaveClass(/(^|\s)collapsed(\s|$)/);
+  return section;
+}

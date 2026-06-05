@@ -20,6 +20,9 @@ export class AppShell {
     // initTabSemantics() marks the default (editor) tab aria-selected="true";
     // wait for that so click handlers are attached before we interact.
     await expect(this.page.locator('[data-tab="page-editor"]')).toHaveAttribute('aria-selected', 'true');
+    // Wait for restoreOnStartup() (async server load + project/draft restore) to
+    // finish, or its late re-apply would wipe edits we make immediately after.
+    await this.page.waitForFunction(() => (window as { __BG_READY__?: boolean }).__BG_READY__ === true, undefined, { timeout: 15_000 });
   }
 
   tab(name: TabName): Locator {
