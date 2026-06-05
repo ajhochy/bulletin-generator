@@ -1,6 +1,22 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { e2eEnv } from './env';
+
+/** List ALL auth users (paginates past the 1000/page cap). */
+async function listAllUsers(sb: SupabaseClient): Promise<User[]> {
+  const all: User[] = [];
+  let page = 1;
+  for (;;) {
+    const { data } = await sb.auth.admin.listUsers({ page, perPage: 1000 });
+    const users = data?.users ?? [];
+    if (!users.length) break;
+    all.push(...users);
+    const nextPage = (data as { nextPage?: number }).nextPage;
+    if (!nextPage) break;
+    page = nextPage;
+  }
+  return all;
+}
 
 export interface EphemeralIdentity {
   userId: string;
@@ -50,6 +66,11 @@ export async function createEphemeralIdentity(label: string): Promise<EphemeralI
 }
 
 export async function destroyEphemeralIdentity(id: EphemeralIdentity): Promise<void> {
+  // Defense in depth: never delete anything that isn't a disposable identity,
+  // even if core-ids.json is stale/corrupted.
+  if (!id.email?.startsWith('e2e-eph-') || !id.workspaceId || !id.userId) {
+    throw new Error(`refusing to destroy non-ephemeral identity: ${JSON.stringify(id)}`);
+  }
   const sb = admin();
   await sb.from('projects').delete().eq('workspace_id', id.workspaceId);
   await sb.from('workspace_members').delete().eq('workspace_id', id.workspaceId);
@@ -70,8 +91,7 @@ export async function sweepStaleEphemeralIdentities(): Promise<void> {
     await sb.from('workspace_members').delete().eq('workspace_id', ws.id);
     await sb.from('workspaces').delete().eq('id', ws.id);
   }
-  const { data: list } = await sb.auth.admin.listUsers({ perPage: 1000 });
-  for (const u of list?.users ?? []) {
+  for (const u of await listAllUsers(sb)) {
     if (u.email?.startsWith('e2e-eph-')) await sb.auth.admin.deleteUser(u.id);
   }
 }
@@ -103,8 +123,7 @@ export async function ensureLiveWorkspaceMember(opts: {
   const workspaceId = mem.workspace_id as string;
 
   // 2. Ensure the persistent e2e-live user exists with the known password.
-  const { data: list } = await sb.auth.admin.listUsers({ perPage: 1000 });
-  let liveUser = list?.users?.find((u) => u.email === opts.liveEmail) ?? null;
+  let liveUser = (await listAllUsers(sb)).find((u) => u.email === opts.liveEmail) ?? null;
   if (!liveUser) {
     const { data: created, error: cErr } = await sb.auth.admin.createUser({
       email: opts.liveEmail, password: opts.livePassword, email_confirm: true,

@@ -36,6 +36,9 @@ async function signInAndSave(page: Page, email: string, password: string, stateP
     throw new Error(`signInWithPassword failed for ${email}: ${error?.message}`);
   }
   const storageKey = `sb-${projectRef(env.SUPABASE_URL)}-auth-token`;
+  // Correct for @supabase/supabase-js v2 with default storage. ASSUMES the app
+  // client (src/js/auth-ui.js) is NOT configured with `userStorage`; if that is
+  // ever enabled, the session must be split into `<key>` (no user) + `<key>-user`.
   const sessionJson = JSON.stringify(data.session);
 
   await page.goto('/');
