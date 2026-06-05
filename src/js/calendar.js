@@ -703,6 +703,8 @@ function renderCalEventEditor() {
       const ev  = calEvents[idx];
       const row = document.createElement('div');
       row.className = 'cal-edit-row';
+      row.dataset.testid = 'cal-event-row';
+      row.dataset.index = idx;
 
       // ── Row header: time badge · title input · delete ──
       const hdr = document.createElement('div');
