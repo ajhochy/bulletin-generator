@@ -1,0 +1,32 @@
+name: E2E Live (real integrations)
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+jobs:
+  e2e-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: 'npm' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -r requirements.txt
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run live lane
+        env:
+          CI: 'true'
+          SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+          SUPABASE_JWT_SECRET: ${{ secrets.E2E_SUPABASE_JWT_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+          DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
+          E2E_LIVE_EMAIL: ${{ secrets.E2E_LIVE_EMAIL }}
+          E2E_LIVE_PASSWORD: ${{ secrets.E2E_LIVE_PASSWORD }}
+        run: npx playwright test --project=live
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: playwright-report-live, path: playwright-report/, retention-days: 14 }
