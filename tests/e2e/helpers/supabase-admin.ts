@@ -20,7 +20,9 @@ function admin(): SupabaseClient {
 export async function createEphemeralIdentity(label: string): Promise<EphemeralIdentity> {
   const sb = admin();
   const tag = randomUUID().slice(0, 8);
-  const email = `e2e-${label}-${tag}@e2e.bulletin.test`;
+  // `e2e-eph-` prefix marks DISPOSABLE identities the sweep may delete. The
+  // persistent live user (`e2e-live@`) deliberately does NOT match this prefix.
+  const email = `e2e-eph-${label}-${tag}@e2e.bulletin.test`;
   const password = `E2e-${randomUUID()}`;
 
   const { data: created, error: userErr } = await sb.auth.admin.createUser({
@@ -33,7 +35,7 @@ export async function createEphemeralIdentity(label: string): Promise<EphemeralI
 
   const { data: ws, error: wsErr } = await sb
     .from('workspaces')
-    .insert({ name: `E2E ${tag}`, slug: `e2e-${tag}`, created_by_user_id: userId })
+    .insert({ name: `E2E-EPH ${tag}`, slug: `e2e-eph-${tag}`, created_by_user_id: userId })
     .select('id')
     .single();
   if (wsErr || !ws) throw new Error(`workspace insert failed: ${wsErr?.message}`);
@@ -61,7 +63,8 @@ export async function destroyEphemeralIdentity(id: EphemeralIdentity): Promise<v
  */
 export async function sweepStaleEphemeralIdentities(): Promise<void> {
   const sb = admin();
-  const { data: stale } = await sb.from('workspaces').select('id').like('slug', 'e2e-%');
+  // Only `e2e-eph-` (disposable) rows — never the persistent `e2e-live` member.
+  const { data: stale } = await sb.from('workspaces').select('id').like('slug', 'e2e-eph-%');
   for (const ws of stale ?? []) {
     await sb.from('projects').delete().eq('workspace_id', ws.id);
     await sb.from('workspace_members').delete().eq('workspace_id', ws.id);
@@ -69,6 +72,55 @@ export async function sweepStaleEphemeralIdentities(): Promise<void> {
   }
   const { data: list } = await sb.auth.admin.listUsers({ perPage: 1000 });
   for (const u of list?.users ?? []) {
-    if (u.email?.startsWith('e2e-')) await sb.auth.admin.deleteUser(u.id);
+    if (u.email?.startsWith('e2e-eph-')) await sb.auth.admin.deleteUser(u.id);
   }
+}
+
+/**
+ * Ensure a PERSISTENT `e2e-live` user exists and is a member of the owner's
+ * (worship@'s) workspace, so the live lane inherits that workspace's already-
+ * connected PCO/Google tokens (tokens are stored per-workspace). Idempotent.
+ * Does NOT touch the owner account. Returns the resolved workspace id.
+ */
+export async function ensureLiveWorkspaceMember(opts: {
+  liveEmail: string;
+  livePassword: string;
+  ownerEmail: string;
+}): Promise<{ workspaceId: string; liveUserId: string }> {
+  const sb = admin();
+
+  // 1. Resolve the owner's workspace via profiles -> workspace_members.
+  const { data: ownerProfile, error: pErr } = await sb
+    .from('profiles').select('id').eq('email', opts.ownerEmail).single();
+  if (pErr || !ownerProfile) {
+    throw new Error(`owner profile not found for ${opts.ownerEmail}: ${pErr?.message}`);
+  }
+  const { data: mem, error: mErr } = await sb
+    .from('workspace_members').select('workspace_id').eq('user_id', ownerProfile.id).limit(1).single();
+  if (mErr || !mem) {
+    throw new Error(`no workspace membership for ${opts.ownerEmail}: ${mErr?.message}`);
+  }
+  const workspaceId = mem.workspace_id as string;
+
+  // 2. Ensure the persistent e2e-live user exists with the known password.
+  const { data: list } = await sb.auth.admin.listUsers({ perPage: 1000 });
+  let liveUser = list?.users?.find((u) => u.email === opts.liveEmail) ?? null;
+  if (!liveUser) {
+    const { data: created, error: cErr } = await sb.auth.admin.createUser({
+      email: opts.liveEmail, password: opts.livePassword, email_confirm: true,
+    });
+    if (cErr || !created.user) throw new Error(`create e2e-live user failed: ${cErr?.message}`);
+    liveUser = created.user;
+  } else {
+    await sb.auth.admin.updateUserById(liveUser.id, { password: opts.livePassword });
+  }
+  await sb.from('profiles').upsert({ id: liveUser.id, email: opts.liveEmail }, { onConflict: 'id' });
+
+  // 3. Ensure viewer membership in the owner's workspace (read-only).
+  const { error: upErr } = await sb
+    .from('workspace_members')
+    .upsert({ workspace_id: workspaceId, user_id: liveUser.id, role: 'viewer' }, { onConflict: 'workspace_id,user_id' });
+  if (upErr) throw new Error(`live membership upsert failed: ${upErr.message}`);
+
+  return { workspaceId, liveUserId: liveUser.id };
 }

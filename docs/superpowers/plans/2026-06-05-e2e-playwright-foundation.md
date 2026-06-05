@@ -606,7 +606,9 @@ git commit -m "test(e2e): add two-lane Playwright config with webServer + setup/
 
 ### Task 8: Auth setup & teardown projects
 
-> Setup signs in via supabase-js in a real browser context so we capture whatever localStorage key supabase-js uses, then save `storageState`. Core uses the ephemeral identity (ids written to disk for teardown); live uses `worship@`.
+> Setup signs in via supabase-js in a real browser context so we capture whatever localStorage key supabase-js uses, then save `storageState`. Core uses the ephemeral identity (ids written to disk for teardown).
+>
+> **DECISION (2026-06-05): live lane uses a dedicated `e2e-live` member, NOT `worship@` directly.** `worship@` has no password (Google/magic-link). Instead, live-setup ensures a persistent `e2e-live@e2e.bulletin.test` user (password in `.env.e2e` `E2E_LIVE_PASSWORD`) exists and is a member of `worship@`'s workspace — so it inherits the per-workspace connected PCO/Google tokens. Read-only. This requires a new helper `ensureLiveWorkspaceMember()` in `supabase-admin.ts` that: (1) resolves `worship@`'s `workspace_id` via `profiles`→`workspace_members`, (2) creates the `e2e-live` user if absent (idempotent, via `service_role` admin API with `email_confirm:true`), (3) upserts its `workspace_members` row with role `viewer`. The live-setup spec then signs in as `E2E_LIVE_EMAIL`/`E2E_LIVE_PASSWORD`. The `auth.setup.ts` `@live-setup` block below must be updated to call this helper instead of signing in as `worship@`.
 
 **Files:**
 - Create: `tests/e2e/helpers/auth.setup.ts`
