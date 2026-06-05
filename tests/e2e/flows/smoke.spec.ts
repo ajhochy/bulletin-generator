@@ -1,12 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { AppShell } from '../pages/AppShell';
-import { installClock, settlePersist } from '../helpers/clock';
 import { assertValidPdf } from '../helpers/pdf';
 
 test.describe('@core harness smoke', () => {
   test('boots, authenticates, navigates, persists a project, exports PDF', async ({ page }) => {
-    await installClock(page);
     const shell = new AppShell(page);
     await shell.goto();
     await shell.expectAuthenticated();
@@ -15,18 +13,23 @@ test.describe('@core harness smoke', () => {
       await shell.switchTo(tab);
     }
 
-    // Create + persist a project via the UI.
+    // Create + persist a project, proving the full frontend -> server.py ->
+    // Supabase write path. Autosave only fires once a project is active
+    // (projects.js:345), so a fresh user must explicitly Save first: open the
+    // File menu (a <details>), name the bulletin, click Save, await the POST.
     await shell.switchTo('editor');
+    await page.locator('#editor-toolbar-file summary').click();
     await page.locator('#bulletin-title').fill('E2E Smoke Bulletin');
-    await page.locator('#svc-title').fill('Smoke Service');
-    await page.locator('#add-item-btn').click();
-    await page.locator('[data-testid="item-row"][data-index="0"] .item-title-input').fill('Welcome');
-    await settlePersist(page);
+    const saved = page.waitForResponse(
+      (r) => r.url().includes('/api/projects') && r.request().method() === 'POST' && r.ok(),
+      { timeout: 15_000 },
+    );
+    await page.locator('#project-save-btn').click();
+    await saved;
 
-    // Confirm it persisted by reloading and finding it in Files.
-    await page.reload();
+    // Confirm it persisted: the saved project appears in the Projects list.
     await shell.switchTo('files');
-    await expect(page.locator('#files-list')).toContainText('E2E Smoke Bulletin');
+    await expect(page.locator('#files-list')).toContainText('E2E Smoke Bulletin', { timeout: 10_000 });
 
     // Export a PDF through the real UI button (authenticated, via app JS) and
     // assert the downloaded bytes are a valid PDF.
@@ -49,7 +52,7 @@ test.describe('@live real-integration smoke', () => {
     await shell.expectAuthenticated();
     // PCO connected (inherited from worship@'s workspace) → the import view
     // (hidden until connected) is visible. Read-only: we never trigger an import.
-    await page.locator('#editor-toolbar-sync').click();
+    await page.locator('#editor-toolbar-sync summary').click();
     await expect(page.locator('#pco-import-view')).toBeVisible();
   });
 });

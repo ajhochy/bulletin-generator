@@ -4,6 +4,9 @@ import { config as loadDotenv } from 'dotenv';
 loadDotenv({ path: '.env.e2e' });
 
 const BASE_URL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8080';
+// server.py needs Python 3.10+ (PEP 604 unions). CI's python3 is 3.12; locally
+// set E2E_PYTHON (e.g. .venv/bin/python) if your `python3` is older.
+const PYTHON = process.env.E2E_PYTHON ?? 'python3';
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -22,7 +25,7 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   webServer: {
-    command: 'python3 server.py',
+    command: `${PYTHON} server.py`,
     url: `${BASE_URL}/api/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

@@ -16,6 +16,10 @@ export class AppShell {
   async goto(): Promise<void> {
     await this.page.goto('/');
     await expect(this.page.locator('.tab-bar')).toBeVisible();
+    // The tab system is wired by the async legacy-script loader AFTER `load`.
+    // initTabSemantics() marks the default (editor) tab aria-selected="true";
+    // wait for that so click handlers are attached before we interact.
+    await expect(this.page.locator('[data-tab="page-editor"]')).toHaveAttribute('aria-selected', 'true');
   }
 
   tab(name: TabName): Locator {
