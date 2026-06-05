@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-04 (v0.0.4 packaged app boots & verified working on macOS 26.5/arm64 — 5 latent build defects fixed)_
+_Last updated: 2026-06-05 (presence endpoint 500 fixed — workspace_presences.project_id uuid→text)_
 
 ## Current focus
 
@@ -8,7 +8,11 @@ Branch: `feat/supabase-multitenant-electron`. Milestone: Supabase + Multi-tenant
 
 Issues 001–023 are implemented and automated-verified on this branch. Issue 023 (remove conflict detection, add presence heartbeat + read-only mode for non-owners) is DONE.
 
+Side branch `test/e2e-playwright-foundation` holds the Playwright E2E suite; its Projects spec surfaced the presence 500 (see below).
+
 ## Recently completed
+
+- **Presence endpoint 500 fixed (branch `test/e2e-playwright-foundation`).** `workspace_presences.project_id` was created as `uuid` (migration `20260603000003_workspace_presences.sql`) but `public.projects.id` is **TEXT** (`proj_<ts>_<rand>`). Binding a TEXT project id against the uuid column raised `psycopg.errors.InvalidTextRepresentation`, 500-ing every `GET /api/presence` and `POST /api/presence/heartbeat` for real projects — silently, because the frontend swallows presence errors (best-effort). Presence was fully broken for all projects. **Fix:** new additive migration `supabase/migrations/20260605000002_presence_project_id_text.sql` idempotently alters the column to `text` (uuid→text is a lossless widening cast; PK + index rebuilt automatically). Applied live to the Supabase project. Also corrected two now-misleading `<uuid>` docstrings in `server.py` presence handlers (the false "uuid" assumption is what caused the bug). **No Python query change needed** — handlers bind `project_id` as a plain string with no `::uuid` cast. **Verified:** live column `data_type=text`; faithful DB round-trip through the exact heartbeat-upsert + GET query shapes with a TEXT `proj_...` id returned the row with no error (old uuid column would have raised); `ai-workflow checks --level issue` and `--level pr` both PASS (vite build + pytest + vitest). Surfaced by `tests/e2e/features/projects.spec.ts`. Full HTTP-level E2E confirmation (live auth session) belongs in manual smoke.
 
 - **Abandoned Share-to-Workspace; confirmed visibility model A (workspace-visible by default + hand-off).** Removed dead code: `_handle_share_project` + dispatch (server.py), `share_project_to_workspace` (all 3 storage backends), `tests/test_share_project.py`. Issue 020's private-by-default is obsolete (the `'private'` column default is vestigial — `save_project` forces `'workspace'`; owner-only-write RLS retained). Docs reconciled (decisions.md, architecture.md, current-plan.md, issue #272). GitHub #211 closed not-planned. See `decisions.md` 2026-06-04. NOTE: `python -c "import server"` OK; project/auth tests unchanged (108 pass; 1 pre-existing test-ordering pollution failure in `test_project_visibility.py::TestGetProjectsList` that also fails on committed code — unrelated, worth a separate isolation fix).
 - **Packaged Electron app made to actually boot (v0.0.4, verified working).** The released DMGs (v0.0.1) had never been boot-tested; five latent build defects surfaced in sequence on macOS 26.5/arm64. All fixed on `feat/supabase-multitenant-electron`, shipped via tags `electron-supabase-beta-v0.0.2/3/4` (draft prereleases):

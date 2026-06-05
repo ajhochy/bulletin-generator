@@ -3242,7 +3242,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Presence endpoints ─────────────────────────────────────────────────────
 
     def _handle_post_presence_heartbeat(self):
-        """POST /api/presence/heartbeat  body: {"project_id": "<uuid>"}
+        """POST /api/presence/heartbeat  body: {"project_id": "<project-id>"}
+        project_id is the TEXT project id (proj_<ts>_<rand>), not a uuid.
         Upsert a workspace_presences row with last_seen_at = now().
         Desktop mode: no-op, returns {"ok": true}.
         """
@@ -3283,7 +3284,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_get_presence(self):
-        """GET /api/presence?project_id=<uuid>
+        """GET /api/presence?project_id=<project-id>
         Return active presence records for the project (last_seen_at within 90s).
         Desktop mode: returns empty list.
         """
