@@ -23,6 +23,6 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.js'],
     // Never scan agent worktrees or deps — they hold stale duplicate specs
     // that inflate counts and can false-fail if the copies diverge from HEAD.
-    exclude: ['**/node_modules/**', '**/.claude/**', '**/dist/**'],
+    exclude: ['**/node_modules/**', '**/.claude/**', '**/dist/**', 'tests/e2e/**/*.spec.ts'],
   },
 });
