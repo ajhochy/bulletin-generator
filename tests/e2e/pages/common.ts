@@ -1,5 +1,13 @@
 import { type Page, type Locator, expect } from '@playwright/test';
 
+/** Wait for the app's async startup (restoreOnStartup) to finish. Needed after
+ *  page.reload(), where the readiness flag resets until startup re-completes. */
+export async function waitForAppReady(page: Page): Promise<void> {
+  await page.waitForFunction(() => (window as { __BG_READY__?: boolean }).__BG_READY__ === true, undefined, {
+    timeout: 15_000,
+  });
+}
+
 const TOOLBAR_MENU_IDS = {
   file: 'editor-toolbar-file',
   sync: 'editor-toolbar-sync',
