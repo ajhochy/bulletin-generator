@@ -45,6 +45,13 @@ test.describe('@core Server-mode multitenant behaviors', () => {
     }
   });
 
+  // NOTE: There is intentionally no 409 revision-conflict test. The multitenant
+  // model (server.py _handle_post_projects, "issue 021") deliberately REPLACED
+  // revision-based conflict detection with owner-only write enforcement: the
+  // server ignores _clientRevision and only the project owner may save (others
+  // get 403). The legacy #conflict-dialog element is therefore inert. Ownership
+  // safety is covered by the read-only test above (non-owners can't edit).
+
   test('presence: a second member opening the same project shows a presence badge', async ({ page, browser }) => {
     // User A creates + saves a workspace project, then reloads so restoreOnStartup
     // reopens it and registers A's presence heartbeat.
