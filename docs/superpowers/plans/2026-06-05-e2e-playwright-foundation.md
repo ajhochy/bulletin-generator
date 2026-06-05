@@ -106,8 +106,9 @@ git commit -m "test(e2e): add @playwright/test runner and scripts"
 
 Create `.env.e2e.example`:
 ```bash
-# Hosted Supabase TEST project (never production)
-SUPABASE_URL=https://YOUR_TEST_REF.supabase.co
+# The single hosted Supabase project (the same one worship@ lives in).
+# Both lanes use it; the core lane isolates via ephemeral e2e- identities.
+SUPABASE_URL=https://YOUR_REF.supabase.co
 SUPABASE_ANON_KEY=eyJ...anon...
 SUPABASE_JWT_SECRET=your-test-jwt-secret
 SUPABASE_SERVICE_ROLE_KEY=eyJ...service_role...   # setup/teardown only
@@ -311,6 +312,27 @@ export async function destroyEphemeralIdentity(id: EphemeralIdentity): Promise<v
   await sb.from('workspace_members').delete().eq('workspace_id', id.workspaceId);
   await sb.from('workspaces').delete().eq('id', id.workspaceId);
   await sb.auth.admin.deleteUser(id.userId);
+}
+
+/**
+ * Safety net for the single-live-project model: delete any `e2e-`-prefixed
+ * leftovers a prior failed teardown left behind. ONLY touches `e2e-` rows, so it
+ * can never affect real users/workspaces. Runs at the start of each setup.
+ */
+export async function sweepStaleEphemeralIdentities(): Promise<void> {
+  const sb = admin();
+  // Workspaces created by the suite are named "E2E <tag>" / slug "e2e-<tag>".
+  const { data: stale } = await sb.from('workspaces').select('id').like('slug', 'e2e-%');
+  for (const ws of stale ?? []) {
+    await sb.from('projects').delete().eq('workspace_id', ws.id);
+    await sb.from('workspace_members').delete().eq('workspace_id', ws.id);
+    await sb.from('workspaces').delete().eq('id', ws.id);
+  }
+  // Delete orphaned e2e- auth users (paginate; emails carry the e2e- prefix).
+  const { data: list } = await sb.auth.admin.listUsers({ perPage: 1000 });
+  for (const u of list?.users ?? []) {
+    if (u.email?.startsWith('e2e-')) await sb.auth.admin.deleteUser(u.id);
+  }
 }
 ```
 
@@ -597,7 +619,7 @@ Create `tests/e2e/helpers/auth.setup.ts`:
 import { test as setup, expect } from '@playwright/test';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { e2eEnv } from './env';
-import { createEphemeralIdentity } from './supabase-admin';
+import { createEphemeralIdentity, sweepStaleEphemeralIdentities } from './supabase-admin';
 
 const CORE_STATE = 'tests/e2e/.auth/core.json';
 const LIVE_STATE = 'tests/e2e/.auth/live.json';
@@ -625,6 +647,7 @@ async function signInAndSave(page: import('@playwright/test').Page, email: strin
 }
 
 setup('@core-setup provision ephemeral identity', async ({ page }) => {
+  await sweepStaleEphemeralIdentities(); // remove any leftovers from a prior failed run
   const id = await createEphemeralIdentity('core');
   mkdirSync('tests/e2e/.auth', { recursive: true });
   writeFileSync(CORE_IDS, JSON.stringify(id));

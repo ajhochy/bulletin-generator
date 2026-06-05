@@ -32,7 +32,7 @@ flaky gate gets ignored — strictly worse than no gate.
 | | **Lane A — Core (PR gate)** | **Lane B — Live (real integrations)** |
 |---|---|---|
 | Backend | Real `server.py`, server mode | Real `server.py`, server mode |
-| Supabase | Real hosted test project, **ephemeral isolated user/workspace per run** | Real hosted test project, `worship@visaliacrc.com` account |
+| Supabase | The single live project, **ephemeral isolated user/workspace per run** | The single live project, `worship@visaliacrc.com` account |
 | PCO / Google | **Recorded/replayed** real responses (deterministic) | **Live API**, read-only, using the workspace's already-connected tokens |
 | PDF | Real headless Chrome | Real headless Chrome |
 | Runs | Every push/PR, **blocking** | Nightly cron + `workflow_dispatch` + `run-live` PR label, **soft-report** |
@@ -46,13 +46,20 @@ Properties:
 - **The interactive OAuth consent screen is never automated.** Lane B inherits the
   `worship@` workspace's already-connected tokens; Lane A's ephemeral users have nothing
   connected, so their PCO/Google paths are served from recordings.
-- **Isolation via the app's own multitenancy.** Both lanes hit the real hosted Supabase
-  project. Lane A stays deterministic because each CI run gets its own throwaway user +
-  workspace; RLS guarantees parallel runs cannot see each other's rows.
+- **Isolation via the app's own multitenancy.** There is a **single** hosted Supabase
+  project (the one `worship@` lives in); both lanes use it. Lane A stays deterministic
+  and contained because each CI run gets its own throwaway `e2e-`-prefixed user +
+  workspace; RLS guarantees parallel runs (and real users) cannot see each other's rows.
 
-**Accepted dependency:** the PR gate depends on hosted Supabase being reachable. This is
-a controlled, highly-reliable, first-party dependency (unlike PCO/Google) and is the
-deliberate price of the fidelity requirement.
+**Accepted dependencies / risks:**
+- The PR gate depends on the hosted Supabase project being reachable — a controlled,
+  highly-reliable, first-party dependency (unlike PCO/Google).
+- The core lane creates and deletes ephemeral identities in the **same project that
+  serves production**. Blast radius is bounded by: (a) an `e2e-` naming convention on
+  every test-created user/workspace, (b) hardened, workspace-scoped teardown, and (c) a
+  stale-identity sweep at the start of each run that removes any `e2e-` leftovers a prior
+  failed teardown left behind. The `service_role` key for this project therefore lives in
+  CI secrets — this is the deliberate price of the single-project, max-fidelity choice.
 
 ---
 
@@ -256,8 +263,8 @@ incrementally toward full matrix coverage on a shared feature branch.
 | `worship@` tokens revoked/expired | Live lane fails loudly (alert), gate unaffected; document re-connect runbook. |
 | Hosted Supabase outage blocks gate | Accepted; first-party reliable dependency; retry-with-backoff on setup. |
 | Recordings drift from real APIs | Live lane re-records and PRs the diff; recordings reviewed like code. |
-| `service_role` key in CI | Stored as GitHub Secret; scoped to a dedicated test project, never prod. |
-| Ephemeral-user buildup if teardown fails | Idempotent teardown + periodic sweep of `e2e-*` users. |
+| `service_role` key in CI | Single live project; key stored as a GitHub Secret. Mitigated by `e2e-` naming + workspace-scoped teardown + start-of-run sweep. |
+| Ephemeral-user buildup / failed teardown against the live project | Start-of-run sweep deletes any `e2e-`-prefixed leftovers; teardown is idempotent and workspace-scoped. |
 | Desktop/Electron paths not covered by server-mode suite | Out of scope for v1; a thin Electron boot-smoke can be a later epic issue. |
 | PDF non-determinism | Assert structure + page count; visual-snapshot stable preview HTML, not PDF raster. |
 
