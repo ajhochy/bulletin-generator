@@ -344,30 +344,39 @@ def _oauth_config_error_redirect(provider, detail):
     return f'/?{provider}_error=config&detail={msg}&tab=page-settings'
 
 
-def _get_settings():
-    """Return the settings dict via the storage abstraction."""
+def _get_settings(storage=None):
+    """Return the settings dict via the storage abstraction.
+
+    In server (multitenant) mode, callers handling an authenticated request MUST
+    pass a workspace-scoped ``storage`` (see Handler._storage_for_user) — without
+    it, get_storage(DATA_DIR) is un-scoped and reads ``workspace_settings LIMIT 1``
+    (an arbitrary workspace), which is a multitenancy bug. The default is kept
+    only for desktop mode and non-request contexts (startup logging, defaults).
+    """
     from storage import get_storage  # noqa: PLC0415
-    return get_storage(DATA_DIR).get_settings()
+    return (storage or get_storage(DATA_DIR)).get_settings()
 
 
-def _save_settings(data: dict) -> dict:
-    """Persist the settings dict via the storage abstraction."""
+def _save_settings(data: dict, storage=None) -> dict:
+    """Persist the settings dict via the storage abstraction.
+
+    Pass a workspace-scoped ``storage`` in server mode (see _get_settings)."""
     from storage import get_storage  # noqa: PLC0415
-    return get_storage(DATA_DIR).save_settings(data)
+    return (storage or get_storage(DATA_DIR)).save_settings(data)
 
 
-def _pco_auth_header():
+def _pco_auth_header(storage=None):
     """Return the OAuth Bearer header from stored access token, or None."""
-    settings = _get_settings()
+    settings = _get_settings(storage)
     access_token = settings.get('pcoAccessToken', '').strip()
     if access_token:
         return f'Bearer {access_token}'
     return None
 
 
-def _refresh_pco_token():
+def _refresh_pco_token(storage=None):
     """Exchange refresh_token for a new access_token. Returns new Bearer header or None."""
-    settings = _get_settings()
+    settings = _get_settings(storage)
     refresh_token = settings.get('pcoRefreshToken', '').strip()
     client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
@@ -392,11 +401,11 @@ def _refresh_pco_token():
         new_refresh = token_resp.get('refresh_token', '').strip()
         if not new_access:
             return None
-        s = _get_settings()
+        s = _get_settings(storage)
         s['pcoAccessToken']  = new_access
         if new_refresh:
             s['pcoRefreshToken'] = new_refresh
-        _save_settings(s)
+        _save_settings(s, storage)
         print('  [oauth] PCO access token refreshed.')
         return f'Bearer {new_access}'
     except Exception as e:
@@ -404,15 +413,15 @@ def _refresh_pco_token():
         return None
 
 
-def _google_auth_header():
-    settings = _get_settings()
+def _google_auth_header(storage=None):
+    settings = _get_settings(storage)
     token = settings.get('googleAccessToken', '').strip()
     return f'Bearer {token}' if token else None
 
 
-def _refresh_google_token():
+def _refresh_google_token(storage=None):
     """Exchange stored refresh_token for a new Google access_token."""
-    settings = _get_settings()
+    settings = _get_settings(storage)
     refresh_token = settings.get('googleRefreshToken', '').strip()
     client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
@@ -435,9 +444,9 @@ def _refresh_google_token():
         new_token = resp_data.get('access_token', '').strip()
         if not new_token:
             return None
-        s = _get_settings()
+        s = _get_settings(storage)
         s['googleAccessToken'] = new_token
-        _save_settings(s)
+        _save_settings(s, storage)
         print('  [google] Access token refreshed.')
         return f'Bearer {new_token}'
     except Exception as e:
@@ -445,15 +454,15 @@ def _refresh_google_token():
         return None
 
 
-def _public_config():
-    settings = _get_settings()
+def _public_config(storage=None):
+    settings = _get_settings(storage)
     return {
         "appMode": APP_MODE,
         "appVersion": APP_VERSION,
         "supabaseUrl": os.getenv("SUPABASE_URL", ""),
         "supabaseAnonKey": os.getenv("SUPABASE_ANON_KEY", ""),
-        "pcoConfigured": _pco_auth_header() is not None,
-        "googleConfigured": _google_auth_header() is not None,
+        "pcoConfigured": _pco_auth_header(storage) is not None,
+        "googleConfigured": _google_auth_header(storage) is not None,
         "driveConfigured": bool(settings.get('googleDriveScopeGranted')),
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
@@ -1469,7 +1478,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json(store.list_announcements())
 
     def _handle_get_volunteer_roles(self):
-        self._send_json(_get_settings().get('volunteerRoles', []))
+        user = self._require_auth()
+        if user is None:
+            return
+        storage = self._storage_for_user(user)
+        self._send_json(_get_settings(storage).get('volunteerRoles', []))
 
     def _handle_get_settings(self):
         user = self._require_auth()
@@ -1493,7 +1506,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({
             "settings": store.get_settings(),
             "songDb":   store.list_songs(),
-            "config":   _public_config(),
+            "config":   _public_config(store),
         })
 
     def _handle_static(self):
@@ -1901,6 +1914,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self._send_json({"ok": True})
 
     def _handle_post_volunteer_roles(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             roles = self._read_body_json()
         except Exception:
@@ -1909,9 +1925,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(roles, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        existing = _get_settings()
+        storage = self._storage_for_user(user)
+        existing = _get_settings(storage)
         existing['volunteerRoles'] = roles
-        _save_settings(existing)
+        _save_settings(existing, storage)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
@@ -2408,6 +2425,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by PCO.')
 
+            # FOLLOW-UP (multitenancy): this OAuth callback is a browser redirect
+            # with no Bearer/session, so it cannot scope to the connecting user's
+            # workspace — it writes to the un-scoped settings (workspace_settings
+            # LIMIT 1). Correct only for single-workspace deployments. Proper fix
+            # needs the workspace id passed via a signed OAuth `state` from
+            # /oauth/pco/start. The READ path (proxy/refresh/config) is scoped.
             settings = _get_settings()
             settings['pcoAccessToken']  = access_token
             settings['pcoRefreshToken'] = refresh_token
@@ -2501,6 +2524,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by Google.')
 
+            # FOLLOW-UP (multitenancy): un-scoped write — see the PCO callback
+            # note. Needs workspace id via signed OAuth `state` to scope correctly.
             s = _get_settings()
             s['googleAccessToken']       = access_token
             s['googleDriveScopeGranted'] = True
@@ -2617,7 +2642,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        auth = _google_auth_header()
+        storage = self._storage_for_user(user)
+        auth = _google_auth_header(storage)
         if not auth:
             self._send_json({'error': 'Not connected to Google Calendar.'}, 401)
             return
@@ -2632,7 +2658,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             data = _do_fetch(auth)
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_google_token()
+                new_auth = _refresh_google_token(storage)
                 if new_auth:
                     try:
                         data = _do_fetch(new_auth)
@@ -2800,14 +2826,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        auth = _pco_auth_header()
+        storage = self._storage_for_user(user)
+        auth = _pco_auth_header(storage)
         if not auth:
             return self._send_json({"errors": [{"detail": "Planning Center credentials are not configured."}]}, 503)
         try:
             self._pco_send_raw(self._pco_do_request(self._pco_build_request(auth)))
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_pco_token()
+                new_auth = _refresh_pco_token(storage)
                 if new_auth:
                     try:
                         self._pco_send_raw(self._pco_do_request(self._pco_build_request(new_auth)))
@@ -2918,8 +2945,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if user is None:
             return
         import base64 as _base64
-        settings = _get_settings()
-        auth = _google_auth_header()
+        storage = self._storage_for_user(user)
+        settings = _get_settings(storage)
+        auth = _google_auth_header(storage)
         if not auth or not settings.get('googleDriveScopeGranted'):
             self._send_json({
                 "error": "Google Drive not connected. Reconnect Google in Settings to enable Drive.",
@@ -2984,7 +3012,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             result = _do_upload(auth)
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_google_token()
+                new_auth = _refresh_google_token(storage)
                 if new_auth:
                     try:
                         result = _do_upload(new_auth)
@@ -3171,11 +3199,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
+        storage = self._storage_for_user(user)
         try:
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
 
-            defaults = _public_config()["calendarDefaults"]
+            defaults = _public_config(storage)["calendarDefaults"]
             urls = defaults["urls"]
             if 'urls' in params:
                 try:
@@ -3197,13 +3226,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             svc_date_str = params.get('date', [None])[0]
 
             # Prefer Google Calendar API if the user is connected and has selected calendars
-            google_cal_ids = _get_settings().get('googleCalendarIds', [])
-            google_auth = _google_auth_header()
+            google_cal_ids = _get_settings(storage).get('googleCalendarIds', [])
+            google_auth = _google_auth_header(storage)
             if google_auth and google_cal_ids:
                 result = fetch_google_cal_events(google_auth, google_cal_ids, exclude, svc_date_str)
                 if result is None:
                     # None means auth failure (401/403) — refresh token and retry once
-                    new_auth = _refresh_google_token()
+                    new_auth = _refresh_google_token(storage)
                     if new_auth:
                         result = fetch_google_cal_events(new_auth, google_cal_ids, exclude, svc_date_str)
                     else:
