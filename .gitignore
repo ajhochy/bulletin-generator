@@ -40,3 +40,9 @@ tmp/
 .agent-stack/
 .agents/
 skills-lock.json
+
+# Playwright E2E
+/test-results/
+/playwright-report/
+/tests/e2e/.auth/
+/tests/e2e/recordings/*.local.har
