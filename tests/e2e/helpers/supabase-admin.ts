@@ -97,6 +97,41 @@ export async function sweepStaleEphemeralIdentities(): Promise<void> {
 }
 
 /**
+ * Create a disposable extra member in an EXISTING workspace (for multi-user
+ * tests like read-only / conflict). Does NOT create a workspace. Clean up with
+ * removeWorkspaceMember — NOT destroyEphemeralIdentity (which deletes the shared
+ * workspace). Email is `e2e-eph-` prefixed so the sweep also catches it.
+ */
+export async function createWorkspaceMember(
+  workspaceId: string,
+  role: 'viewer' | 'editor' | 'owner',
+): Promise<EphemeralIdentity> {
+  const sb = admin();
+  const tag = randomUUID().slice(0, 8);
+  const email = `e2e-eph-member-${tag}@e2e.bulletin.test`;
+  const password = `E2e-${randomUUID()}`;
+  const { data: created, error } = await sb.auth.admin.createUser({ email, password, email_confirm: true });
+  if (error || !created.user) throw new Error(`createUser failed: ${error?.message}`);
+  const userId = created.user.id;
+  await sb.from('profiles').upsert({ id: userId, email }, { onConflict: 'id' });
+  const { error: memErr } = await sb
+    .from('workspace_members')
+    .upsert({ workspace_id: workspaceId, user_id: userId, role }, { onConflict: 'workspace_id,user_id' });
+  if (memErr) throw new Error(`member upsert failed: ${memErr.message}`);
+  return { userId, workspaceId, email, password };
+}
+
+/** Remove an extra member created by createWorkspaceMember (membership + auth user only). */
+export async function removeWorkspaceMember(id: EphemeralIdentity): Promise<void> {
+  if (!id.email?.startsWith('e2e-eph-')) {
+    throw new Error(`refusing to remove non-ephemeral user: ${id.email}`);
+  }
+  const sb = admin();
+  await sb.from('workspace_members').delete().eq('workspace_id', id.workspaceId).eq('user_id', id.userId);
+  await sb.auth.admin.deleteUser(id.userId);
+}
+
+/**
  * Ensure a PERSISTENT `e2e-live` user exists and is a member of the owner's
  * (worship@'s) workspace, so the live lane inherits that workspace's already-
  * connected PCO/Google tokens (tokens are stored per-workspace). Idempotent.
