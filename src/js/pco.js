@@ -2,6 +2,18 @@
 const PCO_BASE      = '/pco-proxy';
 const PCO_LAST_IMPORT_KEY = 'worshipPcoLastImport';
 
+// Build an OAuth /start URL. In server (multitenant) mode the start endpoint is
+// a top-level navigation with no Authorization header, so it can't tell which
+// workspace is connecting. Pass the Supabase access token as a query param so
+// the server can verify it and bind the connecting workspace into the signed
+// OAuth `state`. In desktop mode getSession() is null and the bare URL is used
+// (single-workspace — no binding needed).
+function oauthStartUrl(base) {
+  const session = typeof getSession === 'function' ? getSession() : null;
+  const token = session && session.access_token;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
 async function pcoGet(path) {
   // Use apiFetch so the Supabase Bearer token is attached in server mode.
   try {
@@ -1069,7 +1081,7 @@ function initGoogle() {
   if (typeof initDriveSettings === 'function') initDriveSettings();
 
   connectBtn.addEventListener('click', () => {
-    window.location.href = '/oauth/google/start';
+    window.location.href = oauthStartUrl('/oauth/google/start');
   });
 
   disconnBtn.addEventListener('click', async () => {
@@ -1123,7 +1135,7 @@ async function googleLoadCalendarList() {
 
 // Clicking Connect Planning Center navigates to OAuth start
 document.getElementById('pco-connect-btn').addEventListener('click', () => {
-  window.location.href = '/oauth/pco/start';
+  window.location.href = oauthStartUrl('/oauth/pco/start');
 });
 
 document.getElementById('pco-disconnect-btn').addEventListener('click', async () => {

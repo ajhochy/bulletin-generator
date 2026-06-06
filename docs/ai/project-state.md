@@ -65,6 +65,20 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 
 ## Recent coding-agent runs
 
+### 2026-06-05 — oauth-state-multitenancy
+- Files modified:
+  - `server.py` — added `import hmac`/`import hashlib`; new helpers `_oauth_state_secret()`, `_sign_oauth_state(workspace_id)`, `_verify_oauth_state(state)` (HMAC-SHA256, constant-time verify). Added Handler methods `_oauth_start_workspace_state(provider)` (server mode: verify SPA `?token=` access token → resolve workspace → sign into OAuth `state`; refuse if unverifiable) and `_oauth_callback_storage(provider)` (verify signed `state` → workspace-scoped `get_storage(workspace_id=…, user_claims=None)`; refuse missing/forged state). Both OAuth start handlers now embed the signed `state`; both callbacks now resolve scoped storage and persist tokens via `_get_settings(storage)`/`_save_settings(s, storage)`. Removed both `FOLLOW-UP (multitenancy)` comments.
+  - `src/js/pco.js` — new `oauthStartUrl(base)` helper appends the Supabase access token (`getSession().access_token`) as `?token=` to both `/oauth/{pco,google}/start` navigations; bare URL in desktop mode.
+  - `tests/test_server_utils.py` — added `TestOAuthState` (4) + `TestOAuthCallbackWorkspaceScoping` (4) contract tests.
+  - `docs/ai/contracts/oauth-state-multitenancy.json` — acceptance contract (8 automated + 1 manual).
+- Why: follow-up to 67bb9ca (which scoped the OAuth READ path). The CONNECT/write path was still un-scoped — callbacks wrote tokens via `_get_settings()`/`_save_settings()` → `workspace_settings LIMIT 1`, so connecting PCO/Google in workspace B could land tokens in workspace A. The callbacks are unauthenticated browser redirects, so the workspace id is carried through a server-signed OAuth `state`.
+- Checks run: `pytest tests/test_server_utils.py -k "OAuthState or OAuthCallbackWorkspaceScoping"` → 8 passed (red→green confirmed). Full verification pending verification-gate.
+- Decisions made: workspace id passed via HMAC-signed OAuth `state` (option (a) from the task); HMAC key precedence `OAUTH_STATE_SECRET` → `SUPABASE_JWT_SECRET` → concatenated OAuth client secrets (never empty in a correct server deployment); callback writes use `user_claims=None` (owner-role DATABASE_URL connection, which bypasses RLS for the upsert — same path the prior un-scoped fallback used). See `docs/ai/decisions.md`.
+- Deviations from spec: none.
+- Concerns:
+  - Passing the Supabase access token as a `?token=` query param on `/start` (top-level navigation) is the task's suggested approach (a). The token is short-lived and the endpoint 302-redirects immediately; the start handlers must not log it. A server-minted single-use nonce would avoid query-param exposure but adds machinery — deferred.
+  - Live end-to-end (criterion in `not_tested`) needs manual smoke: connect PCO/Google as a member of workspace B and confirm the token row lands in B (not LIMIT 1) while workspace A is unaffected. Requires real OAuth consent + multi-workspace Postgres.
+
 ### 2026-06-03 — issue-023-presence-badge-readonly (PASS)
 - Files modified:
   - `src/js/modules/projects-core.js` — removed `deriveProjectSaveSuccess` (no longer needed); updated `buildProjectSaveRequest` to drop `_clientRevision`; updated `deriveProjectSaveFailure` to handle 403 → "forbidden" type; restored `deriveStartupRestore` export (was accidentally dropped).

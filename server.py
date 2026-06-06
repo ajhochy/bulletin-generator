@@ -13,6 +13,8 @@ import urllib.error
 import urllib.parse
 import json
 import base64
+import hmac
+import hashlib
 import re
 import os
 import sys
@@ -342,6 +344,63 @@ def _is_placeholder_oauth_value(value):
 def _oauth_config_error_redirect(provider, detail):
     msg = urllib.parse.quote(detail[:200])
     return f'/?{provider}_error=config&detail={msg}&tab=page-settings'
+
+
+def _oauth_state_secret() -> str:
+    """Return the HMAC key used to sign/verify the OAuth ``state`` parameter.
+
+    The OAuth start/callback endpoints are unauthenticated browser redirects, so
+    the connecting user's workspace id is smuggled through a signed ``state``
+    value (see _sign_oauth_state). Precedence:
+
+      1. ``OAUTH_STATE_SECRET``      — explicit, dedicated secret (recommended).
+      2. ``SUPABASE_JWT_SECRET``     — already present in most server deployments.
+      3. provider client secrets     — always present when an OAuth flow can run.
+
+    Only the *server* (multitenant) deployment needs an unguessable key; desktop
+    mode is single-workspace and never embeds a workspace id in the state.
+    """
+    for key in ('OAUTH_STATE_SECRET', 'SUPABASE_JWT_SECRET'):
+        val = os.environ.get(key, '').strip()
+        if val:
+            return val
+    # Fall back to the OAuth client secrets so the key is never empty in a
+    # correctly-configured server deployment.
+    combined = (os.environ.get('PCO_CLIENT_SECRET', '').strip()
+                + os.environ.get('GOOGLE_CLIENT_SECRET', '').strip())
+    return combined
+
+
+def _sign_oauth_state(workspace_id: str) -> str:
+    """Return ``"<workspace_id>.<hex-hmac>"`` binding the workspace to the flow.
+
+    The signature lets the (unauthenticated) OAuth callback trust the workspace
+    id without a Bearer token. Returns the bare id only if there is no workspace
+    to bind (desktop / single-workspace), which the callback treats as un-scoped.
+    """
+    if not workspace_id:
+        return ''
+    secret = _oauth_state_secret().encode()
+    sig = hmac.new(secret, workspace_id.encode(), hashlib.sha256).hexdigest()
+    return f'{workspace_id}.{sig}'
+
+
+def _verify_oauth_state(state: "str | None") -> "str | None":
+    """Return the workspace id from a validly-signed ``state``, else None.
+
+    Uses a constant-time comparison. Rejects empty, malformed (no signature
+    segment), tampered, and wrong-secret states.
+    """
+    if not state or '.' not in state:
+        return None
+    workspace_id, _, sig = state.rpartition('.')
+    if not workspace_id or not sig:
+        return None
+    secret = _oauth_state_secret().encode()
+    expected = hmac.new(secret, workspace_id.encode(), hashlib.sha256).hexdigest()
+    if hmac.compare_digest(sig, expected):
+        return workspace_id
+    return None
 
 
 def _get_settings(storage=None):
@@ -2362,10 +2421,71 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── PCO OAuth ──────────────────────────────────────────────────────────────
 
+    def _oauth_start_workspace_state(self, provider):
+        """Resolve the connecting user's workspace and return ``(state, error)``.
+
+        The OAuth start endpoint is a top-level browser navigation with no
+        Authorization header, so the SPA passes its Supabase access token as the
+        ``token`` query param. In server (multitenant) mode we verify it, resolve
+        workspace membership, and sign the workspace id into the OAuth ``state``
+        so the (also unauthenticated) callback can scope the token write to the
+        right workspace. Without a verifiable token we refuse, rather than let the
+        callback fall back to an arbitrary workspace (``workspace_settings LIMIT 1``).
+
+        In desktop mode the deployment is single-workspace, so no binding is
+        needed and ``('', None)`` is returned.
+        """
+        if IS_DESKTOP:
+            return '', None
+        qs = urllib.parse.urlparse(self.path).query
+        token = urllib.parse.parse_qs(qs).get('token', [None])[0]
+        if token:
+            import auth as _auth  # noqa: PLC0415 — deferred; db not available in desktop
+            _status, user = _auth.authenticate_authorization_header(f'Bearer {token}')
+            ws_id = user.get('workspace_id') if user else None
+            if ws_id:
+                return _sign_oauth_state(str(ws_id)), None
+        detail = ('Your session could not be verified. Reload the app, make sure '
+                  'you are signed in, and try connecting again.')
+        suffix = '&tab=page-settings' if provider == 'google' else ''
+        return '', f'/?{provider}_error=auth&detail={urllib.parse.quote(detail)}{suffix}'
+
+    def _oauth_callback_storage(self, provider):
+        """Resolve workspace-scoped storage for an OAuth callback. Returns
+        ``(storage, error_redirect)``.
+
+        Desktop mode returns ``(None, None)`` — the caller uses the default
+        single-workspace desktop storage. In server mode the connecting user's
+        workspace id is read from the signed ``state`` (set by
+        _oauth_start_workspace_state) and verified; the returned storage is
+        scoped to that workspace so the token write lands in the right row
+        rather than ``workspace_settings LIMIT 1``. Missing/invalid/forged state
+        is refused with an error redirect — we never write to an arbitrary
+        workspace.
+        """
+        if IS_DESKTOP:
+            return None, None
+        qs = urllib.parse.urlparse(self.path).query
+        state = urllib.parse.parse_qs(qs).get('state', [None])[0]
+        ws_id = _verify_oauth_state(state)
+        if not ws_id:
+            detail = ('Your session could not be verified, so the connection was '
+                      'not saved. Reload the app and try connecting again.')
+            suffix = '&tab=page-settings' if provider == 'google' else ''
+            return None, f'/?{provider}_error=state&detail={urllib.parse.quote(detail)}{suffix}'
+        from storage import get_storage  # noqa: PLC0415 — deferred; db not available in desktop
+        return get_storage(workspace_id=ws_id, user_claims=None), None
+
     def _handle_pco_oauth_start(self):
         client_id = os.environ.get('PCO_CLIENT_ID', '').strip()
         if not client_id:
             self._send_json({'error': 'PCO OAuth credentials not configured.'}, 503)
+            return
+        state, error_redirect = self._oauth_start_workspace_state('pco')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
+            self.end_headers()
             return
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
         if app_url:
@@ -2373,13 +2493,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             port = self.server.server_address[1]
             redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
-        params = urllib.parse.urlencode({
+        auth_params = {
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
             'scope':         'services',
             'prompt':        'login',
-        })
+        }
+        if state:
+            auth_params['state'] = state
+        params = urllib.parse.urlencode(auth_params)
         self.send_response(302)
         self.send_header('Location', f'https://api.planningcenteronline.com/oauth/authorize?{params}')
         self.end_headers()
@@ -2391,6 +2514,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not code:
             self.send_response(302)
             self.send_header('Location', '/?pco_error=denied')
+            self.end_headers()
+            return
+
+        # Resolve the workspace to write into from the signed `state` before
+        # exchanging the code — refuse rather than store into an arbitrary
+        # workspace if the binding is missing/invalid (multitenancy).
+        storage, error_redirect = self._oauth_callback_storage('pco')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
             self.end_headers()
             return
 
@@ -2425,16 +2558,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by PCO.')
 
-            # FOLLOW-UP (multitenancy): this OAuth callback is a browser redirect
-            # with no Bearer/session, so it cannot scope to the connecting user's
-            # workspace — it writes to the un-scoped settings (workspace_settings
-            # LIMIT 1). Correct only for single-workspace deployments. Proper fix
-            # needs the workspace id passed via a signed OAuth `state` from
-            # /oauth/pco/start. The READ path (proxy/refresh/config) is scoped.
-            settings = _get_settings()
+            # Scope the token write to the connecting user's workspace, resolved
+            # from the signed `state` above (None in desktop / single-workspace).
+            settings = _get_settings(storage)
             settings['pcoAccessToken']  = access_token
             settings['pcoRefreshToken'] = refresh_token
-            _save_settings(settings)
+            _save_settings(settings, storage)
 
             self.send_response(302)
             self.send_header('Location', '/?pco_connected=1')
@@ -2466,6 +2595,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', _oauth_config_error_redirect('google', detail))
             self.end_headers()
             return
+        state, error_redirect = self._oauth_start_workspace_state('google')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
+            self.end_headers()
+            return
         port = self.server.server_address[1]
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
         redirect_uri = f'{app_url}/oauth/google/callback' if app_url else f'http://localhost:{port}/oauth/google/callback'
@@ -2475,14 +2610,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         _GCAL_DRIVE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file'
         assert 'openid' not in _GCAL_DRIVE_SCOPES and 'profile' not in _GCAL_DRIVE_SCOPES, \
             'Calendar/Drive OAuth must not include identity scopes'
-        params = urllib.parse.urlencode({
+        auth_params = {
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
             'scope':         _GCAL_DRIVE_SCOPES,
             'access_type':   'offline',
             'prompt':        'consent',
-        })
+        }
+        if state:
+            auth_params['state'] = state
+        params = urllib.parse.urlencode(auth_params)
         self.send_response(302)
         self.send_header('Location', f'https://accounts.google.com/o/oauth2/v2/auth?{params}')
         self.end_headers()
@@ -2494,6 +2632,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if params.get('error') or not code:
             self.send_response(302)
             self.send_header('Location', '/?google_error=denied')
+            self.end_headers()
+            return
+
+        # Resolve the workspace to write into from the signed `state` before
+        # exchanging the code (multitenancy — see the PCO callback).
+        storage, error_redirect = self._oauth_callback_storage('google')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
             self.end_headers()
             return
 
@@ -2524,14 +2671,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by Google.')
 
-            # FOLLOW-UP (multitenancy): un-scoped write — see the PCO callback
-            # note. Needs workspace id via signed OAuth `state` to scope correctly.
-            s = _get_settings()
+            # Scope the token write to the connecting user's workspace, resolved
+            # from the signed `state` above (None in desktop / single-workspace).
+            s = _get_settings(storage)
             s['googleAccessToken']       = access_token
             s['googleDriveScopeGranted'] = True
             if refresh_token:
                 s['googleRefreshToken'] = refresh_token
-            _save_settings(s)
+            _save_settings(s, storage)
 
             self.send_response(302)
             self.send_header('Location', '/?google_connected=1&tab=page-settings')
