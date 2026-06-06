@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip pytest
-      - run: pytest tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py
+      - run: pytest tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py tests/test_issue_277_a_electron_db_mode.py
 
   db-integration:
     # Only run on the canonical repo so forks without the required secrets
