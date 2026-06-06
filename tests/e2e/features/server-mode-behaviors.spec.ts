@@ -53,6 +53,10 @@ test.describe('@core Server-mode multitenant behaviors', () => {
   // safety is covered by the read-only test above (non-owners can't edit).
 
   test('presence: a second member opening the same project shows a presence badge', async ({ page, browser }) => {
+    // Reloading to wait out the membership-visibility race (below) can take a few
+    // round-trips; give this test headroom beyond the 30s default.
+    test.setTimeout(75_000);
+
     // Unique per-run name so leftover same-named projects from earlier runs can
     // never make the Files list ambiguous.
     const projectName = `E2E Presence Bulletin ${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -85,8 +89,27 @@ test.describe('@core Server-mode multitenant behaviors', () => {
       const pageB = await ctxB.newPage();
       await signInAs(pageB, b.email, b.password);
       const shellB = new AppShell(pageB);
-      await shellB.switchTo('files');
-      await new ProjectsPage(pageB).loadById(projectId!);
+
+      // Membership-visibility race: B was added to A's workspace moments ago, and
+      // B's server-side membership resolution can lag B's first authenticated
+      // request (server returns 403 → empty project list, which the app does NOT
+      // auto-retry). In real use a member is invited long before they log in, so
+      // this is a test-setup race, not a product bug. Reload B until A's project
+      // actually resolves into B's Files list before driving the UI.
+      const loadBtn = pageB.locator(`#files-list .file-card [data-fm="load"][data-id="${projectId}"]`);
+      await expect.poll(async () => {
+        await shellB.switchTo('files');
+        if (await loadBtn.count() === 1) return true;
+        await pageB.reload();
+        await waitForAppReady(pageB);
+        return false;
+      }, {
+        message: "member B's workspace never resolved A's project (membership race?)",
+        timeout: 45_000,
+        intervals: [1000, 2000, 3000, 5000],
+      }).toBe(true);
+
+      await loadBtn.click();
       await shellB.switchTo('editor');
 
       // The presence badge lives inside the File toolbar dropdown — open it.
