@@ -44,6 +44,12 @@ class StubDriveHandler:
         # Simulate an authenticated user so the auth gate passes.
         return {"id": "test-user", "email": "tester@example.com"}
 
+    def _storage_for_user(self, user):
+        # Mirror Handler._storage_for_user; tests patch storage.get_storage to a
+        # tmp-rooted backend, so this resolves to that fake store.
+        from storage import get_storage
+        return get_storage()
+
     def _handle_drive_upload(self):
         # Defer lookup so tests compile before the method is implemented
         return server.Handler._handle_drive_upload(self)
@@ -64,6 +70,9 @@ class TestGoogleOAuthScope:
             def send_header(self, k, v): captured[k] = v
             def end_headers(self): pass
             def _send_json(self, body, status=200): captured['json'] = body
+            # Desktop/single-workspace path — workspace scoping is exercised by
+            # tests/test_server_utils.py::TestOAuthCallbackWorkspaceScoping.
+            def _oauth_start_workspace_state(self, provider): return '', None
 
         with patch.dict(os.environ, {
             'GOOGLE_CLIENT_ID': 'test-client-id',
@@ -98,6 +107,9 @@ class TestGoogleOAuthScope:
             def send_response(self, code): captured['code'] = code
             def send_header(self, k, v): captured[k] = v
             def end_headers(self): pass
+            # Desktop/single-workspace path — workspace scoping is exercised by
+            # tests/test_server_utils.py::TestOAuthCallbackWorkspaceScoping.
+            def _oauth_callback_storage(self, provider): return None, None
 
         with patch.dict(os.environ, {
             'GOOGLE_CLIENT_ID': 'cid',
