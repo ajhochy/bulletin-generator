@@ -590,11 +590,27 @@ def _find_chrome():
         'environment variable to your Chrome/Chromium binary path.'
     )
 
-# In electron mode the sidecar delegates PDF generation to Electron's
-# webContents.printToPDF(), so Chrome is not required at startup.
-# For all other modes, resolve Chrome eagerly so a missing binary fails
-# fast rather than at the first PDF request.
-CHROME_PATH = None if os.environ.get("APP_MODE", "").strip().lower() == "electron" else _find_chrome()
+# Chrome is resolved lazily — at the first PDF request, not at import — so the
+# server starts everywhere, including machines with no Chrome installed; only
+# PDF export degrades (with a clear message) rather than the whole app failing
+# to launch. In electron mode the sidecar delegates PDF generation to Electron's
+# webContents.printToPDF(), so Chrome is never needed here at all.
+CHROME_PATH = None          # populated on first use by _resolve_chrome()
+_chrome_resolved = False
+
+def _resolve_chrome():
+    """Resolve the Chrome/Chromium binary lazily and cache the result.
+
+    Returns the binary path, or raises ``RuntimeError`` (from ``_find_chrome``)
+    with a user-facing message when Chrome is absent. A failed lookup is not
+    cached, so PDF export starts working the moment the user installs Chrome —
+    no server restart required.
+    """
+    global CHROME_PATH, _chrome_resolved
+    if not _chrome_resolved:
+        CHROME_PATH = _find_chrome()
+        _chrome_resolved = True
+    return CHROME_PATH
 
 _lock = threading.Lock()
 
@@ -2881,6 +2897,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             )
             return
         # ── Headless Chrome path (server / desktop modes) ──────────────────────
+        # Resolve Chrome at request time. If it's missing the server still runs;
+        # only PDF export is unavailable, and the user gets a clear message.
+        try:
+            chrome_path = _resolve_chrome()
+        except RuntimeError as e:
+            self._send_json(
+                {"error": f"Install Google Chrome to export PDFs. ({e})"},
+                503,
+            )
+            return
 
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
@@ -2891,7 +2917,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     f.write(html_content)
 
                 cmd = [
-                    CHROME_PATH,
+                    chrome_path,
                     "--headless=new",
                     "--disable-gpu",
                     "--no-sandbox",               # required when running as root in Docker
