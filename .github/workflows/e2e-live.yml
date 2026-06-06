@@ -27,6 +27,6 @@ jobs:
           E2E_LIVE_EMAIL: ${{ secrets.E2E_LIVE_EMAIL }}
           E2E_LIVE_PASSWORD: ${{ secrets.E2E_LIVE_PASSWORD }}
         run: npx playwright test --project=live
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: playwright-report-live, path: playwright-report/, retention-days: 14 }
