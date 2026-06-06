@@ -5,11 +5,21 @@ See `CLAUDE.md` "Key Files" table for the full annotated list. This file is a qu
 ## Top-level
 
 - `server.py` — Python stdlib `http.server`, all API routes, OAuth, PDF gen, ~1,485 lines.
-- `launcher.py` — macOS desktop launcher + menu bar (rumps).
+- `launcher.py` — macOS desktop launcher + menu bar (rumps). **Deprecated** — Electron replaces this (issue 014 will remove it).
 - `index.html` — single-page shell, loads `src/js/*` directly via `<script>` tags. No bundler.
 - `bulletin-generator.spec` — PyInstaller spec for `.app` build.
 - `docker-compose.yml` — server-mode container + Watchtower sidecar.
 - `requirements.txt`, `desktop_config.py(.example)`, `.env(.example)`.
+- `auth.py` — Supabase JWT verification middleware, workspace membership lookup.
+- `db.py` — psycopg3 connection helpers, `transaction(claims)`, `admin_transaction()`.
+- `storage.py` — `StorageBackend` ABC + `JsonStorageBackend` (desktop) + `PostgresStorageBackend` (server).
+- `storage_assets.py` — Supabase Storage upload helper; `extract_and_upload_images()` replaces base64 cover/logo data-URIs with Storage public URLs. Called from `storage.py` save paths. No-op when `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` unset (desktop bypass).
+- `revisions.py` — `generate_summary()` for project revision diffs.
+
+## `electron/`
+
+- `electron/main.js` — Electron main process. Spawns `server.py` sidecar (dev: `python3 server.py 8765`; packaged: `<resourcesPath>/server`). Opens BrowserWindow to `http://localhost:8765/`. Tray icon. Kills sidecar on quit. Error dialog on crash. `pdf:generate` IPC handler: creates hidden offscreen BrowserWindow, renders print HTML, calls `webContents.printToPDF()`, writes to temp file, resolves with path.
+- `electron/preload.js` — contextIsolation=true, nodeIntegration=false. Exposes `window.electronAPI.generatePdf(opts)` → `ipcRenderer.invoke('pdf:generate', opts)` via `contextBridge`.
 
 ## `src/js/` (no bundler — files served as-is, `Cache-Control: no-store`)
 
@@ -42,7 +52,9 @@ Runtime JSON (NOT committed): `projects.json`, `settings.json`, `announcements.j
 
 - `docs/ARCHITECTURE.md` — deployment-mode notes + GitHub label strategy.
 - `docs/ai/*` — agent memory (this folder).
+- `docs/cutover-plan.md` — operator checklist for the Supabase/Electron cutover: pre-cutover verification, merge/tag/distribute steps, rollback trigger conditions, rollback procedure, post-cutover archival.
 - `docs/testing/` — manual smoke checklists (when present).
+- `MANUAL-STEPS.md` (repo root) — Supabase Auth setup, Electron deep-link config, data migration steps, browser QA checklist. See `docs/cutover-plan.md` for the full production cutover sequence.
 
 ## Common search terms
 

@@ -1,0 +1,318 @@
+name: Release (Electron)
+
+# Triggered by pushing a version tag: git tag v1.13 && git push origin v1.13
+# Runs in parallel with the existing release.yml (Docker + legacy .app) workflow.
+on:
+  push:
+    tags:
+      - 'v*'
+      - 'electron-supabase-beta-v*'
+
+jobs:
+  # ── Job 1: macOS — build Python sidecar, sign, notarize, package DMG ─────────
+  electron-macos:
+    name: macOS DMG (${{ matrix.arch }}, signed + notarized)
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      # ── Install dependencies ──────────────────────────────────────────────────
+      # requirements.txt is mandatory: psycopg / cryptography are imported lazily
+      # in db.py / auth.py, so PyInstaller only bundles them when they are actually
+      # installed (and via the --collect-all flags below). Without them the
+      # packaged sidecar crashes with ModuleNotFoundError: psycopg at startup.
+      - name: Install Python dependencies
+        run: pip install "pyinstaller==6.19.0" rumps certifi -r requirements.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Derive Electron package version
+        run: |
+          VERSION="${GITHUB_REF_NAME#electron-supabase-beta-v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "ELECTRON_BUILD_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # ── Write .env from secrets ──────────────────────────────────────────────
+      # The Electron sidecar entry point is server.py, which loads credentials via
+      # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
+      # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
+      # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
+      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
+      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      - name: Write .env
+        env:
+          PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET:    ${{ secrets.PCO_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
+        run: |
+          python - <<'PYEOF'
+          import os
+          keys = [
+              "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
+              "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+              "SUPABASE_URL", "SUPABASE_ANON_KEY",
+              "DATABASE_URL",
+          ]
+          with open(".env", "w") as f:
+              for k in keys:
+                  f.write("{}={}\n".format(k, os.environ.get(k, "")))
+          populated = sum(1 for k in keys if os.environ.get(k))
+          print(".env written ({} of {} values populated).".format(populated, len(keys)))
+          PYEOF
+
+      # ── Build Python sidecar with PyInstaller ─────────────────────────────────
+      # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
+      # not the deprecated launcher.py from bulletin-generator.spec.
+      # --collect-all psycopg(_binary): db.py imports psycopg lazily, so PyInstaller's
+      # static analysis misses it; collect-all forces the driver + bundled libpq in.
+      - name: Build Python sidecar with PyInstaller
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+        run: |
+          pyinstaller --onefile --name server --distpath dist \
+            --add-data "index.html:." \
+            --add-data "src:src" \
+            --add-data "data/projects.example.json:data" \
+            --add-data "data/announcements.example.json:data" \
+            --add-data "data/settings.example.json:data" \
+            --add-data ".env:." \
+            --add-data "node_modules/@supabase/supabase-js/dist/umd/supabase.js:node_modules/@supabase/supabase-js/dist/umd" \
+            --collect-all psycopg \
+            --collect-all psycopg_binary \
+            --hidden-import encodings.idna \
+            --hidden-import certifi \
+            server.py
+          ls -lh dist/server
+
+      # ── Import signing certificate ────────────────────────────────────────────
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE:          ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+
+          # Developer ID G2 intermediate CA (required for notarization chain)
+          curl -sL https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
+            -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN_PATH"
+
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+      - name: Prepare notarization API key
+        env:
+          APPLE_NOTARY_KEY_CONTENT: ${{ secrets.APPLE_NOTARY_KEY_CONTENT }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/notary-key.p8"
+          echo "$APPLE_NOTARY_KEY_CONTENT" > "$KEY_PATH"
+          echo "APPLE_API_KEY=$KEY_PATH" >> "$GITHUB_ENV"
+
+      # ── Build + notarize macOS DMG via electron-builder ──────────────────────
+      - name: Build macOS DMG
+        env:
+          APPLE_API_KEY_ID:       ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_API_ISSUER:       ${{ secrets.APPLE_NOTARY_KEY_ISSUER }}
+          APP_VERSION:            ${{ github.ref_name }}
+        run: |
+          npx electron-builder --mac --${{ matrix.arch }} --publish never --config.extraMetadata.version="$ELECTRON_BUILD_VERSION"
+
+      - name: Upload macOS release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.dmg.blockmap
+            dist/latest-mac.yml
+          if-no-files-found: error
+
+  # ── Job 2: Windows — build Python sidecar and package NSIS installer ─────────
+  electron-windows:
+    name: Windows NSIS installer
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      # ── Install dependencies ──────────────────────────────────────────────────
+      # requirements.txt is mandatory: psycopg / cryptography are imported lazily
+      # in db.py / auth.py, so PyInstaller only bundles them when installed (and via
+      # the --collect-all flags below). Without them the packaged sidecar crashes
+      # with ModuleNotFoundError: psycopg at startup.
+      - name: Install Python dependencies
+        run: pip install "pyinstaller==6.19.0" certifi -r requirements.txt
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Derive Electron package version
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^electron-supabase-beta-v', ''
+          if ($version -eq $env:GITHUB_REF_NAME) {
+            $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          }
+          "ELECTRON_BUILD_VERSION=$version" >> $env:GITHUB_ENV
+
+      # ── Write .env from secrets ──────────────────────────────────────────────
+      # The Electron sidecar entry point is server.py, which loads credentials via
+      # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
+      # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
+      # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
+      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
+      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      - name: Write .env
+        env:
+          PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET:    ${{ secrets.PCO_CLIENT_SECRET }}
+          GOOGLE_CLIENT_ID:     ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
+          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
+        shell: python
+        run: |
+          import os
+          keys = [
+              "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
+              "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
+              "SUPABASE_URL", "SUPABASE_ANON_KEY",
+              "DATABASE_URL",
+          ]
+          with open(".env", "w") as f:
+              for k in keys:
+                  f.write("{}={}\n".format(k, os.environ.get(k, "")))
+          populated = sum(1 for k in keys if os.environ.get(k))
+          print(".env written ({} of {} values populated).".format(populated, len(keys)))
+
+      # ── Build Python sidecar with PyInstaller ─────────────────────────────────
+      # Electron owns app/window lifecycle; the bundled sidecar must be server.py,
+      # not the deprecated macOS-only launcher.py from bulletin-generator.spec.
+      # --collect-all psycopg(_binary): db.py imports psycopg lazily, so PyInstaller's
+      # static analysis misses it; collect-all forces the driver + bundled libpq in.
+      - name: Build Python sidecar with PyInstaller
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+        run: |
+          pyinstaller --onefile --name server --distpath dist `
+            --add-data "index.html;." `
+            --add-data "src;src" `
+            --add-data "data/projects.example.json;data" `
+            --add-data "data/announcements.example.json;data" `
+            --add-data "data/settings.example.json;data" `
+            --add-data ".env;." `
+            --add-data "node_modules/@supabase/supabase-js/dist/umd/supabase.js;node_modules/@supabase/supabase-js/dist/umd" `
+            --collect-all psycopg `
+            --collect-all psycopg_binary `
+            --hidden-import encodings.idna `
+            --hidden-import certifi `
+            server.py
+          dir dist
+
+      # ── Build Windows NSIS installer via electron-builder ─────────────────────
+      # Windows signing: no certificate is configured for Windows builds.
+      # signingHashAlgorithms is set to null in package.json (skip signing).
+      # TODO: add a Windows code-signing certificate when available.
+      - name: Build Windows installer
+        env:
+          APP_VERSION: ${{ github.ref_name }}
+        run: |
+          npx electron-builder --win --publish never --config.extraMetadata.version=$env:ELECTRON_BUILD_VERSION
+
+      - name: Upload Windows release artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: electron-windows
+          path: |
+            dist/*Setup*.exe
+            dist/*Setup*.exe.blockmap
+            dist/latest.yml
+          if-no-files-found: error
+
+  # ── Job 3: publish all Electron artifacts to the exact pushed tag ───────────
+  publish-electron-release:
+    name: Publish Electron release
+    runs-on: ubuntu-latest
+    needs:
+      - electron-macos
+      - electron-windows
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download Electron artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: find release-assets -maxdepth 1 -type f -print -exec ls -lh {} \;
+
+      - name: Create draft prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: true
+          prerelease: true
+          files: release-assets/*

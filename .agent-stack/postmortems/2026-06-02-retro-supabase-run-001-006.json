@@ -1,0 +1,79 @@
+{
+  "run_id": "2026-06-02-retro-supabase-run-001-006",
+  "issue": null,
+  "date": "2026-06-02",
+  "smoke_result": "pass",
+  "verification_claimed": "PASS",
+  "divergence": false,
+  "criteria_results": [],
+  "process_issues": [
+    {
+      "process_category": "P1",
+      "description": "The feature branch was pushed after closing GitHub issues, but GitHub Actions were not watched with `gh run watch --exit-status <run-id>` before the handoff.",
+      "detected_by": "Transcript inspection: branch push to origin completed, followed by issue-state checks and final summary; no `gh run watch` invocation appeared."
+    }
+  ],
+  "workflow_adherence": {
+    "overall_score": "partial",
+    "expected_chain": [
+      "workflow-orchestrator",
+      "coding-agent",
+      "verification-gate",
+      "project-state-updater",
+      "workflow-retrospective"
+    ],
+    "observed_chain": [
+      "workflow-orchestrator",
+      "coding-agent",
+      "verification-gate",
+      "github",
+      "workflow-retrospective"
+    ],
+    "skipped_skills": [
+      "project-state-updater"
+    ],
+    "issues": [
+      {
+        "workflow_category": "W2",
+        "affected_skill": "workflow-orchestrator",
+        "description": "The run resumed by reading repo memory and git state before announcing workflow-orchestrator. The orchestrator skill was entered before edits, but not as the first exploratory step.",
+        "detected_by": "Transcript inspection: initial tool calls read CLAUDE.md, docs/ai/project-state.md, and git state; the workflow-orchestrator announce string appeared afterward."
+      },
+      {
+        "workflow_category": "W3",
+        "affected_skill": "workflow-orchestrator",
+        "description": "Required checklist/TodoWrite expansion was not performed for workflow-orchestrator, coding-agent, verification-gate, or workflow-retrospective.",
+        "detected_by": "Transcript inspection: no update_plan/TodoWrite equivalent was used despite skill instructions requiring checklist expansion."
+      },
+      {
+        "workflow_category": "W1",
+        "affected_skill": "project-state-updater",
+        "description": "Project memory was updated directly in-process instead of entering the project-state-updater skill after verification-gate.",
+        "detected_by": "Transcript inspection: docs/ai/project-state.md was edited and committed, but no project-state-updater announce string or skill entry appeared."
+      },
+      {
+        "workflow_category": "W5",
+        "affected_skill": "verification-gate",
+        "description": "The final completion summary referenced verification results without including same-response tool output evidence, even though the required commands had run earlier in the turn.",
+        "detected_by": "Transcript inspection against verification-gate Same-Response Evidence Rule."
+      }
+    ]
+  },
+  "implementation_files": [
+    ".env.example",
+    "auth.py",
+    "docs/ai/project-state.md",
+    "server.py",
+    "storage.py",
+    "tests/test_auth.py",
+    "tests/test_auth_middleware.py",
+    "tests/test_collab_regression.py",
+    "tests/test_oauth_scopes.py",
+    "tests/test_sessions.py",
+    "tests/test_transactional_save.py",
+    "MANUAL-STEPS.md"
+  ],
+  "failure_output": "",
+  "overall_category": "none",
+  "suggested_follow_up": "Use the existing orchestrator and verification-gate guards more strictly on resumed runs: enter workflow-orchestrator before exploratory reads, use a visible checklist, invoke project-state-updater, and run CI watch after pushes."
+}

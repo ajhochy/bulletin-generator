@@ -2,15 +2,28 @@
 const PCO_BASE      = '/pco-proxy';
 const PCO_LAST_IMPORT_KEY = 'worshipPcoLastImport';
 
+// Build an OAuth /start URL. In server (multitenant) mode the start endpoint is
+// a top-level navigation with no Authorization header, so it can't tell which
+// workspace is connecting. Pass the Supabase access token as a query param so
+// the server can verify it and bind the connecting workspace into the signed
+// OAuth `state`. In desktop mode getSession() is null and the bare URL is used
+// (single-workspace — no binding needed).
+function oauthStartUrl(base) {
+  const session = typeof getSession === 'function' ? getSession() : null;
+  const token = session && session.access_token;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
 async function pcoGet(path) {
-  const resp = await fetch(`${PCO_BASE}${path}`);
-  if (!resp.ok) {
-    if (resp.status === 503) throw new Error('Planning Center credentials are not configured on the server.');
-    if (resp.status === 401) throw new Error('Invalid credentials — check your App ID and Secret.');
-    if (resp.status === 403) throw new Error('Access denied — check your PCO API permissions.');
-    throw new Error(`PCO API error ${resp.status}.`);
+  // Use apiFetch so the Supabase Bearer token is attached in server mode.
+  try {
+    return await apiFetch(`${PCO_BASE}${path}`);
+  } catch (e) {
+    if (e.status === 503) throw new Error('Planning Center credentials are not configured on the server.');
+    if (e.status === 401) throw new Error('Invalid credentials — check your App ID and Secret.');
+    if (e.status === 403) throw new Error('Access denied — check your PCO API permissions.');
+    throw new Error(e.message || `PCO API error ${e.status || ''}.`);
   }
-  return resp.json();
 }
 function pcoSetMsg(elId, msg, type = '') {
   const el = document.getElementById(elId);
@@ -1068,7 +1081,7 @@ function initGoogle() {
   if (typeof initDriveSettings === 'function') initDriveSettings();
 
   connectBtn.addEventListener('click', () => {
-    window.location.href = '/oauth/google/start';
+    window.location.href = oauthStartUrl('/oauth/google/start');
   });
 
   disconnBtn.addEventListener('click', async () => {
@@ -1122,7 +1135,7 @@ async function googleLoadCalendarList() {
 
 // Clicking Connect Planning Center navigates to OAuth start
 document.getElementById('pco-connect-btn').addEventListener('click', () => {
-  window.location.href = '/oauth/pco/start';
+  window.location.href = oauthStartUrl('/oauth/pco/start');
 });
 
 document.getElementById('pco-disconnect-btn').addEventListener('click', async () => {

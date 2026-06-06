@@ -258,6 +258,7 @@ function initFormattingControls() {
   _formattingControlsInitialized = true;
 
   optCover.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
+  optWelcome.addEventListener('change',       () => { renderPreview(); scheduleProjectPersist(); });
   optFooter.addEventListener('change',        () => { renderPreview(); scheduleProjectPersist(); });
   optCal.addEventListener('change',           () => { renderPreview(); scheduleProjectPersist(); });
   optBookletSize.addEventListener('change',   () => { renderPreview(); scheduleProjectPersist(); });

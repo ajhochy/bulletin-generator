@@ -13,6 +13,8 @@ import urllib.error
 import urllib.parse
 import json
 import base64
+import hmac
+import hashlib
 import re
 import os
 import sys
@@ -62,7 +64,6 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 PROJECTS_FILE          = DATA_DIR / "projects.json"
 ANNOUNCEMENTS_FILE     = DATA_DIR / "announcements.json"
-VOLUNTEER_ROLES_FILE   = DATA_DIR / "volunteer-roles.json"
 SETTINGS_FILE          = DATA_DIR / "settings.json"
 SONGS_FILE             = DATA_DIR / "song_database.json"
 MIGRATIONS_FILE        = DATA_DIR / "migrations.json"
@@ -74,7 +75,6 @@ FONT_CACHE_DIR     = FONTS_DIR / "cache"
 _EXAMPLE_DIR = BASE_DIR / "data"
 PROJECTS_EXAMPLE_FILE           = _EXAMPLE_DIR / "projects.example.json"
 ANNOUNCEMENTS_EXAMPLE_FILE      = _EXAMPLE_DIR / "announcements.example.json"
-VOLUNTEER_ROLES_EXAMPLE_FILE    = _EXAMPLE_DIR / "volunteer-roles.example.json"
 SETTINGS_EXAMPLE_FILE           = _EXAMPLE_DIR / "settings.example.json"
 TEMPLATES_EXAMPLE_FILE          = _EXAMPLE_DIR / "templates.example.json"
 
@@ -245,15 +245,47 @@ WATCHTOWER_TOKEN = os.environ.get("WATCHTOWER_TOKEN", "bulletin-updater")
 PCO_BASE    = 'https://api.planningcenteronline.com/services/v2'
 GOOGLE_CAL_API  = 'https://www.googleapis.com/calendar/v3'
 GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token'
+
+# In-memory CSRF state store for the app-login Google OAuth flow.
+# Maps state token → True; tokens are consumed on use.
+# Not persisted — restarting the server invalidates in-flight logins.
+_auth_login_states: dict = {}
 DEFAULT_EXCLUDE = ['sunday morning worship', 'sunday service', 'worship service']
 
 # Deployment mode: 'server' (shared/hosted) or 'desktop' (local packaged install).
 # Desktop mode disables multi-user collaboration features.
 # Server mode disables desktop-only packaging/update features.
 APP_MODE = os.environ.get("APP_MODE", "server").strip().lower()
-if APP_MODE not in ("server", "desktop"):
+if APP_MODE not in ("server", "desktop", "electron"):
     print(f"  [config] Unknown APP_MODE '{APP_MODE}', defaulting to 'server'")
     APP_MODE = "server"
+
+IS_DESKTOP = APP_MODE in ("desktop", "electron")
+# Electron mode: server runs as sidecar inside Electron. PDF generation is
+# handled by webContents.printToPDF() in the Electron main process via IPC
+# (see electron/main.js), so headless Chrome is not required.
+IS_ELECTRON = APP_MODE == "electron"
+
+
+def _validate_server_config():
+    """Fail fast with a clear message when required server-mode env vars are missing."""
+    if IS_DESKTOP:
+        return
+    database_url = os.environ.get("DATABASE_URL", "").strip()
+    if not database_url:
+        print(
+            "\n"
+            "  ERROR: DATABASE_URL is not set.\n"
+            "\n"
+            "  APP_MODE=server requires a Postgres connection URL.\n"
+            "  Set DATABASE_URL in your .env file, for example:\n"
+            "\n"
+            "    DATABASE_URL=postgresql://bulletin:yourpassword@postgres:5432/bulletindb\n"
+            "\n"
+            "  See .env.example for the full list of required server-mode variables.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 def _load_dotenv(path):
@@ -314,18 +346,96 @@ def _oauth_config_error_redirect(provider, detail):
     return f'/?{provider}_error=config&detail={msg}&tab=page-settings'
 
 
-def _pco_auth_header():
+def _oauth_state_secret() -> str:
+    """Return the HMAC key used to sign/verify the OAuth ``state`` parameter.
+
+    The OAuth start/callback endpoints are unauthenticated browser redirects, so
+    the connecting user's workspace id is smuggled through a signed ``state``
+    value (see _sign_oauth_state). Precedence:
+
+      1. ``OAUTH_STATE_SECRET``      — explicit, dedicated secret (recommended).
+      2. ``SUPABASE_JWT_SECRET``     — already present in most server deployments.
+      3. provider client secrets     — always present when an OAuth flow can run.
+
+    Only the *server* (multitenant) deployment needs an unguessable key; desktop
+    mode is single-workspace and never embeds a workspace id in the state.
+    """
+    for key in ('OAUTH_STATE_SECRET', 'SUPABASE_JWT_SECRET'):
+        val = os.environ.get(key, '').strip()
+        if val:
+            return val
+    # Fall back to the OAuth client secrets so the key is never empty in a
+    # correctly-configured server deployment.
+    combined = (os.environ.get('PCO_CLIENT_SECRET', '').strip()
+                + os.environ.get('GOOGLE_CLIENT_SECRET', '').strip())
+    return combined
+
+
+def _sign_oauth_state(workspace_id: str) -> str:
+    """Return ``"<workspace_id>.<hex-hmac>"`` binding the workspace to the flow.
+
+    The signature lets the (unauthenticated) OAuth callback trust the workspace
+    id without a Bearer token. Returns the bare id only if there is no workspace
+    to bind (desktop / single-workspace), which the callback treats as un-scoped.
+    """
+    if not workspace_id:
+        return ''
+    secret = _oauth_state_secret().encode()
+    sig = hmac.new(secret, workspace_id.encode(), hashlib.sha256).hexdigest()
+    return f'{workspace_id}.{sig}'
+
+
+def _verify_oauth_state(state: "str | None") -> "str | None":
+    """Return the workspace id from a validly-signed ``state``, else None.
+
+    Uses a constant-time comparison. Rejects empty, malformed (no signature
+    segment), tampered, and wrong-secret states.
+    """
+    if not state or '.' not in state:
+        return None
+    workspace_id, _, sig = state.rpartition('.')
+    if not workspace_id or not sig:
+        return None
+    secret = _oauth_state_secret().encode()
+    expected = hmac.new(secret, workspace_id.encode(), hashlib.sha256).hexdigest()
+    if hmac.compare_digest(sig, expected):
+        return workspace_id
+    return None
+
+
+def _get_settings(storage=None):
+    """Return the settings dict via the storage abstraction.
+
+    In server (multitenant) mode, callers handling an authenticated request MUST
+    pass a workspace-scoped ``storage`` (see Handler._storage_for_user) — without
+    it, get_storage(DATA_DIR) is un-scoped and reads ``workspace_settings LIMIT 1``
+    (an arbitrary workspace), which is a multitenancy bug. The default is kept
+    only for desktop mode and non-request contexts (startup logging, defaults).
+    """
+    from storage import get_storage  # noqa: PLC0415
+    return (storage or get_storage(DATA_DIR)).get_settings()
+
+
+def _save_settings(data: dict, storage=None) -> dict:
+    """Persist the settings dict via the storage abstraction.
+
+    Pass a workspace-scoped ``storage`` in server mode (see _get_settings)."""
+    from storage import get_storage  # noqa: PLC0415
+    return (storage or get_storage(DATA_DIR)).save_settings(data)
+
+
+def _pco_auth_header(storage=None):
     """Return the OAuth Bearer header from stored access token, or None."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings(storage)
     access_token = settings.get('pcoAccessToken', '').strip()
     if access_token:
         return f'Bearer {access_token}'
     return None
 
 
-def _refresh_pco_token():
+def _refresh_pco_token(storage=None):
     """Exchange refresh_token for a new access_token. Returns new Bearer header or None."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings(storage)
     refresh_token = settings.get('pcoRefreshToken', '').strip()
     client_id     = os.environ.get('PCO_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('PCO_CLIENT_SECRET', '').strip()
@@ -350,12 +460,11 @@ def _refresh_pco_token():
         new_refresh = token_resp.get('refresh_token', '').strip()
         if not new_access:
             return None
-        with _lock:
-            s = _read_json(SETTINGS_FILE, {})
-            s['pcoAccessToken']  = new_access
-            if new_refresh:
-                s['pcoRefreshToken'] = new_refresh
-            _write_json(SETTINGS_FILE, s)
+        s = _get_settings(storage)
+        s['pcoAccessToken']  = new_access
+        if new_refresh:
+            s['pcoRefreshToken'] = new_refresh
+        _save_settings(s, storage)
         print('  [oauth] PCO access token refreshed.')
         return f'Bearer {new_access}'
     except Exception as e:
@@ -363,15 +472,15 @@ def _refresh_pco_token():
         return None
 
 
-def _google_auth_header():
-    settings = _read_json(SETTINGS_FILE, {})
+def _google_auth_header(storage=None):
+    settings = _get_settings(storage)
     token = settings.get('googleAccessToken', '').strip()
     return f'Bearer {token}' if token else None
 
 
-def _refresh_google_token():
+def _refresh_google_token(storage=None):
     """Exchange stored refresh_token for a new Google access_token."""
-    settings = _read_json(SETTINGS_FILE, {})
+    settings = _get_settings(storage)
     refresh_token = settings.get('googleRefreshToken', '').strip()
     client_id     = os.environ.get('GOOGLE_CLIENT_ID',     '').strip()
     client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '').strip()
@@ -394,10 +503,9 @@ def _refresh_google_token():
         new_token = resp_data.get('access_token', '').strip()
         if not new_token:
             return None
-        with _lock:
-            s = _read_json(SETTINGS_FILE, {})
-            s['googleAccessToken'] = new_token
-            _write_json(SETTINGS_FILE, s)
+        s = _get_settings(storage)
+        s['googleAccessToken'] = new_token
+        _save_settings(s, storage)
         print('  [google] Access token refreshed.')
         return f'Bearer {new_token}'
     except Exception as e:
@@ -405,15 +513,16 @@ def _refresh_google_token():
         return None
 
 
-def _public_config():
+def _public_config(storage=None):
+    settings = _get_settings(storage)
     return {
         "appMode": APP_MODE,
         "appVersion": APP_VERSION,
-        "pcoConfigured": _pco_auth_header() is not None,
-        "googleConfigured": _google_auth_header() is not None,
-        "driveConfigured": bool(
-            _read_json(SETTINGS_FILE, {}).get('googleDriveScopeGranted')
-        ),
+        "supabaseUrl": os.getenv("SUPABASE_URL", ""),
+        "supabaseAnonKey": os.getenv("SUPABASE_ANON_KEY", ""),
+        "pcoConfigured": _pco_auth_header(storage) is not None,
+        "googleConfigured": _google_auth_header(storage) is not None,
+        "driveConfigured": bool(settings.get('googleDriveScopeGranted')),
         "calendarDefaults": {
             "urls": _parse_list_env("CALENDAR_ICAL_URLS"),
             "exclude": _parse_list_env("CALENDAR_EXCLUDE_TITLES") or DEFAULT_EXCLUDE[:],
@@ -481,9 +590,57 @@ def _find_chrome():
         'environment variable to your Chrome/Chromium binary path.'
     )
 
-CHROME_PATH = _find_chrome()
+# Chrome is resolved lazily — at the first PDF request, not at import — so the
+# server starts everywhere, including machines with no Chrome installed; only
+# PDF export degrades (with a clear message) rather than the whole app failing
+# to launch. In electron mode the sidecar delegates PDF generation to Electron's
+# webContents.printToPDF(), so Chrome is never needed here at all.
+CHROME_PATH = None          # populated on first use by _resolve_chrome()
+_chrome_resolved = False
+
+def _resolve_chrome():
+    """Resolve the Chrome/Chromium binary lazily and cache the result.
+
+    Returns the binary path, or raises ``RuntimeError`` (from ``_find_chrome``)
+    with a user-facing message when Chrome is absent. A failed lookup is not
+    cached, so PDF export starts working the moment the user installs Chrome —
+    no server restart required.
+    """
+    global CHROME_PATH, _chrome_resolved
+    if not _chrome_resolved:
+        CHROME_PATH = _find_chrome()
+        _chrome_resolved = True
+    return CHROME_PATH
 
 _lock = threading.Lock()
+
+# ─── Project list cache (server mode only) ─────────────────────────────────────
+# Caches the project metadata list per workspace to avoid a full Supabase
+# round-trip on every load.  Invalidated on every save, delete, or transfer.
+# TTL is a safety net in case invalidation is missed; 30 s is sufficient.
+_PROJECTS_CACHE: dict = {}   # workspace_id -> {"ts": float, "projects": list}
+_PROJECTS_CACHE_TTL = 30.0   # seconds
+
+def _projects_cache_get(workspace_id: str, user_id: str):
+    import time as _time
+    key = f"{workspace_id}:{user_id}"
+    entry = _PROJECTS_CACHE.get(key)
+    if entry and (_time.time() - entry["ts"]) < _PROJECTS_CACHE_TTL:
+        return entry["projects"]
+    return None
+
+def _projects_cache_set(workspace_id: str, user_id: str, projects: list):
+    import time as _time
+    key = f"{workspace_id}:{user_id}"
+    _PROJECTS_CACHE[key] = {"ts": _time.time(), "projects": projects}
+
+def _projects_cache_invalidate(workspace_id: str | None = None):
+    """Invalidate cache entries for a workspace, or all entries if workspace_id is None."""
+    if workspace_id is None:
+        _PROJECTS_CACHE.clear()
+    else:
+        for key in [k for k in _PROJECTS_CACHE if k.startswith(f"{workspace_id}:")]:
+            del _PROJECTS_CACHE[key]
 
 
 # ─── JSON file helpers ─────────────────────────────────────────────────────────
@@ -1107,6 +1264,66 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    # ── Auth helpers ───────────────────────────────────────────────────────────
+
+    def _get_authenticated_user(self) -> "dict | None":
+        """Return the current user dict.
+
+        In desktop mode returns a synthetic desktop user so route handlers don't
+        need to special-case IS_DESKTOP. In server mode verifies the Supabase
+        Bearer token and resolves workspace membership.
+        """
+        if IS_DESKTOP:
+            return {
+                "id": None,
+                "user_id": None,
+                "email": "desktop",
+                "display_name": "Desktop User",
+                "domain": "local",
+                "workspace_id": None,
+                "role": "desktop",
+                "claims": None,
+            }
+        import auth as _auth  # noqa: PLC0415 — deferred; db not available in desktop
+        status, user = _auth.authenticate_authorization_header(self.headers.get("Authorization", ""))
+        if user is None and status == 401:
+            user = _auth.get_request_user(self.headers.get("Cookie", ""))
+            if user is not None:
+                user.setdefault("user_id", user.get("id"))
+                user.setdefault("workspace_id", None)
+                user.setdefault("role", "")
+                user.setdefault("claims", {"sub": user.get("id")} if user.get("id") else None)
+                self._auth_error_status = None
+                return user
+        self._auth_error_status = status if user is None else None
+        return user
+
+    def _require_auth(self) -> "dict | None":
+        """Return the authenticated user, or send 401 and return None.
+
+        Callers must ``return`` immediately when this method returns None::
+
+            user = self._require_auth()
+            if user is None:
+                return
+        """
+        user = self._get_authenticated_user()
+        if user is None:
+            status = getattr(self, "_auth_error_status", None) or 401
+            message = "Workspace membership required" if status == 403 else "Authentication required"
+            self._send_json({"error": message}, status)
+            return None
+        return user
+
+    def _storage_for_user(self, user):
+        from storage import get_storage  # noqa: PLC0415
+        if IS_DESKTOP:
+            return get_storage(DATA_DIR)
+        return get_storage(
+            workspace_id=user.get("workspace_id"),
+            user_claims=user.get("claims"),
+        )
+
     # ── Routing ────────────────────────────────────────────────────────────────
 
     # ── Routing tables ─────────────────────────────────────────────────────────
@@ -1120,6 +1337,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/worship-booklet.html',     '_handle_index'),
         ('/favicon.ico',              '_handle_favicon'),
         ('/api/projects/revisions',   '_handle_get_project_revisions'),
+        ('/api/projects/',            '_handle_get_projects_sub'),
         ('/api/projects',             '_handle_get_projects'),
         ('/api/announcements',        '_handle_get_announcements'),
         ('/api/volunteer-roles',      '_handle_get_volunteer_roles'),
@@ -1127,7 +1345,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/songs',                '_handle_get_songs'),
         ('/api/templates',            '_handle_get_templates'),
         ('/api/fonts',                '_handle_get_fonts'),
+        ('/api/presence',             '_handle_get_presence'),
         ('/api/bootstrap',            '_handle_bootstrap'),
+        ('/api/health',               '_handle_health'),
         ('/api/google-calendars',     '_handle_google_calendars'),
         ('/api/admin/check-update',   '_handle_check_update'),
         ('/api/admin/update-status',  '_handle_update_status'),
@@ -1135,14 +1355,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/oauth/pco/callback',       '_handle_pco_oauth_callback'),
         ('/oauth/google/start',       '_handle_google_oauth_start'),
         ('/oauth/google/callback',    '_handle_google_oauth_callback'),
+        ('/api/me',                    '_handle_api_me'),
+        ('/api/workspace/members',    '_handle_get_workspace_members'),
+        ('/auth/google/login',        '_handle_auth_google_login'),
+        ('/auth/google/callback',     '_handle_auth_google_callback'),
         ('/pco-proxy/',               '_proxy_pco'),
         ('/fonts/cache/',             '_handle_google_font_cache'),
         ('/fonts/user/',              '_handle_user_font_file'),
         ('/cal',                      '_handle_cal'),
+        ('/src/js/supabase-browser.js', '_handle_supabase_browser_js'),
+        ('/src/js/supabase-config.js', '_handle_supabase_config_js'),
         ('/src/',                     '_handle_static'),
     ]
 
     _POST_ROUTES = [
+        ('/api/projects/',            '_handle_post_projects_sub'),
         ('/api/projects',             '_handle_post_projects'),
         ('/api/announcements',        '_handle_post_announcements'),
         ('/api/volunteer-roles',      '_handle_post_volunteer_roles'),
@@ -1155,13 +1382,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ('/api/drive/upload',         '_handle_drive_upload'),
         ('/api/pco-disconnect',       '_handle_pco_disconnect'),
         ('/api/google-disconnect',    '_handle_google_disconnect'),
+        ('/api/presence/heartbeat',   '_handle_post_presence_heartbeat'),
         ('/api/admin/apply-update',   '_handle_apply_update'),
+        ('/auth/logout',              '_handle_auth_logout'),
     ]
 
     _DELETE_ROUTES = [
         ('/api/projects/',            '_handle_delete_project'),
         ('/api/templates/',           '_handle_delete_template'),
         ('/api/fonts/',               '_handle_delete_font'),
+        ('/api/presence',             '_handle_delete_presence'),
     ]
 
     def _route(self, routes):
@@ -1213,30 +1443,145 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def _handle_supabase_browser_js(self):
+        bundle_path = BASE_DIR / "node_modules" / "@supabase" / "supabase-js" / "dist" / "umd" / "supabase.js"
+        try:
+            body = bundle_path.read_bytes()
+        except (FileNotFoundError, IsADirectoryError):
+            self._send_json({"error": "Supabase browser bundle not installed"}, 404)
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_supabase_config_js(self):
+        body = (
+            "globalThis.BULLETIN_SUPABASE_CONFIG = "
+            + json.dumps({
+                "url": os.getenv("SUPABASE_URL", ""),
+                "anonKey": os.getenv("SUPABASE_ANON_KEY", ""),
+            })
+            + ";\n"
+        ).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_health(self):
+        if IS_DESKTOP:
+            self._send_json({
+                "status": "healthy",
+                "mode": APP_MODE,
+                "version": APP_VERSION,
+            })
+            return
+
+        import db as _db
+        from migrations.runner import get_migration_status
+
+        db_check = _db.health_check()
+        mig_status = get_migration_status()
+
+        connected = db_check.get("connected", False)
+        payload = {
+            "status": "healthy" if connected else "unhealthy",
+            "mode": APP_MODE,
+            "version": APP_VERSION,
+            "database": {
+                "connected": connected,
+                "error": db_check.get("error"),
+                "migrations_applied": mig_status.get("applied"),
+                "latest_migration": mig_status.get("latest"),
+            },
+        }
+        self._send_json(payload, 200 if connected else 503)
+
     def _handle_get_projects(self):
-        self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"projects": _read_json(PROJECTS_FILE, [])})
+        else:
+            from storage import can_read_project  # noqa: PLC0415
+            store = self._storage_for_user(user)
+            # Check if a specific project id was requested via query string.
+            qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+            project_id = (qs.get("id") or [None])[0]
+            if project_id:
+                project = store.get_project(project_id)
+                if project is None:
+                    self._send_json({"error": "project not found"}, 404)
+                    return
+                if not can_read_project(project, user["id"]):
+                    self._send_json({"error": "forbidden"}, 403)
+                    return
+                self._send_json({"project": project})
+            else:
+                ws_id = user.get("workspace_id")
+                uid   = user.get("id") or user.get("user_id")
+                cached = _projects_cache_get(ws_id, uid)
+                if cached is not None:
+                    self._send_json({"projects": cached})
+                else:
+                    projects = store.list_projects(user_id=uid)
+                    _projects_cache_set(ws_id, uid, projects)
+                    self._send_json({"projects": projects})
 
     def _handle_get_project_revisions(self):
         """Lightweight poll target: project metadata without heavy `state`."""
-        self._send_json({"projects": _project_revision_summary(_read_json(PROJECTS_FILE, []))})
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            projects = _read_json(PROJECTS_FILE, [])
+        else:
+            projects = self._storage_for_user(user).list_projects(user_id=user["id"])
+        self._send_json({"projects": _project_revision_summary(projects)})
 
     def _handle_get_announcements(self):
-        self._send_json(_read_json(ANNOUNCEMENTS_FILE, []))
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        self._send_json(store.list_announcements())
 
     def _handle_get_volunteer_roles(self):
-        self._send_json(_read_json(VOLUNTEER_ROLES_FILE, []))
+        user = self._require_auth()
+        if user is None:
+            return
+        storage = self._storage_for_user(user)
+        self._send_json(_get_settings(storage).get('volunteerRoles', []))
 
     def _handle_get_settings(self):
-        self._send_json(_read_json(SETTINGS_FILE, {}))
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        self._send_json(store.get_settings())
 
     def _handle_get_songs(self):
-        self._send_json(_read_json(SONGS_FILE, []))
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        self._send_json(store.list_songs())
 
     def _handle_bootstrap(self):
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
         self._send_json({
-            "settings": _read_json(SETTINGS_FILE, {}),
-            "songDb":   _read_json(SONGS_FILE, []),
-            "config":   _public_config(),
+            "settings": store.get_settings(),
+            "songDb":   store.list_songs(),
+            "config":   _public_config(store),
         })
 
     def _handle_static(self):
@@ -1250,6 +1595,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Route handlers (POST) ──────────────────────────────────────────────────
 
     def _handle_post_projects(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             project = self._read_body_json()
         except Exception:
@@ -1258,6 +1606,44 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(project, dict) or "id" not in project:
             self._send_json({"error": "project must be an object with an id"}, 400)
             return
+
+        if not IS_DESKTOP:
+            # ── Server mode: delegate to storage layer with user attribution ──
+            store = self._storage_for_user(user)
+
+            # Ignore _clientRevision — conflict detection is replaced by
+            # owner-only write enforcement (issue 021).
+            project.pop("_clientRevision", None)
+
+            # Detect new vs existing project.
+            existing = store.get_project(project["id"]) if project.get("id") else None
+            is_new_project = existing is None
+
+            if is_new_project:
+                # Never trust client-supplied ownership fields for new projects.
+                # Server always sets owner and visibility from the authenticated session.
+                project.pop("owner_user_id", None)
+                project.pop("visibility", None)
+            else:
+                # Existing project: only the owner may save.
+                owner_user_id = existing.get("owner_user_id")
+                if owner_user_id is not None and str(owner_user_id) != str(user.get("id", "")):
+                    self._send_json(
+                        {"error": "Only the project owner can save this project."},
+                        403,
+                    )
+                    return
+
+            saved = store.save_project(
+                project,
+                updated_by_email=user.get("email") or "",
+                updated_by_user_id=user.get("id") or None,
+            )
+            _projects_cache_invalidate(user.get("workspace_id"))
+            self._send_json({"ok": True, "revision": saved.get("revision")})
+            return
+
+        # ── Desktop / JSON-file mode: legacy in-memory path ──────────────────
         with _lock:
             projects = _read_json(PROJECTS_FILE, [])
             idx = next((i for i, p in enumerate(projects) if p.get("id") == project["id"]), -1)
@@ -1294,7 +1680,302 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             saved = projects[idx] if idx >= 0 else projects[-1]
         self._send_json({"ok": True, "revision": saved.get("revision")})
 
+    def _handle_post_projects_sub(self):
+        """Dispatch POST /api/projects/{id}/restore|transfer and any future sub-routes."""
+        path = self.path.split("?")[0]
+        # Strip the /api/projects/ prefix to get the remainder: "{id}/restore"
+        remainder = path[len("/api/projects/"):]
+        if remainder.endswith("/restore"):
+            project_id = remainder[: -len("/restore")]
+            self._handle_project_restore(project_id)
+        elif remainder.endswith("/transfer"):
+            project_id = remainder[: -len("/transfer")]
+            self._handle_post_transfer_project(project_id)
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+    def _handle_post_transfer_project(self, project_id: str):
+        """POST /api/projects/{id}/transfer — transfer project ownership to another workspace member.
+
+        Server mode only.  Auth required.  Caller must be the current owner.
+
+        Body: {"to_user_id": "<uuid>"}
+
+        Returns:
+            200  {"ok": True, "new_owner": "<uuid>"}
+            400  if to_user_id is missing or not a workspace member
+            401  if unauthenticated
+            403  if caller is not the current project owner
+            404  if project not found, or in desktop mode
+        """
+        if IS_DESKTOP:
+            self._send_json({"error": "not found"}, 404)
+            return
+
+        user = self._require_auth()
+        if user is None:
+            return
+
+        if not project_id:
+            self._send_json({"error": "missing project id"}, 400)
+            return
+
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+
+        to_user_id = body.get("to_user_id")
+        if not to_user_id:
+            self._send_json({"error": "missing required field: to_user_id"}, 400)
+            return
+
+        store = self._storage_for_user(user)
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        # Only the current owner may transfer.
+        owner_user_id = project.get("owner_user_id")
+        if owner_user_id is None or str(owner_user_id) != str(user.get("id", "")):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        # Validate that to_user_id is a member of the same workspace.
+        workspace_id = user.get("workspace_id")
+        if workspace_id is None:
+            self._send_json({"error": "workspace not resolved"}, 400)
+            return
+
+        from db import admin_transaction  # noqa: PLC0415
+
+        with admin_transaction() as conn:
+            row = conn.execute(
+                """
+                SELECT user_id FROM public.workspace_members
+                WHERE workspace_id = %s::uuid AND user_id = %s::uuid
+                LIMIT 1
+                """,
+                (workspace_id, to_user_id),
+            ).fetchone()
+
+        if row is None:
+            self._send_json({"error": "to_user_id is not a workspace member"}, 400)
+            return
+
+        updated = store.transfer_project_owner(
+            project_id,
+            from_user_id=str(user["id"]),
+            to_user_id=str(to_user_id),
+        )
+        if updated is None:
+            # Raced with another transfer or the project disappeared.
+            self._send_json({"error": "transfer failed — project not found or not owner"}, 404)
+            return
+
+        _projects_cache_invalidate(workspace_id)
+        self._send_json({"ok": True, "new_owner": str(to_user_id)})
+
+    # ── GET sub-route dispatcher for /api/projects/{id}/... ───────────────────
+
+    def _handle_get_projects_sub(self):
+        """Dispatch GET /api/projects/{id}/history|revision and any future GET sub-routes."""
+        path = self.path.split("?")[0]
+        # Strip the /api/projects/ prefix to get the remainder: "{id}/history"
+        remainder = path[len("/api/projects/"):]
+        if remainder.endswith("/history"):
+            project_id = remainder[: -len("/history")]
+            self._handle_project_history(project_id)
+        elif remainder.endswith("/revision"):
+            project_id = remainder[: -len("/revision")]
+            self._handle_project_revision(project_id)
+        elif "/" not in remainder and remainder:
+            # GET /api/projects/{id} — fetch a single project with full state
+            self._handle_get_single_project(remainder)
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+    def _handle_get_single_project(self, project_id: str):
+        """GET /api/projects/{id} — fetch one project with full state.
+
+        Used by the frontend when opening a project from the list, avoiding
+        the need to transfer state for all projects on startup.
+        Auth required in server mode.
+        """
+        if IS_DESKTOP:
+            store = self._storage_for_user(None)
+        else:
+            user = self._require_auth()
+            if user is None:
+                return
+            store = self._storage_for_user(user)
+
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "not found"}, 404)
+            return
+        self._send_json({"project": project})
+
+    def _handle_project_history(self, project_id: str):
+        """GET /api/projects/{id}/history — return revision history for a project.
+
+        Auth required.  Returns the revision list with metadata (no state blobs).
+
+        Returns:
+            200  {"revisions": [{revision, saved_at, saved_by_email, saved_by_name, summary}, ...]}
+            401  if unauthenticated
+            403  if the authenticated user may not read the project
+            404  if the project is not found
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        from storage import can_read_project  # noqa: PLC0415
+        store = self._storage_for_user(user)
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_read_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        revisions = store.get_project_revisions(project_id)
+        self._send_json({"revisions": revisions})
+
+    def _handle_project_revision(self, project_id: str):
+        """GET /api/projects/{id}/revision — return lightweight revision metadata.
+
+        Cheaper than fetching the full project: returns only the fields needed
+        for stale-poll detection without the state JSONB blob.
+
+        Returns:
+            200  {"revision", "updated_at", "updated_by_email", "updated_by_name"}
+            401  if unauthenticated
+            403  if the authenticated user may not read the project
+            404  if the project is not found
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        from storage import can_read_project  # noqa: PLC0415
+        store = self._storage_for_user(user)
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_read_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        self._send_json({
+            "revision":         project.get("revision"),
+            "updated_at":       project.get("updated_at") or project.get("updatedAt"),
+            "updated_by_email": project.get("updated_by_email") or project.get("updatedBy") or "",
+            "updated_by_name":  project.get("updated_by_name") or "",
+        })
+
+    def _handle_project_restore(self, project_id: str):
+        """POST /api/projects/{id}/restore — restore a prior revision as the new head.
+
+        Loads the target revision's state and saves it as a new revision on top
+        of the current head.  History is preserved — the old revisions remain.
+
+        Body: {"revision": <int>, "_clientRevision": <int>}
+
+        Returns:
+            200  {"ok": True, "project": <updated project dict>}
+            400  if body is invalid or revision field is missing
+            401  if unauthenticated
+            403  if the authenticated user may not write the project
+            404  if the project or target revision is not found
+            409  if _clientRevision is stale (concurrent edit conflict)
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+
+        target_revision = body.get("revision")
+        client_revision = body.get("_clientRevision")
+
+        if target_revision is None:
+            self._send_json({"error": "missing required field: revision"}, 400)
+            return
+
+        try:
+            target_revision = int(target_revision)
+        except (TypeError, ValueError):
+            self._send_json({"error": "revision must be an integer"}, 400)
+            return
+
+        from storage import can_write_project, ConflictError  # noqa: PLC0415
+        store = self._storage_for_user(user)
+        project = store.get_project(project_id)
+        if project is None:
+            self._send_json({"error": "project not found"}, 404)
+            return
+
+        if not can_write_project(project, user["id"]):
+            self._send_json({"error": "forbidden"}, 403)
+            return
+
+        snapshot = store.get_project_revision(project_id, target_revision)
+        if snapshot is None:
+            self._send_json({"error": "revision not found"}, 404)
+            return
+
+        state = snapshot.get("state")
+        if not isinstance(state, dict):
+            self._send_json({"error": "revision state is invalid"}, 500)
+            return
+
+        try:
+            updated = store.save_project_transactional(
+                state,
+                client_revision=client_revision,
+                updated_by_email=user.get("email", ""),
+                updated_by_user_id=user.get("id"),
+                updated_by_name=user.get("display_name", ""),
+            )
+        except ConflictError as exc:
+            current = exc.project
+            self._send_json(
+                {
+                    "error": "conflict",
+                    "serverRevision": current.get("revision"),
+                    "serverUpdatedAt": current.get("updated_at"),
+                    "serverUpdatedBy": current.get("updated_by_email"),
+                },
+                409,
+            )
+            return
+
+        self._send_json({"ok": True, "project": updated})
+
     def _handle_post_announcements(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             anns = self._read_body_json()
         except Exception:
@@ -1303,11 +1984,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(anns, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(ANNOUNCEMENTS_FILE, anns)
+        store = self._storage_for_user(user)
+        store.save_announcements(anns)
         self._send_json({"ok": True})
 
     def _handle_post_volunteer_roles(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             roles = self._read_body_json()
         except Exception:
@@ -1316,11 +2000,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(roles, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(VOLUNTEER_ROLES_FILE, roles)
+        storage = self._storage_for_user(user)
+        existing = _get_settings(storage)
+        existing['volunteerRoles'] = roles
+        _save_settings(existing, storage)
         self._send_json({"ok": True})
 
     def _handle_post_settings(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             partial = self._read_body_json()
         except Exception:
@@ -1329,17 +2018,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(partial, dict):
             self._send_json({"error": "body must be an object"}, 400)
             return
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            for key, value in partial.items():
-                if value is None:
-                    settings.pop(key, None)
-                else:
-                    settings[key] = value
-            _write_json(SETTINGS_FILE, settings)
+        store = self._storage_for_user(user)
+        # Merge the partial update with existing settings.
+        existing = store.get_settings()
+        for key, value in partial.items():
+            if value is None:
+                existing.pop(key, None)
+            else:
+                existing[key] = value
+        store.save_settings(existing)
         self._send_json({"ok": True})
 
     def _handle_post_songs(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             songs = self._read_body_json()
         except Exception:
@@ -1348,37 +2041,62 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not isinstance(songs, list):
             self._send_json({"error": "body must be an array"}, 400)
             return
-        with _lock:
-            _write_json(SONGS_FILE, songs)
+        store = self._storage_for_user(user)
+        store.save_songs(songs)
         self._send_json({"ok": True})
 
     def _handle_pco_disconnect(self):
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            settings.pop('pcoAccessToken', None)
-            settings.pop('pcoRefreshToken', None)
-            _write_json(SETTINGS_FILE, settings)
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        settings = store.get_settings()
+        settings.pop('pcoAccessToken', None)
+        settings.pop('pcoRefreshToken', None)
+        store.save_settings(settings)
         self._send_json({"ok": True})
 
     def _handle_google_disconnect(self):
-        with _lock:
-            settings = _read_json(SETTINGS_FILE, {})
-            settings.pop('googleAccessToken', None)
-            settings.pop('googleRefreshToken', None)
-            settings.pop('googleCalendarIds', None)
-            settings.pop('googleDriveScopeGranted', None)
-            settings.pop('googleDriveFolderId', None)
-            _write_json(SETTINGS_FILE, settings)
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        settings = store.get_settings()
+        settings.pop('googleAccessToken', None)
+        settings.pop('googleRefreshToken', None)
+        settings.pop('googleCalendarIds', None)
+        settings.pop('googleDriveScopeGranted', None)
+        settings.pop('googleDriveFolderId', None)
+        store.save_settings(settings)
         self._send_json({"ok": True})
 
     # ── Route handlers (DELETE) ────────────────────────────────────────────────
 
     def _handle_delete_project(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = self.path.split("?")[0]
         project_id = path[len("/api/projects/"):]
         if not project_id:
             self._send_json({"error": "missing project id"}, 400)
             return
+
+        if not IS_DESKTOP:
+            from storage import can_delete_project  # noqa: PLC0415
+            store = self._storage_for_user(user)
+            project = store.get_project(project_id)
+            if project is None:
+                self._send_json({"error": "project not found"}, 404)
+                return
+            if not can_delete_project(project, user["id"]):
+                self._send_json({"error": "forbidden"}, 403)
+                return
+            store.delete_project(project_id)
+            _projects_cache_invalidate(user.get("workspace_id"))
+            self._send_json({"ok": True})
+            return
+
         with _lock:
             projects = _read_json(PROJECTS_FILE, [])
             projects = [p for p in projects if p.get("id") != project_id]
@@ -1388,7 +2106,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Templates ─────────────────────────────────────────────────────────────
 
     def _handle_get_templates(self):
-        self._send_json(_read_json(TEMPLATES_FILE, []))
+        user = self._require_auth()
+        if user is None:
+            return
+        store = self._storage_for_user(user)
+        self._send_json(store.list_templates())
 
     def _validate_template(self, template):
         if not isinstance(template, dict):
@@ -1413,6 +2135,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return None
 
     def _handle_post_templates(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             template = self._read_body_json()
         except Exception:
@@ -1425,34 +2150,37 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return
         template["id"] = _slugify(template["id"])
         template["builtIn"] = False
-        with _lock:
-            templates = _read_json(TEMPLATES_FILE, [])
-            idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
-            if idx >= 0:
-                # Preserve builtIn flag if the stored record has it (prevent downgrade attack)
-                if templates[idx].get("builtIn"):
-                    self._send_json({"error": "built-in templates cannot be modified"}, 403)
-                    return
-                templates[idx] = template
-            else:
-                templates.append(template)
-            _write_json(TEMPLATES_FILE, templates)
+        store = self._storage_for_user(user)
+        templates = store.list_templates()
+        idx = next((i for i, t in enumerate(templates) if t.get("id") == template["id"]), -1)
+        if idx >= 0:
+            # Preserve builtIn flag if the stored record has it (prevent downgrade attack)
+            if templates[idx].get("builtIn") or templates[idx].get("built_in"):
+                self._send_json({"error": "built-in templates cannot be modified"}, 403)
+                return
+            templates[idx] = template
+        else:
+            templates.append(template)
+        store.save_templates(templates)
         self._send_json({"ok": True})
 
     def _handle_delete_template(self):
+        user = self._require_auth()
+        if user is None:
+            return
         path = self.path.split("?")[0]
         template_id = path[len("/api/templates/"):]
         if not template_id:
             self._send_json({"error": "missing template id"}, 400)
             return
-        with _lock:
-            templates = _read_json(TEMPLATES_FILE, [])
-            target = next((t for t in templates if t.get("id") == template_id), None)
-            if target and target.get("builtIn"):
-                self._send_json({"error": "built-in templates cannot be deleted"}, 403)
-                return
-            templates = [t for t in templates if t.get("id") != template_id]
-            _write_json(TEMPLATES_FILE, templates)
+        store = self._storage_for_user(user)
+        templates = store.list_templates()
+        target = next((t for t in templates if t.get("id") == template_id), None)
+        if target and (target.get("builtIn") or target.get("built_in")):
+            self._send_json({"error": "built-in templates cannot be deleted"}, 403)
+            return
+        templates = [t for t in templates if t.get("id") != template_id]
+        store.save_templates(templates)
         self._send_json({"ok": True})
 
     # ── Fonts ────────────────────────────────────────────────────────────────
@@ -1488,9 +2216,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return fonts
 
     def _handle_get_fonts(self):
-        self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"user": self._list_user_fonts(), "cached": self._list_cached_fonts()})
+        else:
+            store = self._storage_for_user(user)
+            all_fonts = store.list_fonts()
+            # In server mode all fonts come from the DB (Storage URLs).
+            # Return {id, name, url} for each; also preserve legacy keys for
+            # any frontend code that still reads slug/family/cssUrl.
+            user_fonts = [
+                {
+                    "id": f.get("id", ""),
+                    "name": f.get("name") or f.get("family") or "",
+                    "url": f.get("url") or f.get("css_url") or "",
+                    # Legacy keys — kept for backward compat with font picker UI
+                    "slug": f.get("slug") or f.get("name") or "",
+                    "family": f.get("family") or f.get("name") or "",
+                    "source": f.get("source") or "user",
+                    "cssUrl": f.get("url") or f.get("css_url") or "",
+                }
+                for f in all_fonts
+            ]
+            self._send_json({"user": user_fonts, "cached": []})
 
     def _handle_post_fonts(self):
+        user = self._require_auth()
+        if user is None:
+            return
         ctype = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in ctype:
             self._send_json({"error": "multipart/form-data required"}, 400)
@@ -1520,35 +2275,82 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             family = str(form["family"].value or "").strip()
         if not family:
             family = Path(filename).stem
-        slug = _slugify(family)
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
-        dest_dir = _safe_child(USER_FONTS_DIR, slug)
-        dest_dir.mkdir(parents=True, exist_ok=True)
         data = field.file.read()
         if not data:
             self._send_json({"error": "empty font file"}, 400)
             return
-        _safe_child(dest_dir, safe_name).write_bytes(data)
-        self._send_json({"ok": True, "font": {
-            "family": family,
-            "slug": slug,
-            "source": "user",
-            "files": [safe_name],
-            "cssUrl": f"/fonts/user/{slug}/font.css",
-        }})
+
+        if IS_DESKTOP:
+            slug = _slugify(family)
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
+            dest_dir = _safe_child(USER_FONTS_DIR, slug)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            _safe_child(dest_dir, safe_name).write_bytes(data)
+            self._send_json({"ok": True, "font": {
+                "id": slug,
+                "name": family,
+                "url": f"/fonts/user/{slug}/font.css",
+                # Legacy keys
+                "family": family,
+                "slug": slug,
+                "source": "user",
+                "files": [safe_name],
+                "cssUrl": f"/fonts/user/{slug}/font.css",
+            }})
+        else:
+            slug = _slugify(family)
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip("-") or f"{slug}{ext}"
+            mime_type = mimetypes.guess_type(filename)[0] or "font/woff2"
+            store = self._storage_for_user(user)
+            try:
+                font = store.save_font(family, safe_name, data, mime_type)
+            except Exception as exc:
+                self._send_json({"error": f"font upload failed: {exc}"}, 500)
+                return
+            self._send_json({"ok": True, "font": {
+                "id": font["id"],
+                "name": font["name"],
+                "url": font["url"],
+                # Legacy keys
+                "family": font["name"],
+                "slug": _slugify(font["name"]),
+                "source": "user",
+                "cssUrl": font["url"],
+            }})
 
     def _handle_delete_font(self):
-        path = self.path.split("?")[0]
-        slug = _slugify(urllib.parse.unquote(path[len("/api/fonts/"):]))
-        if not slug:
-            self._send_json({"error": "missing font family"}, 400)
+        user = self._require_auth()
+        if user is None:
             return
-        target = _safe_child(USER_FONTS_DIR, slug)
-        if target.exists():
-            shutil.rmtree(target)
-        self._send_json({"ok": True})
+        path = self.path.split("?")[0]
+        raw_id = urllib.parse.unquote(path[len("/api/fonts/"):])
+        if not raw_id:
+            self._send_json({"error": "missing font id"}, 400)
+            return
+
+        if IS_DESKTOP:
+            # Desktop mode: raw_id is the slug (family-dir name)
+            slug = _slugify(raw_id)
+            target = _safe_child(USER_FONTS_DIR, slug)
+            if target.exists():
+                shutil.rmtree(target)
+            self._send_json({"ok": True})
+        else:
+            store = self._storage_for_user(user)
+            try:
+                found = store.delete_font(raw_id)
+            except Exception as exc:
+                self._send_json({"error": f"font delete failed: {exc}"}, 500)
+                return
+            if not found:
+                self._send_json({"error": "font not found"}, 404)
+                return
+            self._send_json({"ok": True})
 
     def _handle_user_font_file(self):
+        # Font files are loaded by the CSS engine (no JS fetch), so Bearer
+        # tokens cannot be attached. Fonts are served without auth — they
+        # contain no sensitive data and are already scoped to workspace paths.
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/user/"):].strip("/")
         parts = rest.split("/", 1)
@@ -1585,6 +2387,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         return "\n".join(rules)
 
     def _handle_google_font_cache(self):
+        # Font cache served without auth — same reason as _handle_user_font_file.
         path = urllib.parse.unquote(self.path.split("?")[0])
         rest = path[len("/fonts/cache/"):].strip("/")
         parts = rest.split("/", 1)
@@ -1634,10 +2437,71 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── PCO OAuth ──────────────────────────────────────────────────────────────
 
+    def _oauth_start_workspace_state(self, provider):
+        """Resolve the connecting user's workspace and return ``(state, error)``.
+
+        The OAuth start endpoint is a top-level browser navigation with no
+        Authorization header, so the SPA passes its Supabase access token as the
+        ``token`` query param. In server (multitenant) mode we verify it, resolve
+        workspace membership, and sign the workspace id into the OAuth ``state``
+        so the (also unauthenticated) callback can scope the token write to the
+        right workspace. Without a verifiable token we refuse, rather than let the
+        callback fall back to an arbitrary workspace (``workspace_settings LIMIT 1``).
+
+        In desktop mode the deployment is single-workspace, so no binding is
+        needed and ``('', None)`` is returned.
+        """
+        if IS_DESKTOP:
+            return '', None
+        qs = urllib.parse.urlparse(self.path).query
+        token = urllib.parse.parse_qs(qs).get('token', [None])[0]
+        if token:
+            import auth as _auth  # noqa: PLC0415 — deferred; db not available in desktop
+            _status, user = _auth.authenticate_authorization_header(f'Bearer {token}')
+            ws_id = user.get('workspace_id') if user else None
+            if ws_id:
+                return _sign_oauth_state(str(ws_id)), None
+        detail = ('Your session could not be verified. Reload the app, make sure '
+                  'you are signed in, and try connecting again.')
+        suffix = '&tab=page-settings' if provider == 'google' else ''
+        return '', f'/?{provider}_error=auth&detail={urllib.parse.quote(detail)}{suffix}'
+
+    def _oauth_callback_storage(self, provider):
+        """Resolve workspace-scoped storage for an OAuth callback. Returns
+        ``(storage, error_redirect)``.
+
+        Desktop mode returns ``(None, None)`` — the caller uses the default
+        single-workspace desktop storage. In server mode the connecting user's
+        workspace id is read from the signed ``state`` (set by
+        _oauth_start_workspace_state) and verified; the returned storage is
+        scoped to that workspace so the token write lands in the right row
+        rather than ``workspace_settings LIMIT 1``. Missing/invalid/forged state
+        is refused with an error redirect — we never write to an arbitrary
+        workspace.
+        """
+        if IS_DESKTOP:
+            return None, None
+        qs = urllib.parse.urlparse(self.path).query
+        state = urllib.parse.parse_qs(qs).get('state', [None])[0]
+        ws_id = _verify_oauth_state(state)
+        if not ws_id:
+            detail = ('Your session could not be verified, so the connection was '
+                      'not saved. Reload the app and try connecting again.')
+            suffix = '&tab=page-settings' if provider == 'google' else ''
+            return None, f'/?{provider}_error=state&detail={urllib.parse.quote(detail)}{suffix}'
+        from storage import get_storage  # noqa: PLC0415 — deferred; db not available in desktop
+        return get_storage(workspace_id=ws_id, user_claims=None), None
+
     def _handle_pco_oauth_start(self):
         client_id = os.environ.get('PCO_CLIENT_ID', '').strip()
         if not client_id:
             self._send_json({'error': 'PCO OAuth credentials not configured.'}, 503)
+            return
+        state, error_redirect = self._oauth_start_workspace_state('pco')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
+            self.end_headers()
             return
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
         if app_url:
@@ -1645,13 +2509,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         else:
             port = self.server.server_address[1]
             redirect_uri = f'http://localhost:{port}/oauth/pco/callback'
-        params = urllib.parse.urlencode({
+        auth_params = {
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
             'scope':         'services',
             'prompt':        'login',
-        })
+        }
+        if state:
+            auth_params['state'] = state
+        params = urllib.parse.urlencode(auth_params)
         self.send_response(302)
         self.send_header('Location', f'https://api.planningcenteronline.com/oauth/authorize?{params}')
         self.end_headers()
@@ -1663,6 +2530,16 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not code:
             self.send_response(302)
             self.send_header('Location', '/?pco_error=denied')
+            self.end_headers()
+            return
+
+        # Resolve the workspace to write into from the signed `state` before
+        # exchanging the code — refuse rather than store into an arbitrary
+        # workspace if the binding is missing/invalid (multitenancy).
+        storage, error_redirect = self._oauth_callback_storage('pco')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
             self.end_headers()
             return
 
@@ -1697,11 +2574,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by PCO.')
 
-            with _lock:
-                settings = _read_json(SETTINGS_FILE, {})
-                settings['pcoAccessToken']  = access_token
-                settings['pcoRefreshToken'] = refresh_token
-                _write_json(SETTINGS_FILE, settings)
+            # Scope the token write to the connecting user's workspace, resolved
+            # from the signed `state` above (None in desktop / single-workspace).
+            settings = _get_settings(storage)
+            settings['pcoAccessToken']  = access_token
+            settings['pcoRefreshToken'] = refresh_token
+            _save_settings(settings, storage)
 
             self.send_response(302)
             self.send_header('Location', '/?pco_connected=1')
@@ -1714,7 +2592,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', f'/?pco_error=token&detail={detail}')
             self.end_headers()
 
-    # ── Google Calendar OAuth ──────────────────────────────────────────────────
+    # --- Google Calendar/Drive Integration OAuth ---
+    # Separate from app login (/auth/google/login). Uses calendar+drive scopes.
+    # Tokens stored deployment-wide in settings.json (not per-user in this version).
+    # Must NOT request identity scopes (openid, profile) — those belong to the
+    # app-login flow in auth.py.
 
     def _handle_google_oauth_start(self):
         client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
@@ -1729,17 +2611,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', _oauth_config_error_redirect('google', detail))
             self.end_headers()
             return
+        state, error_redirect = self._oauth_start_workspace_state('google')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
+            self.end_headers()
+            return
         port = self.server.server_address[1]
         app_url = os.environ.get('APP_URL', '').strip().rstrip('/')
         redirect_uri = f'{app_url}/oauth/google/callback' if app_url else f'http://localhost:{port}/oauth/google/callback'
-        params = urllib.parse.urlencode({
+        # These scopes are strictly for Calendar/Drive access — identity scopes
+        # (openid, email, profile) are intentionally excluded here.  App login
+        # uses a separate flow (/auth/google/login) defined in auth.py.
+        _GCAL_DRIVE_SCOPES = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file'
+        assert 'openid' not in _GCAL_DRIVE_SCOPES and 'profile' not in _GCAL_DRIVE_SCOPES, \
+            'Calendar/Drive OAuth must not include identity scopes'
+        auth_params = {
             'client_id':     client_id,
             'redirect_uri':  redirect_uri,
             'response_type': 'code',
-            'scope':         'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/drive.file',
+            'scope':         _GCAL_DRIVE_SCOPES,
             'access_type':   'offline',
             'prompt':        'consent',
-        })
+        }
+        if state:
+            auth_params['state'] = state
+        params = urllib.parse.urlencode(auth_params)
         self.send_response(302)
         self.send_header('Location', f'https://accounts.google.com/o/oauth2/v2/auth?{params}')
         self.end_headers()
@@ -1751,6 +2648,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if params.get('error') or not code:
             self.send_response(302)
             self.send_header('Location', '/?google_error=denied')
+            self.end_headers()
+            return
+
+        # Resolve the workspace to write into from the signed `state` before
+        # exchanging the code (multitenancy — see the PCO callback).
+        storage, error_redirect = self._oauth_callback_storage('google')
+        if error_redirect:
+            self.send_response(302)
+            self.send_header('Location', error_redirect)
             self.end_headers()
             return
 
@@ -1781,13 +2687,14 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             if not access_token:
                 raise ValueError('No access token returned by Google.')
 
-            with _lock:
-                s = _read_json(SETTINGS_FILE, {})
-                s['googleAccessToken']       = access_token
-                s['googleDriveScopeGranted'] = True
-                if refresh_token:
-                    s['googleRefreshToken'] = refresh_token
-                _write_json(SETTINGS_FILE, s)
+            # Scope the token write to the connecting user's workspace, resolved
+            # from the signed `state` above (None in desktop / single-workspace).
+            s = _get_settings(storage)
+            s['googleAccessToken']       = access_token
+            s['googleDriveScopeGranted'] = True
+            if refresh_token:
+                s['googleRefreshToken'] = refresh_token
+            _save_settings(s, storage)
 
             self.send_response(302)
             self.send_header('Location', '/?google_connected=1&tab=page-settings')
@@ -1800,9 +2707,106 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Location', f'/?google_error=token&detail={detail}&tab=page-settings')
             self.end_headers()
 
+    # ── App-login Google OAuth (identity only) ─────────────────────────────────
+
+    def _handle_auth_google_login(self):
+        """Legacy collab-v1 Google app-login is disabled on this branch."""
+        self._send_json({'error': 'Supabase Auth login is handled by the client'}, 404)
+
+    def _handle_auth_google_callback(self):
+        """Legacy collab-v1 Google app-login is disabled on this branch."""
+        self._send_json({'error': 'Supabase Auth login is handled by the client'}, 404)
+
+    def _handle_api_me(self):
+        """
+        Return the currently authenticated user.
+
+        In desktop mode returns ``{"mode": "desktop", "user": null}``.
+        In server mode verifies the Supabase Bearer token and returns the
+        authenticated user and workspace identity.
+        """
+        if IS_DESKTOP:
+            self._send_json({'mode': 'desktop', 'user': None})
+            return
+
+        user = self._require_auth()
+        if user is None:
+            return
+
+        self._send_json({
+            'mode': 'server',
+            'user_id': user['id'],
+            'email': user.get('email') or '',
+            'workspace_id': user.get('workspace_id'),
+            'role': user.get('role') or '',
+        })
+
+    def _handle_get_workspace_members(self):
+        """GET /api/workspace/members — list members of the caller's workspace.
+
+        Returns [{user_id, display_name, email, role}] for all members,
+        excluding the caller so the handoff UI only shows valid recipients.
+        Desktop mode returns [].
+        """
+        if IS_DESKTOP:
+            self._send_json({'members': []})
+            return
+
+        user = self._require_auth()
+        if user is None:
+            return
+
+        from db import admin_transaction  # noqa: PLC0415
+        workspace_id = user.get('workspace_id')
+        caller_id    = user.get('user_id') or user.get('id')
+
+        with admin_transaction() as conn:
+            rows = conn.execute(
+                """
+                SELECT wm.user_id, wm.role,
+                       p.display_name, p.email
+                FROM public.workspace_members wm
+                LEFT JOIN public.profiles p ON p.id = wm.user_id
+                WHERE wm.workspace_id = %(workspace_id)s::uuid
+                  AND wm.user_id != %(caller_id)s::uuid
+                ORDER BY p.display_name NULLS LAST, p.email
+                """,
+                {"workspace_id": workspace_id, "caller_id": caller_id},
+            ).fetchall()
+
+        members = [
+            {
+                "user_id": str(r[0]),
+                "role":    r[1] or "",
+                "display_name": r[2] or "",
+                "email":   r[3] or "",
+            }
+            for r in rows
+        ]
+        self._send_json({"members": members})
+
+    def _handle_auth_logout(self):
+        """
+        Acknowledge logout requests.
+
+        Supabase Auth owns client session state on this branch, so the server
+        has no session row or cookie to delete. Always returns 200.
+        """
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self._cors_headers()
+        body = b'{"ok": true}'
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _handle_google_calendars(self):
         """Return the user's Google Calendar list."""
-        auth = _google_auth_header()
+        user = self._require_auth()
+        if user is None:
+            return
+        storage = self._storage_for_user(user)
+        auth = _google_auth_header(storage)
         if not auth:
             self._send_json({'error': 'Not connected to Google Calendar.'}, 401)
             return
@@ -1817,7 +2821,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             data = _do_fetch(auth)
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_google_token()
+                new_auth = _refresh_google_token(storage)
                 if new_auth:
                     try:
                         data = _do_fetch(new_auth)
@@ -1847,6 +2851,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── PDF generation ─────────────────────────────────────────────────────────
 
     def _handle_pdf(self):
+        user = self._require_auth()
+        if user is None:
+            return
         MAX_PDF_HTML_BYTES = 5 * 1024 * 1024  # 5 MB
         content_length = int(self.headers.get('Content-Length', 0))
         if content_length > MAX_PDF_HTML_BYTES:
@@ -1873,6 +2880,34 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         page_w = float(body.get("pageWidth",  5.5))
         page_h = float(body.get("pageHeight", 8.5))
 
+        # ── Electron mode ──────────────────────────────────────────────────────
+        # In APP_MODE=electron the sidecar server does not have access to a
+        # headless Chrome binary. PDF generation is handled by the Electron main
+        # process via the IPC channel `pdf:generate` (see electron/main.js).
+        # The renderer calls window.electronAPI.generatePdf() directly, so this
+        # HTTP route should never be reached from the Electron renderer.
+        #
+        # TODO (issue 013): if a non-renderer caller (e.g. a service script) ever
+        # needs to hit /api/pdf in electron mode, wire a live IPC call here using
+        # a local socket or named pipe so the main process can fulfil the request.
+        if IS_ELECTRON:
+            self._send_json(
+                {"error": "PDF generation in Electron mode is handled by the main process via IPC (pdf:generate). Call window.electronAPI.generatePdf() from the renderer instead."},
+                501,
+            )
+            return
+        # ── Headless Chrome path (server / desktop modes) ──────────────────────
+        # Resolve Chrome at request time. If it's missing the server still runs;
+        # only PDF export is unavailable, and the user gets a clear message.
+        try:
+            chrome_path = _resolve_chrome()
+        except RuntimeError as e:
+            self._send_json(
+                {"error": f"Install Google Chrome to export PDFs. ({e})"},
+                503,
+            )
+            return
+
         try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 html_path = os.path.join(tmpdir, "input.html")
@@ -1882,7 +2917,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     f.write(html_content)
 
                 cmd = [
-                    CHROME_PATH,
+                    chrome_path,
                     "--headless=new",
                     "--disable-gpu",
                     "--no-sandbox",               # required when running as root in Docker
@@ -1961,14 +2996,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.wfile.write(e.read())
 
     def _proxy_pco(self):
-        auth = _pco_auth_header()
+        user = self._require_auth()
+        if user is None:
+            return
+        storage = self._storage_for_user(user)
+        auth = _pco_auth_header(storage)
         if not auth:
             return self._send_json({"errors": [{"detail": "Planning Center credentials are not configured."}]}, 503)
         try:
             self._pco_send_raw(self._pco_do_request(self._pco_build_request(auth)))
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_pco_token()
+                new_auth = _refresh_pco_token(storage)
                 if new_auth:
                     try:
                         self._pco_send_raw(self._pco_do_request(self._pco_build_request(new_auth)))
@@ -1984,6 +3023,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Update endpoints ────────────────────────────────────────────────────────
 
     def _handle_check_update(self):
+        user = self._require_auth()
+        if user is None:
+            return
         try:
             url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
             req = urllib.request.Request(url, headers={
@@ -2006,6 +3048,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_update_status(self):
         """Return update environment info for diagnostics."""
+        user = self._require_auth()
+        if user is None:
+            return
         import shutil
         docker_available = shutil.which("docker") is not None
         socket_exists    = os.path.exists("/var/run/docker.sock")
@@ -2018,6 +3063,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         })
 
     def _handle_apply_update(self):
+        user = self._require_auth()
+        if user is None:
+            return
         if APP_MODE == "server":
             self._apply_update_server()
         else:
@@ -2025,6 +3073,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_propresenter_export(self):
         """Export bulletin items as ProPresenter .pro files in a ZIP."""
+        user = self._require_auth()
+        if user is None:
+            return
         if not _PP_EXPORT_AVAILABLE:
             self._send_json({"error": "ProPresenter export module not available."}, 500)
             return
@@ -2063,9 +3114,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_drive_upload(self):
         """Upload a file to Google Drive. Body: {filename, content (base64), mimeType}."""
+        user = self._require_auth()
+        if user is None:
+            return
         import base64 as _base64
-        settings = _read_json(SETTINGS_FILE, {})
-        auth = _google_auth_header()
+        storage = self._storage_for_user(user)
+        settings = _get_settings(storage)
+        auth = _google_auth_header(storage)
         if not auth or not settings.get('googleDriveScopeGranted'):
             self._send_json({
                 "error": "Google Drive not connected. Reconnect Google in Settings to enable Drive.",
@@ -2130,7 +3185,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             result = _do_upload(auth)
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                new_auth = _refresh_google_token()
+                new_auth = _refresh_google_token(storage)
                 if new_auth:
                     try:
                         result = _do_upload(new_auth)
@@ -2314,11 +3369,15 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # ── Calendar endpoint ──────────────────────────────────────────────────────
 
     def _handle_cal(self):
+        user = self._require_auth()
+        if user is None:
+            return
+        storage = self._storage_for_user(user)
         try:
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
 
-            defaults = _public_config()["calendarDefaults"]
+            defaults = _public_config(storage)["calendarDefaults"]
             urls = defaults["urls"]
             if 'urls' in params:
                 try:
@@ -2340,13 +3399,13 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             svc_date_str = params.get('date', [None])[0]
 
             # Prefer Google Calendar API if the user is connected and has selected calendars
-            google_cal_ids = _read_json(SETTINGS_FILE, {}).get('googleCalendarIds', [])
-            google_auth = _google_auth_header()
+            google_cal_ids = _get_settings(storage).get('googleCalendarIds', [])
+            google_auth = _google_auth_header(storage)
             if google_auth and google_cal_ids:
                 result = fetch_google_cal_events(google_auth, google_cal_ids, exclude, svc_date_str)
                 if result is None:
                     # None means auth failure (401/403) — refresh token and retry once
-                    new_auth = _refresh_google_token()
+                    new_auth = _refresh_google_token(storage)
                     if new_auth:
                         result = fetch_google_cal_events(new_auth, google_cal_ids, exclude, svc_date_str)
                     else:
@@ -2382,17 +3441,135 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             except Exception:
                 pass
 
+    # ── Presence endpoints ─────────────────────────────────────────────────────
+
+    def _handle_post_presence_heartbeat(self):
+        """POST /api/presence/heartbeat  body: {"project_id": "<project-id>"}
+        project_id is the TEXT project id (proj_<ts>_<rand>), not a uuid.
+        Upsert a workspace_presences row with last_seen_at = now().
+        Desktop mode: no-op, returns {"ok": true}.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"ok": True})
+            return
+        try:
+            body = self._read_body_json()
+        except Exception:
+            self._send_json({"error": "invalid JSON"}, 400)
+            return
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be an object"}, 400)
+            return
+        project_id = (body.get("project_id") or "").strip()
+        if not project_id:
+            self._send_json({"error": "project_id is required"}, 400)
+            return
+        workspace_id = user.get("workspace_id")
+        user_id = user.get("id") or user.get("user_id")
+        if not workspace_id or not user_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            conn.execute(
+                """
+                INSERT INTO workspace_presences (workspace_id, user_id, project_id, last_seen_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (workspace_id, user_id, project_id)
+                DO UPDATE SET last_seen_at = now()
+                """,
+                (workspace_id, user_id, project_id),
+            )
+        self._send_json({"ok": True})
+
+    def _handle_get_presence(self):
+        """GET /api/presence?project_id=<project-id>
+        Return active presence records for the project (last_seen_at within 90s).
+        Desktop mode: returns empty list.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json([])
+            return
+        qs = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+        project_id = (qs.get("project_id") or [None])[0]
+        if not project_id:
+            self._send_json({"error": "project_id query parameter is required"}, 400)
+            return
+        workspace_id = user.get("workspace_id")
+        if not workspace_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            rows = conn.execute(
+                """
+                SELECT wp.user_id::text, p.display_name, wp.last_seen_at::text
+                FROM workspace_presences wp
+                LEFT JOIN profiles p ON p.id = wp.user_id
+                WHERE wp.workspace_id = %s
+                  AND wp.project_id = %s
+                  AND wp.last_seen_at > now() - interval '90 seconds'
+                ORDER BY wp.last_seen_at DESC
+                """,
+                (workspace_id, project_id),
+            ).fetchall()
+        result = [
+            {
+                "user_id": row[0],
+                "display_name": row[1],
+                "last_seen_at": row[2],
+            }
+            for row in rows
+        ]
+        self._send_json(result)
+
+    def _handle_delete_presence(self):
+        """DELETE /api/presence
+        Remove the caller's presence rows (called on project close / sign-out).
+        Desktop mode: no-op, returns {"ok": true}.
+        """
+        user = self._require_auth()
+        if user is None:
+            return
+        if IS_DESKTOP:
+            self._send_json({"ok": True})
+            return
+        workspace_id = user.get("workspace_id")
+        user_id = user.get("id") or user.get("user_id")
+        if not workspace_id or not user_id:
+            self._send_json({"error": "workspace context required"}, 403)
+            return
+        import db as _db  # noqa: PLC0415
+        with _db.transaction(user.get("claims")) as conn:
+            conn.execute(
+                """
+                DELETE FROM workspace_presences
+                WHERE workspace_id = %s AND user_id = %s
+                """,
+                (workspace_id, user_id),
+            )
+        self._send_json({"ok": True})
+
 
 # ─── Entry point ───────────────────────────────────────────────────────────────
 
 def run_server(port=8080):
     """Start the HTTP server. Called directly by launcher.py in desktop mode."""
+    _validate_server_config()
     _initialize_local_file(PROJECTS_FILE, PROJECTS_EXAMPLE_FILE, [])
     _initialize_local_file(ANNOUNCEMENTS_FILE, ANNOUNCEMENTS_EXAMPLE_FILE, [])
-    _initialize_local_file(VOLUNTEER_ROLES_FILE, VOLUNTEER_ROLES_EXAMPLE_FILE, [])
     _initialize_local_file(SETTINGS_FILE, SETTINGS_EXAMPLE_FILE, {})
     _initialize_local_file(TEMPLATES_FILE, TEMPLATES_EXAMPLE_FILE, [])
     run_migrations()
+    if not IS_DESKTOP:
+        from migrations.runner import run_schema_migrations
+        run_schema_migrations()
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
     httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)

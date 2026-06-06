@@ -694,9 +694,12 @@ async function exportToProPresenter(projectOrId) {
 
     setStatus(`Preparing ProPresenter export for "${projectName}"…`, 'info');
 
+    const _ppSession = typeof getSession === 'function' ? getSession() : null;
+    const _ppHeaders = { 'Content-Type': 'application/json' };
+    if (_ppSession?.access_token) _ppHeaders['Authorization'] = `Bearer ${_ppSession.access_token}`;
     const response = await fetch('/api/propresenter-export', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _ppHeaders,
       body: JSON.stringify({
         items: projectState.items || items,
         projectName,

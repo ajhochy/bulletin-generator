@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.e2e.example
 desktop_config.py
 
 # PyInstaller build output
@@ -34,3 +35,15 @@ __MACOSX/
 *.tmp
 output/
 tmp/
+
+# Python virtualenv for AI-workflow checks (3.11)
+.venv/
+.agent-stack/
+.agents/
+skills-lock.json
+
+# Playwright E2E
+/test-results/
+/playwright-report/
+/tests/e2e/.auth/
+/tests/e2e/recordings/*.local.har

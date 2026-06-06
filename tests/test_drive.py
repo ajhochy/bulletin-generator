@@ -11,8 +11,19 @@ import threading
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import server
+from storage import JsonStorageBackend
 
 _lock = server._lock
+
+
+def _store_for(tmp_path):
+    """Return a JSON storage backend rooted at *tmp_path*.
+
+    Settings flow through ``get_storage(DATA_DIR)`` on this branch, so tests
+    isolate themselves from the real ``data/settings.json`` by patching
+    ``storage.get_storage`` to return this backend (reads ``tmp_path/settings.json``).
+    """
+    return JsonStorageBackend(tmp_path)
 
 
 # ── Shared stub ───────────────────────────────────────────────────────────────
@@ -28,6 +39,16 @@ class StubDriveHandler:
 
     def _read_body_json(self):
         return self._body_dict
+
+    def _require_auth(self):
+        # Simulate an authenticated user so the auth gate passes.
+        return {"id": "test-user", "email": "tester@example.com"}
+
+    def _storage_for_user(self, user):
+        # Mirror Handler._storage_for_user; tests patch storage.get_storage to a
+        # tmp-rooted backend, so this resolves to that fake store.
+        from storage import get_storage
+        return get_storage()
 
     def _handle_drive_upload(self):
         # Defer lookup so tests compile before the method is implemented
@@ -49,6 +70,9 @@ class TestGoogleOAuthScope:
             def send_header(self, k, v): captured[k] = v
             def end_headers(self): pass
             def _send_json(self, body, status=200): captured['json'] = body
+            # Desktop/single-workspace path — workspace scoping is exercised by
+            # tests/test_server_utils.py::TestOAuthCallbackWorkspaceScoping.
+            def _oauth_start_workspace_state(self, provider): return '', None
 
         with patch.dict(os.environ, {
             'GOOGLE_CLIENT_ID': 'test-client-id',
@@ -62,8 +86,7 @@ class TestGoogleOAuthScope:
 
     def test_oauth_callback_sets_drive_scope_granted(self, tmp_path):
         """Successful OAuth callback must store googleDriveScopeGranted=True."""
-        settings_file = tmp_path / 'settings.json'
-        settings_file.write_text('{}')
+        store = _store_for(tmp_path)
 
         token_resp = json.dumps({
             'access_token': 'acc123',
@@ -84,39 +107,36 @@ class TestGoogleOAuthScope:
             def send_response(self, code): captured['code'] = code
             def send_header(self, k, v): captured[k] = v
             def end_headers(self): pass
-
-        written_data = {}
-
-        def fake_write_json(path, data):
-            written_data.update(data)
+            # Desktop/single-workspace path — workspace scoping is exercised by
+            # tests/test_server_utils.py::TestOAuthCallbackWorkspaceScoping.
+            def _oauth_callback_storage(self, provider): return None, None
 
         with patch.dict(os.environ, {
             'GOOGLE_CLIENT_ID': 'cid',
             'GOOGLE_CLIENT_SECRET': 'csec',
         }), patch('urllib.request.urlopen', return_value=mock_resp), \
-           patch('server.SETTINGS_FILE', settings_file), \
-           patch('server._write_json', side_effect=fake_write_json):
+           patch('storage.get_storage', return_value=store):
             server.Handler._handle_google_oauth_callback(FakeHandler())
 
-        assert written_data.get('googleDriveScopeGranted') is True
+        assert store.get_settings().get('googleDriveScopeGranted') is True
 
 
 # ── Task 2: driveConfigured in bootstrap ─────────────────────────────────────
 
 class TestDriveConfigured:
     def test_public_config_includes_drive_configured_false_when_not_granted(self, tmp_path):
-        settings_file = tmp_path / 'settings.json'
-        with patch('server.SETTINGS_FILE', settings_file):
+        store = _store_for(tmp_path)  # empty dir → {} settings
+        with patch('storage.get_storage', return_value=store):
             cfg = server._public_config()
         assert cfg.get('driveConfigured') is False
 
     def test_public_config_drive_configured_true_when_granted(self, tmp_path):
-        settings_file = tmp_path / 'settings.json'
-        server._write_json(settings_file, {
+        store = _store_for(tmp_path)
+        store.save_settings({
             'googleAccessToken': 'tok',
             'googleDriveScopeGranted': True,
         })
-        with patch('server.SETTINGS_FILE', settings_file):
+        with patch('storage.get_storage', return_value=store):
             cfg = server._public_config()
         assert cfg.get('driveConfigured') is True
 
@@ -172,7 +192,7 @@ class TestDriveUpload:
         })
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
         with self._mock_drive_response('abc123'), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 200
@@ -183,7 +203,7 @@ class TestDriveUpload:
         settings_file = tmp_path / 'settings.json'
         server._write_json(settings_file, {})
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
-        with patch('server.SETTINGS_FILE', settings_file):
+        with patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 401
@@ -196,7 +216,7 @@ class TestDriveUpload:
             'googleDriveScopeGranted': True,
         })
         h = StubDriveHandler({})
-        with patch('server.SETTINGS_FILE', settings_file):
+        with patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 400
@@ -220,7 +240,7 @@ class TestDriveUpload:
             return resp
 
         with patch('urllib.request.urlopen', side_effect=fake_urlopen), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
 
         assert b'folder99' in captured_req['body']
@@ -234,7 +254,7 @@ class TestDriveUpload:
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
         err = urllib.error.HTTPError(url='', code=403, msg='Forbidden', hdrs=None, fp=BytesIO(b'forbidden'))
         with patch('urllib.request.urlopen', side_effect=err), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 403
@@ -251,7 +271,7 @@ class TestDriveUpload:
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
         err = urllib.error.HTTPError(url='', code=404, msg='Not Found', hdrs=None, fp=BytesIO(b'not found'))
         with patch('urllib.request.urlopen', side_effect=err), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 404
@@ -267,7 +287,7 @@ class TestDriveUpload:
         h = StubDriveHandler({'filename': 'test.pdf', 'content': 'SGVsbG8=', 'mimeType': 'application/pdf'})
         err = urllib.error.HTTPError(url='', code=500, msg='Internal Server Error', hdrs=None, fp=BytesIO(b'server error'))
         with patch('urllib.request.urlopen', side_effect=err), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, status = h._responses[0]
         assert status == 502
@@ -280,7 +300,7 @@ class TestDriveUpload:
         })
         h = StubDriveHandler({'filename': 'bulletin.json', 'content': 'e30=', 'mimeType': 'application/json'})
         with self._mock_drive_response('xyz789'), \
-             patch('server.SETTINGS_FILE', settings_file):
+             patch('storage.get_storage', return_value=_store_for(tmp_path)):
             h._handle_drive_upload()
         body, _ = h._responses[0]
         assert 'xyz789' in body.get('fileUrl', '')

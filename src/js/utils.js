@@ -52,6 +52,23 @@ function shortTimestamp(iso) {
   }
 }
 
+function formatRelativeTime(iso) {
+  if (!iso) return '';
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins  = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days  = Math.floor(diff / 86400000);
+    if (mins  <  1) return 'just now';
+    if (mins  < 60) return `${mins}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days  <  7) return `${days}d ago`;
+    return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric' });
+  } catch (e) {
+    return '';
+  }
+}
+
 function generateProjectId() {
   return `proj_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

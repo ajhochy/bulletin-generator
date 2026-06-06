@@ -75,11 +75,11 @@ let linkedPreviewTimer = null;
 let suppressLinkedFocusSync = false;
 
 // ─── Collaboration state (server mode) ────────────────────────────────────────
-let _loadedRevision = null;   // revision of the project as loaded from server
 let _editorDisplayName = '';  // local editor identity
-let _staleCheckTimer = null;
 let _saveInFlight = false;    // true while a save request is awaiting response
 let _pendingSaveProject = null; // latest full project object deferred during an in-flight save
+let _presenceTimer = null;    // interval id for 30s heartbeat
+let _isReadOnly = false;      // true when a non-owner opens a workspace project
 
 // Note: both server mode and desktop mode persist projects through the local
 // Python server API (data/projects.json). localStorage is only used to track
@@ -112,6 +112,18 @@ const SYSTEM_TEMPLATE_FONTS = new Set(['system-ui', 'arial', 'helvetica', 'georg
 let activeDocTemplate = { pageSize: '5.5x8.5', cssVars: {}, typeFormats: {}, zones: [] };
 let templates = [];  // all saved templates loaded from /api/templates  OWNER: templates.js
 
+// Registry of user-uploaded font Storage URLs: Map<family-name, url>
+// Populated by templates.js when /api/fonts returns storage-backed fonts (server mode).
+// Used by syncTemplateFontLinks to inject @font-face blocks for fonts not served locally.
+const _storageFontRegistry = new Map();
+
+function registerStorageFont(family, url) {
+  if (family && url) _storageFontRegistry.set(family, url);
+}
+function unregisterStorageFonts() {
+  _storageFontRegistry.clear();
+}
+
 function getPageDims() {
   return PAGE_SIZE_PRESETS[activeDocTemplate.pageSize] || PAGE_SIZE_PRESETS['5.5x8.5'];
 }
@@ -137,9 +149,31 @@ function collectTemplateFontFamilies(template) {
 
 function syncTemplateFontLinks(template) {
   const wanted = new Set();
+  const wantedStyleIds = new Set();
   collectTemplateFontFamilies(template).forEach(name => {
     const slug = templateFontSlug(name);
     if (!slug) return;
+
+    // Server mode: if the font is backed by a Supabase Storage URL, inject a
+    // @font-face <style> block instead of (or in addition to) the local link.
+    const storageUrl = _storageFontRegistry.get(name);
+    if (storageUrl) {
+      const styleId = `tpl-font-storage-${slug}`;
+      wantedStyleIds.add(styleId);
+      let style = document.getElementById(styleId);
+      if (!style) {
+        style = document.createElement('style');
+        style.id = styleId;
+        document.head.appendChild(style);
+      }
+      const ext = storageUrl.split('?')[0].split('.').pop().toLowerCase();
+      const fmt = ext === 'woff2' ? 'woff2' : ext === 'woff' ? 'woff'
+               : ext === 'ttf'   ? 'truetype' : 'opentype';
+      const rule = `@font-face { font-family: "${name}"; src: url("${storageUrl}") format("${fmt}"); font-weight: 100 900; font-style: normal; font-display: swap; }`;
+      if (style.textContent !== rule) style.textContent = rule;
+      return; // skip local link injection for this family
+    }
+
     [
       [`tpl-font-user-${slug}`, `/fonts/user/${slug}/font.css`],
       [`tpl-font-cache-${slug}`, `/fonts/cache/${slug}/font.css`],
@@ -157,6 +191,9 @@ function syncTemplateFontLinks(template) {
   });
   document.querySelectorAll('link[id^="tpl-font-user-"], link[id^="tpl-font-cache-"]').forEach(link => {
     if (!wanted.has(link.id)) link.remove();
+  });
+  document.querySelectorAll('style[id^="tpl-font-storage-"]').forEach(style => {
+    if (!wantedStyleIds.has(style.id)) style.remove();
   });
 }
 
@@ -245,6 +282,7 @@ const coverImgThumb        = document.getElementById('cover-img-thumb');
 const coverImgName         = document.getElementById('cover-img-name');
 const coverImgClear        = document.getElementById('cover-img-clear');
 const optCover             = document.getElementById('opt-cover');
+const optWelcome           = document.getElementById('opt-welcome');
 const optFooter            = document.getElementById('opt-footer');
 const optCal               = document.getElementById('opt-cal');
 const optBookletSize       = document.getElementById('opt-booklet-size');

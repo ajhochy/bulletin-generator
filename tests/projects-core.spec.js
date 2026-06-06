@@ -3,7 +3,7 @@ import {
   buildProjectSaveRequest,
   cloneItemsData,
   deriveProjectSaveFailure,
-  deriveProjectSaveSuccess,
+  deriveStartupRestore,
 } from '../src/js/modules/projects-core.js';
 
 describe('projects core', () => {
@@ -28,37 +28,39 @@ describe('projects core', () => {
     expect(cloned[0]._fmt).not.toBe(source[0]._fmt);
   });
 
-  it('adds revision and editor metadata for server saves', () => {
+  it('adds editor metadata for server saves (no _clientRevision)', () => {
     const request = buildProjectSaveRequest(
       { id: 'abc', name: 'Project' },
-      { isServerMode: true, editorDisplayName: 'AJ', loadedRevision: 5 }
+      { isServerMode: true, editorDisplayName: 'AJ' }
     );
     expect(request).toMatchObject({
       id: 'abc',
       name: 'Project',
       updatedBy: 'AJ',
-      _clientRevision: 5,
+    });
+    expect(request).not.toHaveProperty('_clientRevision');
+  });
+
+  it('does not add updatedBy in desktop mode', () => {
+    const request = buildProjectSaveRequest(
+      { id: 'xyz', name: 'Desktop Project' },
+      { isServerMode: false, editorDisplayName: 'Local' }
+    );
+    expect(request).not.toHaveProperty('updatedBy');
+    expect(request).not.toHaveProperty('_clientRevision');
+  });
+
+  it('shows forbidden toast when non-owner tries to save (403)', () => {
+    expect(deriveProjectSaveFailure({ errorStatus: 403, isDesktopMode: false })).toEqual({
+      type: 'forbidden',
+      message: 'Only the project owner can edit this bulletin.',
     });
   });
 
-  it('derives save success state from server revision', () => {
-    expect(deriveProjectSaveSuccess({
-      result: { revision: 8 },
-      isServerMode: true,
-      currentLoadedRevision: 5,
-      storedProject: { revision: 5 },
-    })).toEqual({
-      loadedRevision: 8,
-      storedRevision: 8,
-      hideStaleBanner: true,
-      hideConflictBanner: true,
-    });
-  });
-
-  it('derives conflict and generic save failures', () => {
-    expect(deriveProjectSaveFailure({ errorStatus: 409, isDesktopMode: false })).toEqual({
-      type: 'conflict',
-      message: 'This bulletin was updated by someone else.',
+  it('shows generic error for other server failures', () => {
+    expect(deriveProjectSaveFailure({ errorStatus: 500, isDesktopMode: false })).toEqual({
+      type: 'generic',
+      message: 'Could not save project to server.',
     });
 
     expect(deriveProjectSaveFailure({ errorStatus: 500, isDesktopMode: true })).toEqual({

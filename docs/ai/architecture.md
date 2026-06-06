@@ -9,7 +9,7 @@ Church bulletin generator. Imports a service plan from Planning Center Online, p
 ## Two deployment modes
 
 - **`desktop`** (default in `.app` bundle): single-user, port 8765, `launcher.py` manages server lifecycle, OAuth creds bundled in `desktop_config.py`, data at `~/Library/Application Support/BulletinGenerator/`. Updates via GitHub zip download.
-- **`server`**: multi-user, port 8080, Docker-managed, data at `/app/data` bind-mounted to `./data`, OAuth creds from env vars. Updates via Watchtower sidecar. Adds 409 conflict detection (revision + editor attribution).
+- **`server`**: multi-user, port 8080, Docker-managed, data at `/app/data` bind-mounted to `./data`, OAuth creds from env vars. Updates via Watchtower sidecar. Owner-only write enforcement (403 for non-owners), presence heartbeat, read-only mode for non-owners.
 
 Mode is decided by `APP_MODE` env var. JS-side check: `isServerMode()` in `api.js`. Python-side: `APP_MODE` / `IS_DESKTOP` in `server.py`.
 
@@ -38,6 +38,13 @@ PCO + Google Cal + iCal  ──►  server.py (proxy/fetch)  ──►  src/js/*
 - **Python**: stdlib only for HTTP; `rumps` for desktop menu bar.
 - **JS**: no framework, no bundler. DaisyUI / Tailwind classes appear in markup; styling rules live in `index.html` / `styles.css`.
 
-## Conflict + sync model (server mode)
+## Ownership + presence model (server mode)
 
-`_clientRevision` posted with each save → server compares to stored revision → 409 if stale, returning `{ serverRevision, serverUpdatedBy, serverUpdatedAt }`. Frontend tracks `_loadedRevision` in `projects.js` and shows a conflict banner with a "Reload latest" link that fetches fresh from the server.
+Visibility model **A** (see `decisions.md` 2026-06-04): projects are **workspace-visible by default** — `save_project` always inserts `visibility='workspace'`. There is no private/share toggle; Share-to-Workspace was abandoned. Editing is gated by ownership, and **hand-off** (`POST /api/projects/{id}/transfer`) reassigns the sole editor. (Issue 020's `'private'` column default is vestigial — overridden by the explicit `'workspace'` insert.)
+
+- **Owner-only writes**: `POST /api/projects` returns 403 for non-owners. Frontend shows toast: "Only the project owner can edit this bulletin."
+- **Read-only mode**: When a non-owner loads a workspace project, `_isReadOnly = true`, autosave is suppressed, a `#readonly-banner` strip appears with the owner's name and a Duplicate button.
+- **Duplicate**: Creates a new project with the same state owned by the current user, and exits read-only mode. (Like all new projects it is workspace-visible — `save_project` forces `visibility='workspace'`.)
+- **Hand-off**: `POST /api/projects/{id}/transfer` (Hand-off button) transfers ownership to another workspace member; the new owner becomes the sole editor and the prior owner goes read-only.
+- **Presence heartbeat**: On project open, `POST /api/presence/heartbeat` fires immediately and then every 30s. `GET /api/presence?project_id=<uuid>` is polled once on open to show `#presence-badge` if another user is active. `DELETE /api/presence` fires on `pagehide` / `beforeunload`. All presence calls are best-effort (errors swallowed). Desktop mode: all presence calls are skipped.
+- No `_clientRevision` is sent in save requests. No conflict detection / stale-check poll.

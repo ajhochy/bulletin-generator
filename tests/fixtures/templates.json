@@ -1,0 +1,5 @@
+[
+  {"id": "classic", "name": "Classic", "data": {"font": "serif"}},
+  {"id": "modern", "name": "Modern", "data": {"font": "sans-serif"}},
+  {"name": "My Custom Template", "data": {"font": "Georgia"}}
+]

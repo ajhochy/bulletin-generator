@@ -44,6 +44,14 @@ function handleTabClick(btn) {
     const flt = document.getElementById('fmt-filter');
     if (flt) flt.value = '';
   }
+  // Start/stop files-tab auto-refresh based on which tab is active.
+  if (typeof startFilesAutoRefresh === 'function') {
+    if (btn.dataset.tab === 'page-files') {
+      startFilesAutoRefresh();
+    } else {
+      stopFilesAutoRefresh();
+    }
+  }
 }
 
 function openTabById(tabId) {
@@ -315,6 +323,11 @@ function initAppShell() {
 }
 
 async function startApp() {
+  // Auth gate: show login screen if unauthenticated in server mode.
+  // initAuth() returns false when the user must log in first.
+  const authenticated = await initAuth();
+  if (!authenticated) return;
+
   initAppShell();
   initFormattingControls();
   initStaffEditor();

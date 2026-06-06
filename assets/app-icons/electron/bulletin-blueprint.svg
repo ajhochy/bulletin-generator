@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Bulletin Generator icon option: blueprint</title>
+  <desc id="desc">A rounded blue app icon with a folded bulletin page, cross, and layout blocks.</desc>
+  <defs>
+    <linearGradient id="bg" x1="184" y1="128" x2="840" y2="896" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#155e75"/>
+      <stop offset=".54" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="312" y1="178" x2="720" y2="844" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#0f172a" flood-opacity=".32"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity=".18"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <path d="M185 292c87-89 208-136 334-124 143 13 262 96 331 214 49 84 56 202-4 281-63 82-175 97-275 126-123 35-259 76-354-12-101-94-130-383-32-485Z" fill="#ffffff" opacity=".12"/>
+
+  <g filter="url(#shadow)">
+    <path d="M304 152h316l150 152v548c0 30-24 54-54 54H304c-30 0-54-24-54-54V206c0-30 24-54 54-54Z" fill="url(#paper)"/>
+    <path d="M620 152v112c0 30 24 54 54 54h96L620 152Z" fill="#bfdbfe"/>
+    <path d="M640 258c0 16 13 29 29 29h83l18 31h-96c-30 0-54-24-54-54V152l31 31v75Z" fill="#93c5fd" opacity=".85"/>
+  </g>
+
+  <g filter="url(#soft)">
+    <rect x="354" y="284" width="78" height="248" rx="28" fill="#0f766e"/>
+    <rect x="286" y="352" width="214" height="78" rx="28" fill="#0f766e"/>
+  </g>
+
+  <rect x="354" y="590" width="330" height="28" rx="14" fill="#1e40af" opacity=".72"/>
+  <rect x="354" y="654" width="278" height="28" rx="14" fill="#1e40af" opacity=".55"/>
+  <rect x="354" y="718" width="228" height="28" rx="14" fill="#1e40af" opacity=".38"/>
+
+  <g fill="#0f766e" opacity=".88">
+    <rect x="562" y="390" width="118" height="26" rx="13"/>
+    <rect x="562" y="448" width="118" height="26" rx="13"/>
+    <rect x="562" y="506" width="118" height="26" rx="13"/>
+  </g>
+</svg>

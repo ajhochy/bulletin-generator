@@ -1,0 +1,105 @@
+{
+  "patterns": [],
+  "process_patterns": [
+    {
+      "id": "p3-scope-expansion",
+      "category": "P3",
+      "description": "Scope expansion failures: 2 occurrence(s) across issues ['253']",
+      "occurrences": 2,
+      "affected_issues": [
+        "253"
+      ],
+      "affected_skills": [
+        "acceptance-contract"
+      ],
+      "reason": "Implementation went beyond the issue scope \u2014 added unrequested features or refactored outside the acceptance criteria.",
+      "suggested_prompt_addition": "Before accepting a coding-agent result, diff the changed files against the issue's acceptance criteria. Any file not referenced in the issue or the contract test is a scope violation unless the coding-agent explicitly justified it.",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-05-19-issue-253.json",
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-05-19-issue-253.json"
+      ]
+    },
+    {
+      "id": "p1-ci-gate-skipped",
+      "category": "P1",
+      "description": "CI gate skipped failures: 1 occurrence(s) across issues []",
+      "occurrences": 1,
+      "affected_issues": [],
+      "affected_skills": [
+        "workflow-orchestrator"
+      ],
+      "reason": "CI gate was skipped after push. The orchestrator must enforce gh run watch before starting the next issue.",
+      "suggested_prompt_addition": "After every git push, run `gh run watch --exit-status <run-id>` and block on it before starting any next issue. If the run-id is unknown, use `gh run list --limit 1 --json databaseId -q '.[0].databaseId'` to retrieve it.",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-06-02-retro-supabase-run-001-006.json"
+      ]
+    }
+  ],
+  "workflow_patterns": [
+    {
+      "id": "w2-bypassed-orchestrator-routing",
+      "category": "W2",
+      "description": "Bypassed orchestrator routing failures: 1 occurrence(s) across issues []",
+      "occurrences": 1,
+      "affected_issues": [],
+      "affected_skills": [
+        "workflow-orchestrator"
+      ],
+      "reason": "Agent bypassed the orchestrator and went straight to implementation despite the repo having AGENTS.md and docs/ai/*.",
+      "suggested_prompt_addition": "Add a Pre-Flight Check that runs FIRST on every entry: if AGENTS.md and docs/ai/project-state.md both exist, the orchestrator must be the entry point \u2014 no Edit/Write/Bash on source code is permitted until orchestrator dispatch has emitted a routing decision. Reject any direct-implementation attempt with a one-line redirect to orchestrator.",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-06-02-retro-supabase-run-001-006.json"
+      ]
+    },
+    {
+      "id": "w3-todowrite-checklist-not-expanded",
+      "category": "W3",
+      "description": "TodoWrite checklist not expanded failures: 1 occurrence(s) across issues []",
+      "occurrences": 1,
+      "affected_issues": [],
+      "affected_skills": [
+        "workflow-orchestrator"
+      ],
+      "reason": "A skill said 'expand Completion Checklist into TodoWrite items at start' and the agent did not. The skills themselves should make this harder to skip, but the orchestrator can also verify.",
+      "suggested_prompt_addition": "When dispatching any skill whose SKILL.md contains the phrase 'expand the Completion Checklist into TodoWrite items at start', include in the dispatch prompt: 'Your FIRST tool call must be TodoWrite, expanding the Completion Checklist verbatim. No other tool calls are permitted before this.'",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-06-02-retro-supabase-run-001-006.json"
+      ]
+    },
+    {
+      "id": "w1-required-skill-skipped",
+      "category": "W1",
+      "description": "Required skill skipped failures: 1 occurrence(s) across issues []",
+      "occurrences": 1,
+      "affected_issues": [],
+      "affected_skills": [
+        "workflow-orchestrator"
+      ],
+      "reason": "A required skill in the canonical chain was skipped. The orchestrator must enforce the chain \u2014 every required step is gated.",
+      "suggested_prompt_addition": "Before dispatching the next step, verify that the immediately-previous required step in the chain announced itself, expanded its TodoWrite checklist, and emitted its expected output artifact. If the previous step is missing, halt and surface the gap rather than continuing.",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-06-02-retro-supabase-run-001-006.json"
+      ]
+    },
+    {
+      "id": "w5-premature-completion-claim",
+      "category": "W5",
+      "description": "Premature completion claim failures: 1 occurrence(s) across issues []",
+      "occurrences": 1,
+      "affected_issues": [],
+      "affected_skills": [
+        "verification-gate"
+      ],
+      "reason": "Agent claimed work done, fixed, passing, or opened a PR without verification-gate evidence captured in the transcript.",
+      "suggested_prompt_addition": "Strengthen the Required Evidence section: completion claims (the words 'done', 'fixed', 'ready', 'passing', 'shipped', or opening a PR) are FORBIDDEN unless preceded in the SAME response by a captured tool-call output block showing the check command and its exit-zero/green result. Add this as a hard rule in the Red Flags table.",
+      "evidence_files": [
+        "/Users/ajhochhalter/Documents/Bulletin Generator - Most Recent Release/.agent-stack/postmortems/2026-06-02-retro-supabase-run-001-006.json"
+      ]
+    }
+  ],
+  "last_updated": "2026-06-02",
+  "total_runs_analyzed": 2,
+  "min_occurrences_threshold": 2,
+  "process_min_occurrences_threshold": 1,
+  "workflow_min_occurrences_threshold": 1
+}

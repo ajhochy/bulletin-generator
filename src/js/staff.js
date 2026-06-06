@@ -42,6 +42,8 @@ function renderStaffEditor() {
   staffData.forEach((person, idx) => {
     const row = document.createElement('div');
     row.className = 'staff-ed-row';
+    row.dataset.testid = 'staff-row';
+    row.dataset.index = idx;
 
     const nameIn  = document.createElement('input');
     const roleIn  = document.createElement('input');

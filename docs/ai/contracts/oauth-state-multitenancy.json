@@ -1,0 +1,75 @@
+{
+  "issue": "oauth-state-multitenancy",
+  "generated": "2026-06-05",
+  "context": "Follow-up to commit 67bb9ca (which scoped the OAuth READ path). The OAuth CONNECT (write) path is still un-scoped: _handle_pco_oauth_callback / _handle_google_oauth_callback are unauthenticated browser redirects that store tokens via un-scoped _get_settings()/_save_settings() -> workspace_settings LIMIT 1. Fix passes the connecting user's workspace_id through a signed OAuth `state` parameter.",
+  "stack": "python",
+  "criteria": [
+    {
+      "criterion_id": "oauth-state-c1",
+      "text": "_sign_oauth_state(workspace_id) then _verify_oauth_state(state) round-trips: verify returns the original workspace_id for a validly-signed state.",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthState::test_sign_verify_round_trip",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c2",
+      "text": "_verify_oauth_state returns None for a state whose signature has been tampered with.",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthState::test_tampered_signature_rejected",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c3",
+      "text": "_verify_oauth_state returns None for empty / None / malformed (no-signature) state.",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthState::test_empty_or_malformed_state_rejected",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c4",
+      "text": "_verify_oauth_state returns None for a state signed with a different secret (cross-secret forgery rejected).",
+      "mode": "unit",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthState::test_wrong_secret_rejected",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c5",
+      "text": "PCO callback in server mode with a valid signed state persists tokens via workspace-scoped storage (get_storage called with workspace_id == the state's workspace), not the un-scoped LIMIT 1 path.",
+      "mode": "integration",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthCallbackWorkspaceScoping::test_pco_callback_valid_state_scopes_to_workspace",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c6",
+      "text": "PCO callback in server mode with missing/invalid state does NOT write tokens to any workspace (no save), and redirects with an error.",
+      "mode": "integration",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthCallbackWorkspaceScoping::test_pco_callback_invalid_state_no_write",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c7",
+      "text": "Google callback in server mode with a valid signed state persists tokens via workspace-scoped storage (get_storage called with workspace_id == the state's workspace).",
+      "mode": "integration",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthCallbackWorkspaceScoping::test_google_callback_valid_state_scopes_to_workspace",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "oauth-state-c8",
+      "text": "Google callback in server mode with missing/invalid state does NOT write tokens to any workspace (no save), and redirects with an error.",
+      "mode": "integration",
+      "test_file": "tests/test_server_utils.py",
+      "test_id": "TestOAuthCallbackWorkspaceScoping::test_google_callback_invalid_state_no_write",
+      "status": "pending"
+    }
+  ],
+  "not_tested": [
+    "MANUAL: end-to-end OAuth connect as a member of workspace B with a live PCO/Google consent screen, confirming the token row lands in B and workspace A is unaffected (server.py verification step 3). Requires real OAuth consent + multi-workspace Postgres; covered by manual smoke."
+  ]
+}

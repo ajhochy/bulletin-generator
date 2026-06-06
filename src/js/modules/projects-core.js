@@ -20,41 +20,19 @@ export function cloneItemsData(list) {
   });
 }
 
-export function buildProjectSaveRequest(project, { isServerMode, editorDisplayName, loadedRevision }) {
+export function buildProjectSaveRequest(project, { isServerMode, editorDisplayName }) {
   const requestProject = { ...project };
   if (isServerMode && editorDisplayName) {
     requestProject.updatedBy = editorDisplayName;
   }
-  if (isServerMode) {
-    requestProject._clientRevision = loadedRevision;
-  }
   return requestProject;
 }
 
-export function deriveProjectSaveSuccess({ result, isServerMode, currentLoadedRevision, storedProject }) {
-  let loadedRevision = currentLoadedRevision;
-  let storedRevision = storedProject && typeof storedProject.revision === 'number'
-    ? storedProject.revision
-    : null;
-
-  if (isServerMode && result && typeof result.revision === 'number') {
-    loadedRevision = result.revision;
-    storedRevision = result.revision;
-  }
-
-  return {
-    loadedRevision,
-    storedRevision,
-    hideStaleBanner: true,
-    hideConflictBanner: true,
-  };
-}
-
 export function deriveProjectSaveFailure({ errorStatus, isDesktopMode }) {
-  if (errorStatus === 409) {
+  if (errorStatus === 403) {
     return {
-      type: 'conflict',
-      message: 'This bulletin was updated by someone else.',
+      type: 'forbidden',
+      message: 'Only the project owner can edit this bulletin.',
     };
   }
 
@@ -62,4 +40,48 @@ export function deriveProjectSaveFailure({ errorStatus, isDesktopMode }) {
     type: 'generic',
     message: isDesktopMode ? 'Could not save project.' : 'Could not save project to server.',
   };
+}
+
+/**
+ * Derive what the startup restore flow should do given the current remembered
+ * project ID and the list of projects fetched from the server.
+ *
+ * Returns one of:
+ *   { action: 'load',  project }           — restore this project
+ *   { action: 'blank', reason: 'none-remembered' }  — no remembered id, start blank
+ *   { action: 'blank', reason: 'not-found',
+ *     statusMessage: string }              — id remembered but project missing / inaccessible
+ *   { action: 'load-newest', project }    — desktop only: no remembered, fall back to newest
+ *
+ * Rules:
+ * - Server mode: NEVER auto-loads a workspace project when no id is remembered.
+ * - Desktop mode: preserves the legacy behavior of loading the newest project.
+ */
+export function deriveStartupRestore({ rememberedId, projects, isServerMode }) {
+  const projectList = Array.isArray(projects) ? projects : [];
+
+  if (rememberedId) {
+    const found = projectList.find(p => p.id === rememberedId) || null;
+    if (found) {
+      return { action: 'load', project: found };
+    }
+    return {
+      action: 'blank',
+      reason: 'not-found',
+      statusMessage: 'Your previous project is no longer accessible.',
+    };
+  }
+
+  if (isServerMode) {
+    return { action: 'blank', reason: 'none-remembered' };
+  }
+
+  if (projectList.length > 0) {
+    const newest = projectList
+      .slice()
+      .sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''))[0];
+    return { action: 'load-newest', project: newest };
+  }
+
+  return { action: 'blank', reason: 'none-remembered' };
 }

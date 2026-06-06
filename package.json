@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,16 +11,89 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "css:watch": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --watch",
-    "css:build": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --minify"
+    "css:build": "tailwindcss -i src/css/tw-input.css -o src/css/tw-output.css --minify",
+    "start:electron": "electron .",
+    "package:electron": "electron-builder",
+    "test:e2e": "playwright test --project=core",
+    "test:e2e:live": "playwright test --project=live",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:report": "playwright show-report"
+  },
+  "build": {
+    "appId": "com.visaliacrc.bulletin-generator",
+    "productName": "Bulletin Generator",
+    "extends": null,
+    "files": [
+      "electron/**/*",
+      "index.html",
+      "src/**/*",
+      "dist/**/*",
+      "menubar-icon.png",
+      "menubar-icon@2x.png"
+    ],
+    "extraResources": [
+      {
+        "from": "dist",
+        "to": ".",
+        "filter": [
+          "server",
+          "server.exe"
+        ]
+      }
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "ajhochy",
+      "repo": "bulletin-generator"
+    },
+    "mac": {
+      "icon": "assets/app-icons/electron/bulletin-blueprint.icns",
+      "target": [
+        {
+          "target": "dmg"
+        }
+      ],
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.plist",
+      "entitlementsInherit": "entitlements.plist"
+    },
+    "dmg": {
+      "sign": false
+    },
+    "win": {
+      "icon": "assets/app-icons/electron/bulletin-blueprint.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signingHashAlgorithms": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "autoprefixer": "^10.5.0",
     "daisyui": "^4.12.24",
+    "dotenv": "^16.6.1",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
     "impeccable": "github:pbakaus/impeccable",
     "jsdom": "^26.1.0",
     "playwright": "^1.59.1",
     "tailwindcss": "^3.4.19",
     "vite": "^7.0.6",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
+    "electron-updater": "^6.3.9"
   }
 }

@@ -5,6 +5,8 @@ function annRender() {
     const card = document.createElement('div');
     card.className = 'ann-card card bg-base-100 border border-base-300 rounded-lg p-3 mb-2 shadow-sm';
     card.dataset.annIdx = idx;
+    card.dataset.testid = 'ann-row';
+    card.dataset.index = idx;
 
     // Row 1: title input + move + delete
     const row1 = document.createElement('div');
@@ -220,6 +222,8 @@ function welcomeRender() {
     const row = document.createElement('div');
     row.className = 'welcome-item-row flex items-center gap-2 mb-2';
     row.style.cssText = '';
+    row.dataset.testid = 'welcome-row';
+    row.dataset.index = idx;
 
     const input = document.createElement('input');
     input.type = 'text';

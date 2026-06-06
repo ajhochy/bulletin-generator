@@ -111,6 +111,8 @@ function renderItemList() {
 
     const card = document.createElement('div');
     card.dataset.idx = idx;
+    card.dataset.testid = 'item-row';
+    card.dataset.index = idx;
 
     // ── Page-break: compact dashed divider card ──────────────────────────────
     if (item.type === 'page-break') {

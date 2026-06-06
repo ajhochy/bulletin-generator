@@ -582,6 +582,10 @@ async function calFetchAll(force) {
     // When force=true (user clicked Refresh), bypass the browser HTTP cache so
     // a previously-cached failure doesn't block recovery after a token refresh.
     const fetchOpts = force ? { cache: 'no-store' } : {};
+    const _calSession = typeof getSession === 'function' ? getSession() : null;
+    if (_calSession?.access_token) {
+      fetchOpts.headers = { Authorization: `Bearer ${_calSession.access_token}` };
+    }
     const resp = await fetch(`/cal?${params}`, fetchOpts);
     if (!resp.ok) {
       throw new Error(`Server returned HTTP ${resp.status}`);
@@ -699,6 +703,8 @@ function renderCalEventEditor() {
       const ev  = calEvents[idx];
       const row = document.createElement('div');
       row.className = 'cal-edit-row';
+      row.dataset.testid = 'cal-event-row';
+      row.dataset.index = idx;
 
       // ── Row header: time badge · title input · delete ──
       const hdr = document.createElement('div');
