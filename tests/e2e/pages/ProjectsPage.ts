@@ -24,6 +24,17 @@ export class ProjectsPage {
     await this.cardByName(name).locator('[data-fm="load"]').click();
   }
 
+  /**
+   * Load a project by its exact id. Prefer this over loadByName when another
+   * member must open *a specific* project (e.g. presence tests): a same-named
+   * stray duplicate would make loadByName ambiguous (strict-mode violation) and
+   * could target the wrong project id, missing the owner's heartbeat. The Load
+   * button carries `data-id="<project.id>"`.
+   */
+  async loadById(id: string): Promise<void> {
+    await this.page.locator(`#files-list .file-card [data-fm="load"][data-id="${id}"]`).click();
+  }
+
   /** Delete a project via its card's Delete button (native confirm auto-accepted). */
   async deleteByName(name: string): Promise<void> {
     await this.cardByName(name).locator('[data-fm="delete"]').click();
