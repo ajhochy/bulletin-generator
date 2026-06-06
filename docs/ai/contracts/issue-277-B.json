@@ -1,0 +1,47 @@
+{
+  "issue": "277-B",
+  "generated": "2026-06-06",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-B-c1",
+      "text": "The current project owner can call transfer_project_owner(project_id, to_user_id) for a workspace member; the RPC returns the new owner id and projects.owner_user_id is updated.",
+      "mode": "integration",
+      "test_file": "tests/test_transfer_owner_rpc.py",
+      "test_id": "test_issue_277_b_c1_owner_can_transfer_to_member",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-B-c2",
+      "text": "A non-owner caller is rejected (RPC raises 'caller is not the project owner').",
+      "mode": "integration",
+      "test_file": "tests/test_transfer_owner_rpc.py",
+      "test_id": "test_issue_277_b_c2_non_owner_rejected",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-B-c3",
+      "text": "A target user who is not a member of the project's workspace is rejected (RPC raises 'target user is not a workspace member').",
+      "mode": "integration",
+      "test_file": "tests/test_transfer_owner_rpc.py",
+      "test_id": "test_issue_277_b_c3_non_member_target_rejected",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-B-c4",
+      "text": "An unknown project id is rejected (RPC raises 'project not found'). Also covers idempotency: CREATE OR REPLACE is safe to re-apply (the test re-applies the migration each run).",
+      "mode": "integration",
+      "test_file": "tests/test_transfer_owner_rpc.py",
+      "test_id": "test_issue_277_b_c4_unknown_project_rejected",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-B-c5",
+      "text": "Migration deployed to the live Supabase project (supabase db push) so the renderer (277-C/D) can call supabase.rpc('transfer_project_owner').",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Deploying the supabase/migrations track to the shared live project is a human-authorized step (not applied by CI, which only runs the migrations/runner.py Python track). The auto-mode classifier correctly blocked a direct live apply. The migration file is committed; tests verify the SQL + logic via an in-transaction apply that rolls back. Deploy is part of the manual gate, before 277-D smoke."
+    }
+  ],
+  "stack": "python",
+  "not_tested": ["issue-277-B-c5"]
+}

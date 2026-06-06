@@ -47,4 +47,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
           APP_MODE: server
-        run: pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q
+        run: pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py tests/test_transfer_owner_rpc.py -m integration -q
