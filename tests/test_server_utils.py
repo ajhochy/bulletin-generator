@@ -465,3 +465,148 @@ class TestValidateServerConfig:
         monkeypatch.setattr(server, "IS_DESKTOP", True)
         with patch.dict(os.environ, {}, clear=True):
             server._validate_server_config()  # No SystemExit raised
+
+
+# ── OAuth state signing (multitenancy CONNECT-path fix) ─────────────────────────
+# Contract: docs/ai/contracts/oauth-state-multitenancy.json
+# These assert the signed-state machinery that lets the unauthenticated OAuth
+# callbacks scope token writes to the connecting user's workspace.
+
+WORKSPACE_A = "11111111-1111-1111-1111-111111111111"
+WORKSPACE_B = "22222222-2222-2222-2222-222222222222"
+
+
+class TestOAuthState:
+    def test_sign_verify_round_trip(self, monkeypatch):
+        """oauth-state-c1: a validly-signed state verifies back to its workspace_id."""
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        state = server._sign_oauth_state(WORKSPACE_B)
+        assert state and state != WORKSPACE_B  # signed, not the bare id
+        assert server._verify_oauth_state(state) == WORKSPACE_B
+
+    def test_tampered_signature_rejected(self, monkeypatch):
+        """oauth-state-c2: mutating the signature invalidates the state."""
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        state = server._sign_oauth_state(WORKSPACE_B)
+        # Flip the last character of the signature segment.
+        body, _, sig = state.rpartition(".")
+        bad_char = "0" if sig[-1] != "0" else "1"
+        tampered = f"{body}.{sig[:-1]}{bad_char}"
+        assert server._verify_oauth_state(tampered) is None
+
+    def test_empty_or_malformed_state_rejected(self, monkeypatch):
+        """oauth-state-c3: empty / None / no-signature states are rejected."""
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        assert server._verify_oauth_state("") is None
+        assert server._verify_oauth_state(None) is None
+        assert server._verify_oauth_state(WORKSPACE_B) is None  # no signature segment
+
+    def test_wrong_secret_rejected(self, monkeypatch):
+        """oauth-state-c4: a state signed under a different secret is rejected."""
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "secret-A")
+        state = server._sign_oauth_state(WORKSPACE_B)
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "secret-B")
+        assert server._verify_oauth_state(state) is None
+
+
+# ── OAuth callback workspace scoping ────────────────────────────────────────────
+
+def _fake_token_response(payload):
+    """Return a context-manager mock standing in for urllib.request.urlopen()."""
+    resp = MagicMock()
+    resp.read.return_value = json.dumps(payload).encode()
+    cm = MagicMock()
+    cm.__enter__.return_value = resp
+    cm.__exit__.return_value = False
+    return cm
+
+
+def _make_oauth_handler(path):
+    """Minimal Handler for exercising the OAuth callback methods."""
+    h = server.Handler.__new__(server.Handler)
+    h.path = path
+    h.send_response = MagicMock()
+    h.send_header = MagicMock()
+    h.end_headers = MagicMock()
+    srv = MagicMock()
+    srv.server_address = ("localhost", 8080)
+    h.server = srv
+    return h
+
+
+def _scoped_workspace_ids(mock_get_storage):
+    """All workspace_id kwargs passed to get_storage()."""
+    return [c.kwargs.get("workspace_id") for c in mock_get_storage.call_args_list]
+
+
+class TestOAuthCallbackWorkspaceScoping:
+    def _scoped_storage_mock(self):
+        store = MagicMock()
+        store.get_settings.return_value = {}
+        return store
+
+    def test_pco_callback_valid_state_scopes_to_workspace(self, monkeypatch):
+        """oauth-state-c5: valid state -> tokens written to that workspace's storage."""
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        monkeypatch.setenv("PCO_CLIENT_ID", "cid")
+        monkeypatch.setenv("PCO_CLIENT_SECRET", "csec")
+        state = server._sign_oauth_state(WORKSPACE_B)
+        store = self._scoped_storage_mock()
+        with patch("storage.get_storage", return_value=store) as mock_gs, \
+             patch("urllib.request.urlopen",
+                   return_value=_fake_token_response({"access_token": "AT", "refresh_token": "RT"})):
+            h = _make_oauth_handler(f"/oauth/pco/callback?code=abc&state={state}")
+            h._handle_pco_oauth_callback()
+        assert WORKSPACE_B in _scoped_workspace_ids(mock_gs), \
+            "PCO callback must build workspace-scoped storage for the state's workspace"
+        store.save_settings.assert_called()
+
+    def test_pco_callback_invalid_state_no_write(self, monkeypatch):
+        """oauth-state-c6: missing/invalid state in server mode must not persist tokens."""
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        monkeypatch.setenv("PCO_CLIENT_ID", "cid")
+        monkeypatch.setenv("PCO_CLIENT_SECRET", "csec")
+        store = self._scoped_storage_mock()
+        with patch("storage.get_storage", return_value=store), \
+             patch("urllib.request.urlopen",
+                   return_value=_fake_token_response({"access_token": "AT", "refresh_token": "RT"})):
+            h = _make_oauth_handler("/oauth/pco/callback?code=abc&state=forged.deadbeef")
+            h._handle_pco_oauth_callback()
+        store.save_settings.assert_not_called()
+        locations = [c.args[1] for c in h.send_header.call_args_list if c.args and c.args[0] == "Location"]
+        assert any("error" in loc for loc in locations), "invalid state should redirect with an error"
+
+    def test_google_callback_valid_state_scopes_to_workspace(self, monkeypatch):
+        """oauth-state-c7: valid state -> Google tokens written to that workspace's storage."""
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "gid")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "gsec")
+        state = server._sign_oauth_state(WORKSPACE_B)
+        store = self._scoped_storage_mock()
+        with patch("storage.get_storage", return_value=store) as mock_gs, \
+             patch("urllib.request.urlopen",
+                   return_value=_fake_token_response({"access_token": "AT", "refresh_token": "RT"})):
+            h = _make_oauth_handler(f"/oauth/google/callback?code=abc&state={state}")
+            h._handle_google_oauth_callback()
+        assert WORKSPACE_B in _scoped_workspace_ids(mock_gs), \
+            "Google callback must build workspace-scoped storage for the state's workspace"
+        store.save_settings.assert_called()
+
+    def test_google_callback_invalid_state_no_write(self, monkeypatch):
+        """oauth-state-c8: missing/invalid state in server mode must not persist tokens."""
+        monkeypatch.setattr(server, "IS_DESKTOP", False)
+        monkeypatch.setenv("OAUTH_STATE_SECRET", "unit-test-secret")
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "gid")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "gsec")
+        store = self._scoped_storage_mock()
+        with patch("storage.get_storage", return_value=store), \
+             patch("urllib.request.urlopen",
+                   return_value=_fake_token_response({"access_token": "AT", "refresh_token": "RT"})):
+            h = _make_oauth_handler("/oauth/google/callback?code=abc&state=forged.deadbeef")
+            h._handle_google_oauth_callback()
+        store.save_settings.assert_not_called()
+        locations = [c.args[1] for c in h.send_header.call_args_list if c.args and c.args[0] == "Location"]
+        assert any("error" in loc for loc in locations), "invalid state should redirect with an error"

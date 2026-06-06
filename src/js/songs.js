@@ -217,6 +217,8 @@ function renderSongDb() {
     const realIdx = songDb.indexOf(song);
     const entry   = document.createElement('div');
     entry.className = 'song-db-entry border border-base-300 rounded-lg bg-base-100 mb-2 overflow-hidden hover:bg-base-200 cursor-pointer';
+    entry.dataset.testid = 'song-db-row';
+    entry.dataset.index = realIdx;
 
     // ── Main row (click to expand) ──
     const main = document.createElement('div');

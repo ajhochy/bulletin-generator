@@ -6,6 +6,8 @@ function vrRender() {
     const card = document.createElement('div');
     card.className = 'vr-card card bg-base-100 border border-base-300 rounded-lg p-3 mb-2 shadow-sm';
     card.dataset.vrIdx = idx;
+    card.dataset.testid = 'vr-row';
+    card.dataset.index = idx;
 
     // Row 1: title input + move + delete
     const row1 = document.createElement('div');

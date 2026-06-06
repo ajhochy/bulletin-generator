@@ -662,6 +662,10 @@ async function restoreOnStartup() {
   }
 
   renderProjectSelect();
+  // Startup (incl. async server load + project/draft restore) is complete.
+  // Exposed so automated tests can wait for a stable state before editing,
+  // avoiding a race where the restore re-applies state over fresh edits.
+  if (typeof window !== 'undefined') window.__BG_READY__ = true;
 }
 
 let _projectsInitialized = false;
