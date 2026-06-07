@@ -1001,12 +1001,24 @@ function initDriveSettings() {
   if (folderRow) folderRow.style.display = '';
 
   // Populate saved folder ID
-  apiFetch('/api/settings').then(data => {
-    const folderInput = document.getElementById('google-drive-folder-id');
-    if (folderInput && data.googleDriveFolderId) {
-      folderInput.value = data.googleDriveFolderId;
-    }
-  }).catch(() => {}); // non-critical prefetch — folder ID simply stays blank if unavailable
+  const _electronModeCalDrive = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronModeCalDrive) {
+    sdGetSettings().then(rows => {
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      const data = (row && row.settings) || {};
+      const folderInput = document.getElementById('google-drive-folder-id');
+      if (folderInput && data.googleDriveFolderId) {
+        folderInput.value = data.googleDriveFolderId;
+      }
+    }).catch(() => {}); // non-critical prefetch
+  } else {
+    apiFetch('/api/settings').then(data => {
+      const folderInput = document.getElementById('google-drive-folder-id');
+      if (folderInput && data.googleDriveFolderId) {
+        folderInput.value = data.googleDriveFolderId;
+      }
+    }).catch(() => {}); // non-critical prefetch — folder ID simply stays blank if unavailable
+  }
 
   // Wire save button (guard against double-wiring on re-init)
   const saveBtn = document.getElementById('google-drive-save-btn');
@@ -1024,9 +1036,24 @@ async function saveDriveFolderId() {
   if (msg) { msg.textContent = 'Saving…'; msg.className = 'pco-msg'; }
 
   try {
-    const settings = await apiFetch('/api/settings');
-    settings.googleDriveFolderId = folderId || null;
-    await apiFetch('/api/settings', 'POST', settings);
+    const _electronModeCalSave = typeof isElectronMode === 'function' && isElectronMode();
+    if (_electronModeCalSave) {
+      const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      const session = (typeof getSession === 'function') ? getSession() : null;
+      const workspaceId = currentUser?.user_metadata?.workspace_id
+        || currentUser?.app_metadata?.workspace_id
+        || session?.user?.user_metadata?.workspace_id
+        || session?.user?.app_metadata?.workspace_id
+        || null;
+      const rows = await sdGetSettings();
+      const existingRow = Array.isArray(rows) ? rows[0] : rows;
+      const existing = (existingRow && existingRow.settings) || {};
+      await sdSaveSettings(Object.assign({}, existing, { googleDriveFolderId: folderId || null }), { workspaceId });
+    } else {
+      const settings = await apiFetch('/api/settings');
+      settings.googleDriveFolderId = folderId || null;
+      await apiFetch('/api/settings', 'POST', settings);
+    }
     if (msg) {
       msg.textContent = folderId
         ? 'Folder saved.'

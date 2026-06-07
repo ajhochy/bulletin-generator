@@ -26,7 +26,27 @@ const STAFF_KEY = 'worshipStaffData';
 let _staffEditorInitialized = false;
 
 function saveStaffData() {
-  apiFetch('/api/settings', 'POST', { staffData }).catch(err => setStatus('Staff save failed: ' + (err.message || err), 'error'));
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronMode) {
+    // Electron path: merge with existing settings (settings is a single JSONB blob).
+    // We read current settings, merge the staffData key, then save back.
+    const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+    const session = (typeof getSession === 'function') ? getSession() : null;
+    const workspaceId = currentUser?.user_metadata?.workspace_id
+      || currentUser?.app_metadata?.workspace_id
+      || session?.user?.user_metadata?.workspace_id
+      || session?.user?.app_metadata?.workspace_id
+      || null;
+    sdGetSettings()
+      .then(rows => {
+        const existingRow = Array.isArray(rows) ? rows[0] : rows;
+        const existing = (existingRow && existingRow.settings) || {};
+        return sdSaveSettings(Object.assign({}, existing, { staffData }), { workspaceId });
+      })
+      .catch(err => setStatus('Staff save failed: ' + (err.message || err), 'error'));
+  } else {
+    apiFetch('/api/settings', 'POST', { staffData }).catch(err => setStatus('Staff save failed: ' + (err.message || err), 'error'));
+  }
 }
 
 let staffData = STAFF_DEFAULT.map(s => ({ ...s }));  // populated from server at startup

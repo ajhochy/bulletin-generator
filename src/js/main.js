@@ -1,5 +1,26 @@
 import { getEffectiveFmt as getEffectiveFmtCore, migrateItemType as migrateItemTypeCore } from './modules/formatting-core.js';
 import {
+  sdGetProjects,
+  sdGetProject,
+  sdSaveProject,
+  sdDeleteProject,
+  sdTransferProject,
+  sdGetProjectHistory,
+  sdRestoreProject,
+  sdGetAnnouncements,
+  sdSaveAnnouncements,
+  sdGetSongs,
+  sdSaveSongs,
+  sdGetSettings,
+  sdSaveSettings,
+  sdGetMembers,
+  sdGetPresence,
+  sdPostPresenceHeartbeat,
+  sdDeletePresence,
+  sdGetTemplates,
+  sdSaveTemplates,
+} from './supabase-data.js';
+import {
   LYRIC_SECTION_RE,
   VERSE_NUM_RE,
   splitLyricsCopyright as splitLyricsCopyrightCore,
@@ -30,6 +51,32 @@ import {
 import {
   mapPcoItemType as mapPcoItemTypeCore,
 } from './modules/pco-core.js';
+
+// Expose supabase-data.js functions on globalThis so the legacy renderer
+// scripts (projects.js, api.js, etc.) can call them for the Electron path.
+// These are no-ops in server/browser mode because isElectronMode() guards all
+// call sites — they're never invoked in that context.
+Object.assign(globalThis, {
+  sdGetProjects,
+  sdGetProject,
+  sdSaveProject,
+  sdDeleteProject,
+  sdTransferProject,
+  sdGetProjectHistory,
+  sdRestoreProject,
+  sdGetAnnouncements,
+  sdSaveAnnouncements,
+  sdGetSongs,
+  sdSaveSongs,
+  sdGetSettings,
+  sdSaveSettings,
+  sdGetMembers,
+  sdGetPresence,
+  sdPostPresenceHeartbeat,
+  sdDeletePresence,
+  sdGetTemplates,
+  sdSaveTemplates,
+});
 
 Object.assign(globalThis, {
   getEffectiveFmtCore,
