@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install --upgrade pip pytest
-      - run: pytest tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py tests/test_issue_277_a_electron_db_mode.py
+      - run: pytest tests/test_server_utils.py tests/test_update.py tests/test_drive.py tests/test_propresenter_export.py tests/test_issue_277_a_electron_db_mode.py tests/test_revision_snapshots.py
 
   db-integration:
     # Only run on the canonical repo so forks without the required secrets
@@ -47,4 +47,4 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
           APP_MODE: server
-        run: pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py tests/test_transfer_owner_rpc.py tests/test_workspace_members_rls.py -m integration -q
+        run: pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py tests/test_transfer_owner_rpc.py tests/test_workspace_members_rls.py tests/test_revision_unique_constraint.py -m integration -q

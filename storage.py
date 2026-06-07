@@ -608,6 +608,9 @@ class PostgresStorageBackend(StorageBackend):
             raise ValueError("project data must contain an 'id' key")
 
         import json as _json  # noqa: PLC0415
+        import uuid as _uuid  # noqa: PLC0415
+        from db import from_jsonb  # noqa: PLC0415
+        from revisions import generate_summary  # noqa: PLC0415
 
         project_id = data["id"]
 
@@ -622,6 +625,23 @@ class PostgresStorageBackend(StorageBackend):
         created_at = data.get("createdAt") or None
 
         with self._transaction() as conn:
+            # #216: capture the prior state BEFORE the upsert so we can generate a
+            # meaningful revision summary (None for a brand-new project).
+            prev_ws_clause = ""
+            prev_params: dict = {"id": project_id}
+            if self.workspace_id is not None:
+                prev_ws_clause = "AND workspace_id = %(workspace_id)s::uuid"
+                prev_params["workspace_id"] = self.workspace_id
+            prev_cursor = conn.execute(
+                f"SELECT state FROM projects WHERE id = %(id)s {prev_ws_clause}",
+                prev_params,
+            )
+            prev_row = prev_cursor.fetchone()
+            prev_state = None
+            if prev_row is not None:
+                _prev = from_jsonb(prev_row[0])
+                prev_state = _prev if isinstance(_prev, dict) else None
+
             cursor = conn.execute(
                 """
                 INSERT INTO projects (
@@ -660,7 +680,35 @@ class PostgresStorageBackend(StorageBackend):
             raw_cols = [d[0] for d in cursor.description]
             raw = dict(zip(raw_cols, row))
             # JOIN profiles to get attribution emails for the returned dict.
-            return _pg_enrich_project_row(conn, raw)
+            saved = _pg_enrich_project_row(conn, raw)
+
+            # #216: append a revision snapshot on EVERY successful save (regression
+            # fix — previously only save_project_transactional / the /restore path
+            # snapshotted). One row per save; revision_number is the freshly
+            # incremented revision, so it is unique per project. Mirrors the
+            # /restore snapshot shape (append-only project_revisions table).
+            conn.execute(
+                """
+                INSERT INTO project_revisions (
+                    id, project_id, workspace_id, revision_number, state,
+                    created_at, created_by_user_id, summary
+                ) VALUES (
+                    %(snap_id)s::uuid, %(project_id)s, %(workspace_id)s::uuid,
+                    %(revision_number)s, %(state)s::jsonb, NOW(),
+                    %(created_by_user_id)s::uuid, %(summary)s
+                )
+                """,
+                {
+                    "snap_id": str(_uuid.uuid4()),
+                    "project_id": project_id,
+                    "workspace_id": self.workspace_id,
+                    "revision_number": saved["revision"],
+                    "state": state_json,
+                    "created_by_user_id": updated_by_user_id,
+                    "summary": generate_summary(prev_state, data),
+                },
+            )
+            return saved
 
     def save_project_transactional(
         self,
