@@ -1,0 +1,24 @@
+{
+  "issue": "277-G",
+  "generated": "2026-06-06",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-G-c1",
+      "text": "GET /api/workspace/members reads via the caller's JWT (RLS-scoped db.transaction(claims)), not admin_transaction; the members query run as the authenticated caller returns the caller's workspace members excluding the caller.",
+      "mode": "integration",
+      "test_file": "tests/test_workspace_members_rls.py",
+      "test_id": "test_issue_277_g_c1_caller_sees_own_workspace_members",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-G-c2",
+      "text": "A caller cannot list members of a workspace they do not belong to (RLS workspace_members_select returns 0 rows).",
+      "mode": "integration",
+      "test_file": "tests/test_workspace_members_rls.py",
+      "test_id": "test_issue_277_g_c2_caller_cannot_list_other_workspace_members",
+      "status": "pass"
+    }
+  ],
+  "stack": "python",
+  "not_tested": []
+}
