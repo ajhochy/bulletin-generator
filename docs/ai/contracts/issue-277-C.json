@@ -1,0 +1,178 @@
+{
+  "issue": "issue-277-C",
+  "title": "Renderer-side Supabase data-access module (supabase-data.js)",
+  "generated": "2026-06-06",
+  "context": "Issue #277-C of the S2-hybrid migration. Creates src/js/supabase-data.js — a renderer-side module that performs all project/data CRUD directly via the Supabase JS client (supabase.from(...)/supabase.rpc(...)) under the signed-in user's JWT so that RLS is enforced end-to-end. Replaces the current apiFetch('/api/...') → Python sidecar (psycopg) path. THIS SUB-ISSUE ONLY creates the module + unit tests; wiring into call sites is 277-D.",
+  "stack": "javascript",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-C-c1",
+      "text": "sdGetProjects() calls from('projects').select(...).order('updated_at', {ascending:false}) and returns the unwrapped data array; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetProjects > calls projects.select with the correct columns and returns data",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c2",
+      "text": "sdGetProject(id) calls from('projects').select(...).eq('id', id).single() and returns the single project; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetProject > calls projects table with eq(id) and returns a single project",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c3",
+      "text": "sdSaveProject(project) calls from('projects').upsert(payload, {onConflict:'id'}) with the correct fields (id, name, state, owner_user_id, workspace_id, visibility); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdSaveProject > upserts project with the correct columns",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c4",
+      "text": "sdDeleteProject(id) calls from('projects').delete().eq('id', id); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdDeleteProject > calls delete on projects table with the project id",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c5",
+      "text": "sdTransferProject(projectId, toUserId) calls rpc('transfer_project_owner', { p_project_id, p_to_user_id }) with the correct RPC param names (from 277-B); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdTransferProject > calls rpc transfer_project_owner with the correct param names",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c6",
+      "text": "sdGetProjectHistory(id) calls from('project_revisions').select(...).eq('project_id', id).order('revision_number', {ascending:false}); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetProjectHistory > queries project_revisions with the project_id filter",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c7",
+      "text": "sdRestoreProject(id, revisionNumber) fetches the revision snapshot from project_revisions and upserts its state back into projects; throws when revision not found.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdRestoreProject > fetches the revision state and upserts it as the current project state",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c8",
+      "text": "sdGetAnnouncements() calls from('announcements').select(...).order('created_at', {ascending:true}) and returns the data array; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetAnnouncements > queries the announcements table and returns the data array",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c9",
+      "text": "sdSaveAnnouncements(data) calls from('announcements').upsert(rows) with the correct fields; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdSaveAnnouncements > upserts each announcement with the required fields",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c10",
+      "text": "sdGetSongs() calls from('songs').select(...).order('title', {ascending:true}) and returns the data array; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetSongs > queries the songs table ordered by title",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c11",
+      "text": "sdSaveSongs(data) calls from('songs').upsert(rows) without calling delete (additive, mirrors save_songs in storage.py); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdSaveSongs > upserts songs without deleting existing rows",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c12",
+      "text": "sdGetSettings() calls from('workspace_settings').select('workspace_id, settings') and returns the row(s); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetSettings > queries workspace_settings and returns the settings blob",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c13",
+      "text": "sdSaveSettings(settings) calls from('workspace_settings').upsert({settings}) with the settings object; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdSaveSettings > upserts into workspace_settings with the settings blob",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c14",
+      "text": "sdGetMembers() calls from('workspace_members').select('user_id, role, profiles(display_name, email)') and returns the data; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetMembers > queries workspace_members with profiles join",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c15",
+      "text": "sdGetPresence(projectId) calls from('workspace_presences').select(...).eq('project_id', projectId) and returns the data; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetPresence > queries workspace_presences filtered by project_id",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c16",
+      "text": "sdPostPresenceHeartbeat(projectId) calls from('workspace_presences').upsert({project_id, last_seen_at}) with the project_id; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdPostPresenceHeartbeat > upserts a presence row for the given project_id",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c17",
+      "text": "sdDeletePresence({userId}) calls from('workspace_presences').delete().eq('user_id', userId); throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdDeletePresence > deletes workspace_presences for the current user",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c18",
+      "text": "sdGetTemplates() calls from('templates').select('id, name, template_data, is_default') with is_default DESC, name ASC ordering; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdGetTemplates > queries the templates table ordered by is_default desc, name asc",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c19",
+      "text": "sdSaveTemplates(data) filters out default/built-in templates (is_default, built_in, builtIn) before upserting; throws on error.",
+      "mode": "unit",
+      "test_file": "tests/supabase-data.spec.js",
+      "test_id": "sdSaveTemplates > upserts non-default templates only (skips built-ins)",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-C-c20",
+      "text": "node --check src/js/supabase-data.js passes with no syntax errors.",
+      "mode": "unit",
+      "test_file": "src/js/supabase-data.js",
+      "test_id": "node --check",
+      "status": "pass"
+    }
+  ],
+  "not_tested": [
+    "LIMITATION: sdRestoreProject does not enforce a CAS check on client_revision (the Python handler uses save_project_transactional with WHERE revision=?). For conflict-safe restore, wire through a Postgres function in 277-D.",
+    "LIMITATION: sdSaveAnnouncements is upsert-only (not DELETE+INSERT). The Python handler does a full workspace replacement (DELETE WHERE workspace_id=? then INSERT all). Full-replace via supabase-js requires two round-trips or an RPC — flagged for 277-D.",
+    "LIMITATION: sdGetPresence does not enforce the 90-second TTL filter at the DB level. The Python handler uses WHERE last_seen_at > now() - interval '90 seconds'. With supabase-js this requires .gt('last_seen_at', isoTimestamp) — caller must apply the filter, or use an RPC in 277-D.",
+    "LIMITATION: sdSaveSettings requires workspace_id to be passed explicitly from session context. The Python handler resolves workspace_id from the authenticated user's claims — 277-D must supply it from the session.",
+    "LIMITATION: sdDeletePresence without a userId arg will delete all presence rows for the user (no workspace_id filter). Production callers must pass userId from session — flagged for 277-D.",
+    "LIVE RLS round-trip: real network call with a signed JWT to verify RLS policies scope data to the authenticated user's workspace — manual smoke only.",
+    "LIVE: sdTransferProject via a real DB with transfer_project_owner RPC installed — requires 277-B RPC to be applied."
+  ]
+}
