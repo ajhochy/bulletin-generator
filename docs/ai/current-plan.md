@@ -1,6 +1,249 @@
 # Current Plan
 
-_Last updated: 2026-06-03_
+_Last updated: 2026-06-06_
+
+---
+
+## Issue #277 — Desktop security: stop bundling DATABASE_URL — route data through anon key + RLS
+
+_Plan written 2026-06-06. Supersedes the "ownership model" plan below for active work._
+
+### Clarification interview
+
+Skipped formal interview. The issue provides explicit acceptance criteria, names the preferred approach (S2 over S1), specifies which variables must be absent (DATABASE_URL, service-role/JWT secrets), and states the done-definition (packaged build contains only SUPABASE_URL + publishable key). The only substantive ambiguity — whether server (Docker) mode is also in scope or desktop-only — is answered by the issue text ("route data through anon key + RLS" implies the sidecar's data path, not the browser path which already uses supabase-js via anon key). Resolved in the intent pass below.
+
+---
+
+### Intent + Constraints Pass
+
+**Goal (one sentence):** Remove DATABASE_URL from the Electron desktop build by migrating the data operations currently served by the Python sidecar (psycopg + DATABASE_URL) to the browser renderer using supabase-js + the anon/publishable key + RLS.
+
+**In scope:**
+- Migrating all Postgres data reads/writes currently going through server.py/storage.py/psycopg to supabase-js calls in the browser renderer (for the Electron path only, or uniformly if the architecture permits).
+- Writing RLS policies for any operation that does not yet have a safe anon-key path.
+- Removing DATABASE_URL from `release-electron.yml`'s `.env` step.
+- Adding a new migration for any `workspace_settings` anon-key write path (the OAuth callback write is the known gap).
+- Negative-path RLS tests: a user cannot read or write another workspace's rows.
+
+**Not in scope:**
+- Changing the Docker/server-mode data path (Docker mode can keep psycopg + DATABASE_URL; issue is desktop-only).
+- Rewriting the PCO proxy, Google Calendar fetch, or PDF generation — those stay in the sidecar.
+- Removing `psycopg` from `requirements.txt` — server mode still needs it.
+- Any UI change beyond the minimum needed for the new call sites.
+- Supabase Realtime / WebSockets.
+
+**Hard constraints:**
+- AGENTS.md: atomic writes; migrations idempotent + additive; never delete user data.
+- The packaged DMG must launch without DATABASE_URL or any owner-role credential.
+- Desktop (Electron) and server (Docker) must continue to work side-by-side — server mode keeps psycopg.
+- No service-role key in the distributed binary (already stated in release-electron.yml comments).
+- RLS must be the real security boundary; sidecar Python guards are defence-in-depth only.
+- Tests must keep passing: pytest, vitest, vite build.
+
+**Design tensions:**
+- **Full renderer-side S2 vs. hybrid S2:** A pure S2 moves all CRUD to the renderer. A hybrid keeps a few sidecar-mediated ops (e.g. transfer_project_owner, which uses admin_transaction because the WITH CHECK on the new owner_user_id fails under the caller's JWT). The hybrid is safer as a first pass.
+- **Desktop-only vs. both modes:** Migrating all modes at once reduces code duplication but risks regressing Docker. Migrating desktop-only requires a `IS_ELECTRON` branch in JS, adding complexity. Recommendation: implement the supabase-js data layer uniformly (it works for both modes) but keep the sidecar routing as a fallback; only remove DATABASE_URL from the Electron build.
+- **Anon key for workspace_settings writes:** The OAuth callback currently writes tokens via admin_transaction/owner-role (no user JWT). Moving this to RLS requires the callback to pass a Supabase access token (already being done for the CONNECT path as of the 2026-06-05 decision). The RLS for workspace_settings (any workspace member can insert/update) already permits this — no new policy needed, only wiring.
+
+**Cheapest path that proves the idea:**
+1. Write a `supabase-data.js` module that implements `getProjects()`, `saveProject()`, `getAnnouncements()`, `saveAnnouncements()`, `getSongs()`, `saveSongs()`, `getSettings()`, `saveSettings()` using `supabase.from(...)`.
+2. In `IS_ELECTRON` mode (detectable at the JS level since `window.electronAPI` is present), use `supabase-data.js` for all data ops instead of `apiFetch`.
+3. Verify: packaged build starts, projects load, save round-trips, PDF exports.
+4. If that works, remove DATABASE_URL from the `.env` step in `release-electron.yml`.
+
+---
+
+### Evidence-Based S1 vs S2 Analysis
+
+#### What every server.py data endpoint does and where the psycopg call lives
+
+| Endpoint | Handler | psycopg path | Client call site | RLS path exists? |
+|---|---|---|---|---|
+| GET /api/projects | `_handle_get_projects` | `store.list_projects_for_user()` → `_transaction(claims)` | `api.js:loadAllFromServer`, `projects.js:694` | YES — `projects_select` policy; scoped to workspace + visibility |
+| GET /api/projects/{id} | `_handle_get_single_project` | `store.get_project()` → `_transaction(claims)` | `projects.js:498, 626` | YES — same select policy |
+| POST /api/projects | `_handle_post_projects` | `store.save_project()` → `_transaction(claims)` | `projects.js:251` | YES — `projects_insert` + `projects_update` policies; owner-only update |
+| DELETE /api/projects/{id} | `_handle_delete_project` | `store.delete_project()` → `_transaction(claims)` | `projects.js:271` | YES — `projects_delete` policy; owner-only |
+| POST /api/projects/{id}/transfer | `_handle_post_transfer_project` | `store.transfer_project_owner()` → **`admin_transaction()`** | `projects.js:1210` | **PARTIAL GAP** — `admin_transaction` bypasses RLS; see risk below |
+| GET /api/projects/{id}/history | `_handle_project_history` | `store.get_project_revisions()` → `_transaction(claims)` | (revision history UI) | YES — `project_revisions_select` policy |
+| GET /api/projects/{id}/revision | `_handle_project_revision` | `store.get_project_revision()` → `_transaction(claims)` | (not actively called by frontend in current code) | YES |
+| POST /api/projects/{id}/restore | `_handle_project_restore` | `store.save_project_transactional()` → `_transaction(claims)` | (revision restore UI) | YES — update policy + insert policy for revision |
+| GET /api/announcements | `_handle_get_announcements` | `store.list_announcements()` → `_transaction(claims)` | `api.js:45` | YES — `announcements_select` |
+| POST /api/announcements | `_handle_post_announcements` | `store.save_announcements()` → `_transaction(claims)` | `announcements.js:140` | YES — `announcements_insert`+`update` |
+| GET /api/songs (via bootstrap) | `_handle_bootstrap` | `store.list_songs()` → `_transaction(claims)` | `api.js:44` | YES — `songs_select` |
+| POST /api/songs | `_handle_post_songs` | `store.save_songs()` → `_transaction(claims)` | `songs.js:6` | YES — `songs_insert`+`update` |
+| GET /api/settings (via bootstrap) | `_handle_bootstrap` | `store.get_settings()` → `_transaction(claims)` | `api.js:44` | YES — `workspace_settings_select` (any workspace member) |
+| POST /api/settings | `_handle_post_settings` | `store.save_settings()` → `_transaction(claims)` | `songs.js:1029`, `staff.js:29`, `calendar.js:1029` | YES — `workspace_settings_update` (any workspace member) |
+| GET /api/workspace/members | `_handle_get_workspace_members` | `admin_transaction()` → plain SQL on `workspace_members` | `projects.js:1166` | **GAP** — uses admin_transaction; anon-key path needs `workspace_members_select` policy, which exists, but the handler hardcodes `admin_transaction` |
+| POST /api/presence/heartbeat | `_handle_post_presence_heartbeat` | `_db.transaction(user.claims)` | `projects.js:61` | YES — `presences_insert`+`update` user_id = auth.uid() |
+| GET /api/presence | `_handle_get_presence` | `_db.transaction(user.claims)` | `projects.js:69` | YES — `presences_select` workspace member |
+| DELETE /api/presence | `_handle_delete_presence` | `_db.transaction(user.claims)` | `projects.js:94` | YES — `presences_delete` user_id = auth.uid() |
+| GET /api/templates | `_handle_get_templates` | `store.list_templates()` | `api.js:46` | YES — `templates_select` |
+| POST /api/templates | `_handle_post_templates` | `store.save_templates()` | (template designer) | YES — `templates_insert`+`update` |
+| DELETE /api/templates/{id} | `_handle_delete_template` | `store.delete_template()` | (template designer) | YES — `templates_delete` |
+| GET/POST/DELETE /api/fonts | font handlers | `store.*_font()` | (font uploader) | YES — `fonts_*` policies |
+
+**Operations that cannot cleanly move to the renderer today:**
+
+1. **`POST /api/projects/{id}/transfer` — `storage.transfer_project_owner()`**: Uses `admin_transaction()` because the `projects_update` WITH CHECK requires `owner_user_id = auth.uid()` on the NEW row — after the transfer, owner_user_id is the target user, not the caller, so the caller's JWT fails the WITH CHECK. This is a genuine RLS constraint mismatch. **Risk: HIGH.** Proposed handling: keep in sidecar via a new RLS-friendly pattern: a DB function (`SECURITY DEFINER`) that validates caller = current owner, target = workspace member, then updates. The renderer calls this via `supabase.rpc('transfer_project_owner', {...})`.
+
+2. **`GET /api/workspace/members` — `admin_transaction()`**: Hardcodes admin connection to read `workspace_members + profiles`. The `workspace_members_select` policy (`user_id = auth.uid() OR is_workspace_member(workspace_id)`) means authenticated users CAN read workspace_members under their own JWT. The `profiles_select` policy (`id = auth.uid() OR shares_workspace_with(id)`) permits reading co-workspace profiles. Both are anon-key safe. **Risk: LOW.** This can move directly to `supabase.from('workspace_members').select('*, profiles(display_name,email)')`.
+
+3. **OAuth callback `save_settings` (workspace_settings write)**: The PCO/Google OAuth callbacks are unauthenticated browser redirects. The 2026-06-05 decision already threads the workspace id through the signed state, and the callback writes via `get_storage(workspace_id=..., user_claims=None)` — that is, owner-role DATABASE_URL bypasses RLS. **Risk: MEDIUM.** This write cannot use the anon key because there's no user JWT in the callback context. Two options: (a) keep this in the sidecar (acceptable since PCO/Google OAuth happens in the browser via redirect, not Electron IPC), or (b) after the OAuth callback, the SPA makes a second `POST /api/settings` call with the token — but this duplicates the write. Recommended: keep the OAuth callback write in the sidecar; it only runs when the user explicitly connects PCO/Google and the sidecar is still running.
+
+4. **`save_project_transactional` (restore path)**: Uses `_transaction(claims)`, so already RLS-safe. No issue.
+
+5. **Fonts upload to Supabase Storage** (`storage_assets.py`): Handled by `_handle_post_fonts` which calls `store.save_font()`. The font binary upload goes to Supabase Storage via the service-role key (`SUPABASE_SERVICE_ROLE_KEY`). This is already NOT bundled in the Electron build (release-electron.yml explicitly omits it). The metadata insert (`fonts` table) runs under `_transaction(claims)` — RLS-safe. The storage upload in a renderer-only path would use the supabase-js Storage client with the anon key — storage RLS policies govern access. **This needs investigation** — if storage buckets have RLS policies, anon-key upload may work; if not, this is a gap. However, font upload is a relatively rare operation and keeping it sidecar-mediated is acceptable.
+
+#### S1 recommendation: Not preferred
+
+S1 (sidecar calls PostgREST via publishable key) means rewriting all psycopg queries to HTTP REST calls in Python, losing multi-statement transactions (revision inserts), losing type-safe RETURNING clauses, and gaining no UX improvement. The sidecar still needs to run and the DATABASE_URL is removed but replaced by a different credential path that doesn't meaningfully improve isolation. S1 is strictly worse than S2 with no compensating benefit.
+
+#### S2 recommendation: Preferred, with hybrid for transfer
+
+**S2 (renderer does data via supabase-js directly)** is the right approach. The evidence:
+
+- RLS is already correctly configured for all main data tables (projects, announcements, songs, workspace_settings, project_revisions, workspace_presences, templates, fonts).
+- The live DB confirms: `anon` role has no grants on any data table (confirmed above — only `authenticated` and `service_role`). The anon/publishable key authenticates as `authenticated` after Supabase Auth issues the JWT; the JWT is already flowing through `apiFetch` as the Bearer token.
+- The renderer already has `supabase-js` (the `@supabase/supabase-js` UMD is bundled in the PyInstaller binary for auth). Adding data calls to the same client adds zero new dependencies.
+- The only true blocker is `transfer_project_owner`, which needs a SECURITY DEFINER RPC to work under an anon-key session. That is a one-migration fix.
+
+**LOC estimate for S2:**
+- New `src/js/supabase-data.js`: ~300 LOC (one function per table operation, with proper error handling).
+- Modifications to `projects.js`, `announcements.js`, `songs.js`, `calendar.js`, `staff.js`: ~50–80 LOC total (redirect calls through the new module when `window.electronAPI` is present or `IS_ELECTRON` is true; in server mode keep apiFetch as-is).
+- New migration for `transfer_project_owner` RPC: ~30 LOC.
+- `release-electron.yml` change: remove 3 lines (DATABASE_URL secret reference and `.env` key).
+- `server.py` `_validate_server_config()`: add a guard so DATABASE_URL is not required in `APP_MODE=electron`.
+
+**What breaks without DATABASE_URL in the desktop sidecar:**
+- `_validate_server_config()` currently calls `sys.exit(1)` when DATABASE_URL is missing and not IS_DESKTOP. Since APP_MODE for Electron is `server` (confirmed in project-state.md: "APP_MODE=server is correct (Supabase-connected)"), this will immediately kill the sidecar on launch. Fix: treat `APP_MODE=electron` as desktop-equivalent in the validator. This is a one-line change.
+- `db.py`'s `transaction()` raises RuntimeError when DATABASE_URL is empty. Any code path that reaches `db.transaction()` in electron mode will crash. Fix: each endpoint that calls psycopg already guards on `IS_DESKTOP`; those guards need to also apply to `IS_ELECTRON`. The sidecar can return 501 for endpoints it no longer handles (projects, announcements, songs, settings, presence) once the renderer handles them.
+
+**Hybrid recommended for v1:**
+The pragmatic path for issue #277 is:
+1. Implement `supabase-data.js` (renderer data layer via anon key).
+2. Wire it into the existing JS call sites with an `IS_ELECTRON` guard.
+3. Add `transfer_project_owner` RPC migration.
+4. Update `server.py` to gracefully handle `APP_MODE=electron` with no DATABASE_URL.
+5. Remove DATABASE_URL from the build.
+
+The sidecar in electron mode keeps: static serving, PCO proxy, Google Calendar fetch, PDF (via Electron IPC or Chrome fallback), OAuth callbacks.
+
+---
+
+### RLS Gap Analysis (live DB confirmed 2026-06-06)
+
+| Table | Operations | Current RLS | Anon-key safe for renderer? | Gap? |
+|---|---|---|---|---|
+| `projects` | SELECT/INSERT/UPDATE/DELETE | workspace_member + owner-only update/delete | YES — all four policies present and correct | None |
+| `announcements` | SELECT/INSERT/UPDATE/DELETE | workspace_member for all ops | YES | None |
+| `songs` | SELECT/INSERT/UPDATE/DELETE | workspace_member for all ops | YES | None |
+| `workspace_settings` | SELECT/INSERT/UPDATE/DELETE | workspace_member for all ops | YES | None — the anon-key can read/write workspace_settings after auth |
+| `project_revisions` | SELECT/INSERT only (append-only) | workspace_member + own user insert | YES | None |
+| `workspace_presences` | SELECT/INSERT/UPDATE/DELETE | workspace_member read; own-user write | YES — project_id is TEXT (confirmed live) | None |
+| `templates` | SELECT/INSERT/UPDATE/DELETE | workspace_member for all ops | YES | None |
+| `workspace_members` | SELECT only (authenticated) | user_id = auth.uid() OR is_workspace_member | YES | None (no INSERT/UPDATE/DELETE policy needed — managed by service_role/seed only) |
+| `profiles` | SELECT | id = auth.uid() OR shares_workspace_with(id) | YES | None |
+| `fonts` | SELECT/INSERT/UPDATE/DELETE | workspace_member for all ops | YES | None |
+| MISSING: `transfer_project_owner` | UPDATE (cross-user ownership change) | current projects_update requires owner_user_id = auth.uid() on WITH CHECK — fails when new owner != caller | **NO** | **GAP** — needs SECURITY DEFINER RPC |
+
+**Security advisor output (2026-06-06):** Only finding is "Leaked Password Protection Disabled" (auth setting, unrelated to this issue). No RLS gaps flagged by the advisor.
+
+**Net assessment:** The only structural RLS gap is the transfer endpoint. All other data operations can move to anon-key paths without any new migrations beyond the `transfer_project_owner` RPC. The `anon` role has zero table grants (confirmed) — the published key only gets `authenticated` grants after JWT auth, which is correct.
+
+---
+
+### Desktop vs Server mode impact
+
+- **Server (Docker) mode**: No change. `APP_MODE=server` keeps psycopg + DATABASE_URL. All existing server-mode code paths are unaffected.
+- **Desktop (Electron) mode** (`APP_MODE=electron`, `APP_MODE=desktop`): The Python sidecar must start without DATABASE_URL. The renderer's data calls go through supabase-js directly. The sidecar keeps serving: static files, PCO proxy, Google Calendar, PDF, OAuth callbacks.
+- The JS change (`IS_ELECTRON` guard) can be implemented as a clean abstraction — `supabase-data.js` exposes the same interface as the `apiFetch('/api/...')` call sites. In server mode the existing `apiFetch` path is unchanged.
+
+---
+
+### Decomposed Sub-Issues
+
+| Order | Title | Goal | Likely files | Tests / evaluation | Dependencies |
+|---|---|---|---|---|---|
+| **#277-A** | Fix `_validate_server_config` and `IS_ELECTRON` guards so sidecar starts without DATABASE_URL | Make `APP_MODE=electron` bypass the DATABASE_URL validation; add `IS_ELECTRON` guards so sidecar endpoints that need psycopg return 501/no-op gracefully instead of crashing | `server.py` (lines ~270–288, IS_DESKTOP guards in presence handlers) | `python -c "APP_MODE=electron python server.py"` exits without error (no DATABASE_URL set); pytest all pass | None |
+| **#277-B** | Add `transfer_project_owner` SECURITY DEFINER RPC migration | New Supabase migration adding a PL/pgSQL function callable via `supabase.rpc('transfer_project_owner')` that validates caller=current owner, target=workspace member, then UPDATEs; accessible to `authenticated` role | `supabase/migrations/20260606000001_transfer_owner_rpc.sql` | pytest: call the RPC as owner → 200; as non-owner → error; as non-member target → error (can be run against live Supabase via test_rls_isolation.py) | None — migration only |
+| **#277-C** | Implement `supabase-data.js` — renderer data layer via anon key | New module exposing `sdGetProjects()`, `sdSaveProject()`, `sdDeleteProject()`, `sdGetAnnouncements()`, `sdSaveAnnouncements()`, `sdGetSongs()`, `sdSaveSongs()`, `sdGetSettings()`, `sdSaveSettings()`, `sdGetMembers()`, `sdTransferProject()`, `sdGetPresence()`, `sdPostPresenceHeartbeat()`, `sdDeletePresence()`, `sdGetTemplates()`, `sdSaveTemplates()`, `sdGetProjectHistory()`, `sdRestoreProject()` — all using `supabase.from(...)` or `supabase.rpc(...)` | `src/js/supabase-data.js` (new) | vitest unit tests; `node --check` passes | #277-B (for sdTransferProject) |
+| **#277-D** | Wire `supabase-data.js` into existing call sites with `IS_ELECTRON` guard | In each JS file that calls `apiFetch('/api/...')`, add an electron-mode branch that calls the corresponding `supabase-data.js` function. Keep `apiFetch` path for server mode unchanged. | `src/js/projects.js`, `src/js/announcements.js`, `src/js/songs.js`, `src/js/calendar.js`, `src/js/staff.js`, `src/js/api.js` (loadAllFromServer) | vitest: existing tests pass (server-mode paths unchanged); manual Electron smoke: open project, save, reload; annotations in console | #277-A, #277-C |
+| **#277-E** | RLS negative-path integration tests | Add pytest tests (using authenticated + a second workspace's session) proving cross-workspace isolation: user from workspace A cannot SELECT/INSERT/UPDATE/DELETE rows in workspace B's projects, announcements, songs, workspace_settings | `tests/test_rls_isolation.py` (extend existing) | All negative tests produce `rowcount=0` or empty results; positive tests for own workspace return data; run against live Supabase | #277-B |
+| **#277-F** | Remove DATABASE_URL from Electron build + update server.py bootstrap path | Delete DATABASE_URL from `release-electron.yml` `.env` step (both arm64 + x64 matrix); update `_validate_server_config` to skip DATABASE_URL check in electron mode; update the NOTE comment; remove DATABASE_URL from the `keys` list in the .env writer | `.github/workflows/release-electron.yml`, `server.py` | CI run on a tag-triggered release build passes; `grep -r DATABASE_URL release-electron.yml` returns only comments, not the secret reference | #277-A, #277-D |
+| **#277-G** (optional) | Move workspace/members endpoint to anon-key path | Replace `admin_transaction()` in `_handle_get_workspace_members` with `_transaction(user.claims)` — the existing `workspace_members_select` RLS policy already permits this | `server.py` (handler ~L2759) | pytest: workspace members returned correctly under user JWT; negative: wrong workspace member gets empty list | #277-A |
+
+**Execution order:** #277-A and #277-B can be done in parallel. #277-C depends on #277-B (RPC). #277-D depends on #277-A and #277-C. #277-E depends on #277-B. #277-F depends on #277-A and #277-D. #277-G is independent cleanup.
+
+**Stop-bundling gate:** DATABASE_URL can ONLY be removed from the build (#277-F) after #277-A (sidecar boots without it), #277-C (renderer has data layer), and #277-D (call sites wired) are all merged and manually smoked in the Electron app.
+
+---
+
+### Acceptance Criteria
+
+**AC-277-A:**
+- `APP_MODE=electron python server.py` (with no DATABASE_URL in env) starts without calling `sys.exit(1)`.
+- All existing pytest tests continue to pass.
+
+**AC-277-B:**
+- `supabase.rpc('transfer_project_owner', {project_id, to_user_id})` called by the current project owner returns success and the project's `owner_user_id` changes.
+- Same call by a non-owner returns an error.
+- Same call targeting a user who is not a workspace member returns an error.
+- Migration is idempotent (safe to re-apply).
+
+**AC-277-C:**
+- `supabase-data.js` exports all named functions.
+- Each function uses `supabase.from(...)` or `supabase.rpc(...)`, never `psycopg`.
+- `node --check src/js/supabase-data.js` passes.
+- vitest unit tests covering the happy path of each function (mock supabase client).
+
+**AC-277-D:**
+- In Electron mode (`window.electronAPI !== undefined` or `isElectronMode()` flag), `apiFetch('/api/projects')` is NOT called; `sdGetProjects()` is called instead. Confirmed via DevTools Network tab: no `/api/projects` network request on startup in the packaged Electron app.
+- All project operations (open, save, delete, transfer) work end-to-end in the packaged Electron app.
+- Announcement, song, settings, presence operations all work.
+- Server-mode (Docker) behavior is unchanged: existing tests pass.
+
+**AC-277-E:**
+- New test `test_rls_cross_workspace_isolation` passes: workspace-A user cannot read workspace-B projects/announcements/songs/settings.
+- New test `test_rls_cross_workspace_write_rejected` passes: workspace-A user cannot INSERT/UPDATE/DELETE workspace-B data.
+- Tests run against the live Supabase project (`APP_MODE=server pytest tests/test_rls_isolation.py`).
+
+**AC-277-F:**
+- `grep DATABASE_URL .github/workflows/release-electron.yml` returns only comment lines (no `${{ secrets.DATABASE_URL }}`).
+- A release build triggered by a new tag produces a DMG that launches without DATABASE_URL in the bundled `.env`.
+- `strings dist/server | grep DATABASE_URL` returns no connection string.
+
+**AC-277-G (optional):**
+- `GET /api/workspace/members` works under user JWT (no admin_transaction).
+- Negative: a user from workspace B cannot retrieve workspace A's members.
+
+---
+
+### Data Safety Notes
+
+- No user data is deleted by this change. The migration is purely additive (new RPC function).
+- The Postgres DATABASE_URL password rotation note in project-state.md applies: if any existing DMG is circulating with DATABASE_URL bundled, rotate the DB password after the new anon-key build is confirmed working.
+- Old draft prereleases (v0.0.1/2/3) contain the extractable DATABASE_URL — delete them after the new build lands.
+
+---
+
+### Validation Strategy
+
+- **Per sub-issue:** `python3 -c "import server"`; `node --check src/js/supabase-data.js`; full `pytest` + `vitest` + `vite build`.
+- **RLS tests:** `APP_MODE=server pytest tests/test_rls_isolation.py -v` against the live Supabase project.
+- **Electron smoke (manual):** Package the app from the updated branch; confirm launch without DATABASE_URL; open a project, save, load, export PDF; check DevTools Network tab shows supabase REST calls (not `/api/projects`) for data operations.
+- **Release build smoke:** Tag a prerelease build from the updated `release-electron.yml`; confirm the .env in the bundle does not contain DATABASE_URL (use `strings` on the binary).
+
+---
+
+### Known Ambiguities
+
+1. **Fonts upload path**: `POST /api/fonts` in Electron mode relies on `storage_assets.py` which needs the Supabase storage URL. The anon-key can write to storage if bucket policies permit authenticated inserts. This is not investigated in this plan — font upload can remain sidecar-mediated for v1 (the sidecar is still running; only its DATA_URL usage is removed).
+2. **`save_project_transactional` (restore path)**: Currently uses `_transaction(claims)` — already RLS-safe. In electron mode, the renderer can call the Supabase PostgREST API directly for project restore, or a second SECURITY DEFINER RPC can be added later. Deferred to follow-up.
+3. **Session presence of Supabase JWT in electron mode at sidecar boot**: The sidecar validates Supabase JWTs in `_require_auth()`. In electron mode, the renderer must pass the access token to all remaining sidecar calls (PCO proxy, PDF, calendar) via `Authorization: Bearer`. This already works (apiFetch always attaches the token).
+
+---
+
+_Last updated: 2026-06-03 (original ownership plan, partially superseded — see above)_
 
 > **⚠️ SUPERSEDED in part (2026-06-04):** the shipped model is **A — workspace-visible by default + hand-off** (see `decisions.md` 2026-06-04). "Private-by-default" and "share to workspace" below were **abandoned**: `save_project` keeps `visibility='workspace'`, there is no Share UI/endpoint, and ownership transfer (hand-off) is the only reassignment path. Read the rest of this file as historical planning context, not current behavior.
 
