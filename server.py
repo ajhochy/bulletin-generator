@@ -3578,7 +3578,19 @@ def run_server(port=8080):
         run_schema_migrations()
     os.chdir(str(BASE_DIR))
     http.server.ThreadingHTTPServer.allow_reuse_address = True
-    httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
+    try:
+        httpd = http.server.ThreadingHTTPServer(('0.0.0.0', port), Handler)
+    except OSError as _bind_err:
+        import errno as _errno
+        if _bind_err.errno in (getattr(_errno, 'EADDRINUSE', 98),
+                               getattr(_errno, 'WSAEADDRINUSE', 10048)):
+            print(
+                f'[server] FATAL: port {port} already in use'
+                ' — another instance or a stale sidecar is running.',
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        raise
     print(f'  Worship Booklet Generator v{APP_VERSION} running at:')
     print(f'  http://localhost:{port}/')
     print(f'  Data directory: {DATA_DIR}')

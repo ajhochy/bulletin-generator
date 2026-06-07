@@ -53,8 +53,12 @@ const READY_POLL_INTERVAL_MS = 200;
  *   Spawn `python3 server.py` relative to the repo root (__dirname/../).
  */
 function resolveSidecar() {
-  // Packaged: resourcesPath points to <app>.app/Contents/Resources/
-  const packagedBin = path.join(process.resourcesPath, process.platform === 'win32' ? 'server.exe' : 'server');
+  // Packaged (--onedir): PyInstaller produces a directory named `server/`
+  // containing the executable at `server/server` (macOS/Linux) or
+  // `server/server.exe` (Windows). electron-builder copies the whole
+  // directory into <app>.app/Contents/Resources/server/ via extraResources.
+  const exeName = process.platform === 'win32' ? 'server.exe' : 'server';
+  const packagedBin = path.join(process.resourcesPath, 'server', exeName);
   if (process.resourcesPath && fs.existsSync(packagedBin)) {
     // Pass the port explicitly: server.py reads the port from argv[1] and
     // defaults to 8080 otherwise (it does not read the PORT env var), but
@@ -157,6 +161,89 @@ function handleDeepLink(url) {
   }
 }
 
+// ── PID-lock file (stale-sidecar detection, issue #279) ───────────────────────
+
+/**
+ * Return the path of the sidecar PID lock file.
+ * Placed in os.tmpdir() so it survives app crashes (unlike in-bundle locations)
+ * and works on both macOS and Windows without special permissions.
+ */
+function sidecarLockPath() {
+  return path.join(os.tmpdir(), 'bulletin-generator-sidecar.pid');
+}
+
+/**
+ * Check whether a process with the given PID is still running.
+ * Cross-platform: on POSIX we send signal 0; on Windows we use `tasklist`.
+ * Returns true if the process exists, false otherwise.
+ */
+function isProcessRunning(pid) {
+  try {
+    // signal 0 does not kill — it only checks existence on POSIX.
+    process.kill(pid, 0);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
+ * If a stale sidecar PID lock file exists and the process is still alive, kill
+ * it and wait briefly for the port to be released.  Then remove the lock file.
+ *
+ * Returns a Promise that resolves once any stale process has been reaped (or
+ * immediately when there is nothing to reap).
+ */
+async function reapStaleSidecar() {
+  const lockFile = sidecarLockPath();
+  if (!fs.existsSync(lockFile)) return;
+
+  let stalePid;
+  try {
+    stalePid = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
+  } catch (_e) {
+    // Unreadable lock file — remove it and proceed.
+    try { fs.unlinkSync(lockFile); } catch (_) {}
+    return;
+  }
+
+  if (!stalePid || isNaN(stalePid)) {
+    try { fs.unlinkSync(lockFile); } catch (_) {}
+    return;
+  }
+
+  if (isProcessRunning(stalePid)) {
+    console.log(`[sidecar] Found stale sidecar PID=${stalePid} — killing it.`);
+    try {
+      process.kill(stalePid, 'SIGTERM');
+    } catch (_e) {
+      // Already gone between the check and the kill — that's fine.
+    }
+    // Give the OS up to 1.5 s to release the port.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  try { fs.unlinkSync(lockFile); } catch (_) {}
+}
+
+/**
+ * Write the sidecar PID to the lock file.  Called after spawn so the PID is
+ * known.  A crash that skips before-quit leaves this file on disk for the next
+ * launch to reap.
+ */
+function writeSidecarLock(pid) {
+  try {
+    fs.writeFileSync(sidecarLockPath(), String(pid), 'utf8');
+  } catch (e) {
+    console.warn(`[sidecar] Could not write PID lock: ${e.message}`);
+  }
+}
+
+/** Remove the lock file on clean exit. */
+function removeSidecarLock() {
+  try { fs.unlinkSync(sidecarLockPath()); } catch (_) {}
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let mainWindow = null;
@@ -179,6 +266,10 @@ function spawnSidecar() {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  // Write the PID lock so a subsequent launch can detect and reap this
+  // sidecar if the app crashes without running before-quit (issue #279).
+  writeSidecarLock(sidecar.pid);
+
   sidecar.stdout.on('data', (data) => {
     process.stdout.write(`[server] ${data}`);
   });
@@ -190,6 +281,7 @@ function spawnSidecar() {
   sidecar.on('exit', (code, signal) => {
     if (sidecarExited) return; // expected quit-path
     sidecarExited = true;
+    removeSidecarLock();
 
     const detail = signal
       ? `Signal: ${signal}`
@@ -207,6 +299,7 @@ function killSidecar() {
   if (sidecar && !sidecarExited) {
     sidecarExited = true;
     sidecar.kill('SIGTERM');
+    removeSidecarLock();
   }
 }
 
@@ -366,6 +459,11 @@ function configureAutoUpdater() {
 
 app.whenReady().then(async () => {
   console.log(`[electron] PID=${process.pid} whenReady fired, gotLock=${gotLock}`);
+
+  // Reap any orphaned sidecar from a prior crash before spawning a new one
+  // (issue #279: stale process keeps port 8765 bound → bind fails → "Exit code 1").
+  await reapStaleSidecar();
+
   spawnSidecar();
 
   try {

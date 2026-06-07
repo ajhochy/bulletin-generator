@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-06 (docs issues #224/#225 complete on `feat/desktop-anon-key-rls`; verification PASS)_
+_Last updated: 2026-06-06 (issues #279 + #280 complete on `feat/desktop-anon-key-rls`; verification PASS — 149 pytest, 119 vitest, vite build)_
 
 ## Current focus
 
@@ -11,6 +11,15 @@ Issues 001–023 are implemented and automated-verified. Issue 023 (remove confl
 The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-core.yml`).
 
 ## Recently completed
+
+- **#279 + #280 — sidecar port-bind error handling + PyInstaller onedir (2026-06-06, `feat/desktop-anon-key-rls`).** Verification PASS: 149 pytest (incl. 7 new port-bind contract tests), 119 vitest, vite build. Commit `16d18c4`.
+  - **#279 — server.py:** `run_server()` now wraps `ThreadingHTTPServer(...)` in try/except; catches `EADDRINUSE` (98) and `WSAEADDRINUSE` (10048); prints `[server] FATAL: port <PORT> already in use — another instance or a stale sidecar is running.` to stderr; exits with code 3. No traceback. Other `OSError` variants re-raise unchanged.
+  - **#279 — electron/main.js:** PID lock file at `os.tmpdir()/bulletin-generator-sidecar.pid`. Written after `spawn()`, removed on clean `killSidecar()` and on sidecar `exit`. `app.whenReady` calls `await reapStaleSidecar()` before `spawnSidecar()` — reads lock, kills stale PID if alive, waits 1.5s for port release, removes lock. Cross-platform (`process.kill(pid,0)` signal-0 probe).
+  - **#280 — release-electron.yml:** both macOS and Windows PyInstaller steps changed from `--onefile` to `--onedir`. Post-build verification updated to `ls dist/server/` / `dir dist\server`.
+  - **#280 — electron/main.js `resolveSidecar()`:** packaged binary path changed from `<resourcesPath>/server` (onefile) to `<resourcesPath>/server/server` (onedir executable inside directory). Dev path unchanged.
+  - **#280 — package.json extraResources:** changed from `{from:"dist", filter:["server","server.exe"]}` to `{from:"dist/server", to:"server", filter:["**/*"]}` to copy the whole onedir tree.
+  - **New test:** `tests/test_port_bind.py` (7 contract tests: exit code 3, distinct message, no traceback, port in message, WSAEADDRINUSE, other-OSError re-raises). Wired into `ci.yml` `python` job and `scripts/run_ai_workflow.py` `CI_PYTEST_TARGETS`.
+  - **Manual-smoke-only gaps:** (1) cold-start speedup from onedir needs packaged DMG; (2) crash-recovery stale-sidecar reap needs a real crash + relaunch on packaged build; (3) Windows WSAEADDRINUSE live path needs packaged Windows build.
 
 - **#224 + #225 — docs: Docker env README + architecture + operator backup runbook (2026-06-06, `feat/desktop-anon-key-rls`).** Documentation-only updates. No application logic changed. Verification PASS: 119 vitest, vite build, pytest subset, server import.
   - `README.md`: replaced stale Docker/server-mode env var table — removed `AUTH_GOOGLE_*` / `GOOGLE_WORKSPACE_DOMAIN` (not read by any code), added Supabase vars table, corrected "What is stored / What stays on disk" (fonts → Supabase Storage, not `data/fonts/`), updated migration command to `scripts/migrate_to_supabase.py`, added backup/restore section.
@@ -76,19 +85,43 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 - `worship-booklet.html` (9111-line legacy standalone file) still contains old `_loadedRevision`/`startStaleCheck` code — it is not part of the active modular codebase and would need a separate migration. Not a runtime risk.
 - **🟡 Chrome at startup — fixed in code (#278, branch `fix/ci-node-bump-lazy-chrome`, awaiting manual smoke).** `_find_chrome()` is no longer called at import; `_resolve_chrome()` runs at the first PDF request and `_handle_pdf` returns 503 with a clear message if Chrome is absent, so the app starts everywhere. PDF export still uses server-side Chrome (the Electron `printToPDF` IPC bridge in `electron/preload.js` remains dead code — `server.py` TODO). Remaining: confirm on a Chrome-free Mac that the packaged app launches (manual). Longer-term: wire renderer → `window.electronAPI.generatePdf` so PDF needs no Chrome at all.
 - **🔴 Extractable DB creds in DMG (issue [#277](https://github.com/ajhochy/bulletin-generator/issues/277)).** Bundled `.env` contains `DATABASE_URL` (DB-owner role, bypasses RLS) — extractable from the distributed binary. Accepted as ship-now tradeoff for a *private* distribution. Keep releases draft/non-public; rotate DB password if a build leaks. Proper fix = anon-key + RLS data path (renderer via supabase-js) — **6 of 7 sub-issues landed as draft PRs (277-A/B/C/D/E/G, see Recently completed); risk stays 🔴 until 277-F removes `DATABASE_URL` from the build**, which is gated on merging A+C+D, deploying 277-B's migration (`supabase db push`), and a passing manual Electron smoke.
-- **Orphaned sidecar holds port 8765.** If the app crashes (vs. clean quit), its Python sidecar can be orphaned and keep 8765 bound, causing "Exit code 1" on the next launch (bind fails). `main.js` before-quit kills the sidecar but a crash bypasses it. Harden: sidecar should fail fast with a clear message on bind error, and/or main process should detect/clear a stale listener on startup.
-- **Slow startup** — PyInstaller `--onefile` unpacks the runtime to a temp dir every launch. Switch to `--onedir` (packaged inside the .app) for faster cold start if startup time matters.
+- **🟡 Orphaned sidecar / port 8765 — fixed in code (#279, `feat/desktop-anon-key-rls`).** `server.py` exits with code 3 + clear message on bind error (no raw traceback). `electron/main.js` writes a PID lock file on spawn and reaps any stale sidecar at next launch (1.5s port-release wait). Remaining: verify crash-recovery reap on a packaged build (manual).
+- **🟡 Slow startup — fixed in code (#280, `feat/desktop-anon-key-rls`).** PyInstaller changed from `--onefile` to `--onedir`; `resolveSidecar()` updated to `<resourcesPath>/server/server`; `package.json` extraResources updated to copy `dist/server/` tree. Remaining: confirm cold-start speedup on a packaged DMG (manual).
 - **Old draft betas carry secrets** — delete draft prereleases `electron-supabase-beta-v0.0.1/2/3` (their DMGs bundle the extractable `DATABASE_URL`); keep only the latest verified build.
 
 ## Next step
 
-Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
-1. Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
-2. Manual items (issue 023 presence smoke, Electron smoke, first-login domain provisioning).
-3. Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
-4. Open draft PR for `feat/supabase-multitenant-electron`
+1. **Open draft PR** for `feat/desktop-anon-key-rls` (covers #224, #225, #279, #280 and all prior work on this branch).
+2. **Manual smoke handoff for #279/#280** — trigger a build, crash the app, relaunch; confirm (a) stale-sidecar reap clears port without "Exit code 1" dialog, and (b) cold-start is noticeably faster with onedir.
+3. Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
+   - Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
+   - Manual items (issue 023 presence smoke, Electron smoke, first-login domain provisioning).
+   - Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
 
 ## Recent coding-agent runs
+
+### 2026-06-06 — issue-279-port-bind-and-issue-280-onedir
+- Files modified:
+  - `server.py` — `run_server()`: wrap `ThreadingHTTPServer(...)` constructor in try/except; catch `EADDRINUSE` (98) and `WSAEADDRINUSE` (10048); print `[server] FATAL: port <PORT> already in use — another instance or a stale sidecar is running.` to stderr; exit with code 3. Other OSErrors still re-raise.
+  - `electron/main.js` — added PID lock-file helpers (`sidecarLockPath`, `isProcessRunning`, `reapStaleSidecar`, `writeSidecarLock`, `removeSidecarLock`). `spawnSidecar()` now calls `writeSidecarLock(sidecar.pid)` after spawn and `removeSidecarLock()` on clean exit. `killSidecar()` calls `removeSidecarLock()`. `app.whenReady` calls `await reapStaleSidecar()` before `spawnSidecar()`. `resolveSidecar()` packaged path updated from `<resourcesPath>/server` (onefile) to `<resourcesPath>/server/server` (onedir).
+  - `.github/workflows/release-electron.yml` — both macOS and Windows PyInstaller build steps changed from `--onefile` to `--onedir`; `ls dist/server` (macOS) / `dir dist\server` (Windows) as post-build verification.
+  - `package.json` — `build.extraResources`: changed from `{from:"dist", filter:["server","server.exe"]}` (single-file) to `{from:"dist/server", to:"server", filter:["**/*"]}` (onedir directory).
+  - `tests/test_port_bind.py` — new file: 7 contract tests for #279 bind-error path (EADDRINUSE exits with code 3 + distinct message, no traceback; WSAEADDRINUSE likewise; other OSError re-raises).
+  - `.github/workflows/ci.yml` — added `tests/test_port_bind.py` to the `python` job pytest targets.
+  - `scripts/run_ai_workflow.py` — added `tests/test_port_bind.py` to `CI_PYTEST_TARGETS`.
+- Checks run:
+  - `.venv/bin/python -c "import server"` → PASS
+  - `node --check electron/main.js` → PASS
+  - `.venv/bin/pytest tests/test_port_bind.py -v` → 7 passed
+  - `python3 scripts/run_ai_workflow.py checks --level pr` → PASS (149 pytest, 119 vitest, vite build)
+  - `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-electron.yml'))"` → PASS
+- Decisions made: PID lock file approach (write sidecar PID to `os.tmpdir()/bulletin-generator-sidecar.pid` on spawn; read+kill+wait 1.5s on next startup if stale) — chosen over HTTP probe because the probe can't distinguish our sidecar from any other service. Lock file survives crash; `process.kill(pid, 0)` is cross-platform (signal-0 POSIX + Windows). Lock file path in `os.tmpdir()` avoids permission issues on both platforms. See `docs/ai/decisions.md` for rationale.
+- Deviations from spec: exit code 3 chosen as the sentinel (spec said "recognizable nonzero code"; 3 avoids overlap with Python's 1/2 and signals). Issue-level `reapStaleSidecar` does a 1.5s wait (vs. spec's "brief") to give the OS adequate time to close listening sockets before the new sidecar tries to bind.
+- Concerns:
+  - The 1.5s reap-wait adds to cold-start time only when a crash-recovery is needed (normal path: lock file absent → 0 delay).
+  - onedir cold-start speedup can only be verified by a packaged build — not automatable.
+  - PID reuse race: if the OS recycles the stale PID for an unrelated process between lock-file write and the next launch's `isProcessRunning` check, `reapStaleSidecar` would kill that process. Very unlikely (PIDs cycle slowly) and only occurs on crash recovery, but noted.
+  - Windows `WSAEADDRINUSE` (10048) is not in Python's `errno` module on non-Windows; the code uses `getattr(_errno, 'WSAEADDRINUSE', 10048)` to get the literal 10048 safely on all platforms.
 
 ### 2026-06-06 — issue-224-225-docs-and-backup
 - Files modified:
