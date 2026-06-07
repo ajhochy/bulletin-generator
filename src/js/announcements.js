@@ -137,7 +137,35 @@ function annRender() {
 }
 
 function saveAnnGlobal() {
-  apiFetch('/api/announcements', 'POST', annData).catch(err => setStatus('Announcement save failed: ' + (err.message || err), 'error'));
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronMode) {
+    // Electron path: full-replace via delete-then-insert to match the Python
+    // handler's DELETE+INSERT semantics, so removing an announcement actually
+    // removes it from the database.
+    const snapshot = annData.slice(); // capture current state before async ops
+    const sb = typeof _getSupabaseClient === 'function' ? _getSupabaseClient() : null;
+    if (!sb) {
+      // No client available yet (pre-auth); skip silently
+      return;
+    }
+    (async () => {
+      try {
+        // Step 1: delete all existing announcements for this workspace.
+        // RLS scopes the delete to the current user's workspace rows only.
+        // PostgREST requires at least one filter; .not('id','is',null) passes
+        // all rows (id is never null on a valid row) while satisfying the constraint.
+        await sb.from('announcements').delete().not('id', 'is', null);
+        // Step 2: insert the current set (sdSaveAnnouncements upserts, but after delete that's insert)
+        if (snapshot.length > 0) {
+          await sdSaveAnnouncements(snapshot);
+        }
+      } catch (err) {
+        setStatus('Announcement save failed: ' + (err.message || err), 'error');
+      }
+    })();
+  } else {
+    apiFetch('/api/announcements', 'POST', annData).catch(err => setStatus('Announcement save failed: ' + (err.message || err), 'error'));
+  }
 }
 
 function annAdd() {

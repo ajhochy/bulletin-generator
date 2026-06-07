@@ -39,6 +39,91 @@ function isServerMode()  { return _publicConfig.appMode === 'server';  }
 
 async function loadAllFromServer() {
   try {
+    // ── Electron path: read data directly from Supabase via supabase-data.js ──
+    // isElectronMode() is exported by auth-ui.js onto globalThis.
+    const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+    if (_electronMode) {
+      // Fetch projects, announcements, songs, settings, and templates from Supabase.
+      // bootstrap still comes from the server (needed for _publicConfig / PCO config).
+      const [projectsRaw, annsRaw, songsRaw, settingsRaw, templatesRaw, bootstrap, vrDataResp] =
+        await Promise.all([
+          sdGetProjects().catch(() => []),
+          sdGetAnnouncements().catch(() => []),
+          sdGetSongs().catch(() => []),
+          sdGetSettings().catch(() => []),
+          sdGetTemplates().catch(() => []),
+          apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),
+          apiFetch('/api/volunteer-roles').catch(() => []),
+        ]);
+
+      // Projects: supabase returns rows directly (not wrapped in {projects:[...]})
+      setProjects(Array.isArray(projectsRaw) ? projectsRaw : []);
+      setTemplates(Array.isArray(templatesRaw) ? templatesRaw : []);
+
+      // Settings: workspace_settings row has a `settings` JSONB column
+      const settingsRow = Array.isArray(settingsRaw) ? settingsRaw[0] : settingsRaw;
+      _serverSettings = (settingsRow && settingsRow.settings) || {};
+      _publicConfig = Object.assign({}, _publicConfig, bootstrap.config || {});
+      if (!_publicConfig.calendarDefaults) {
+        _publicConfig.calendarDefaults = { urls: [], exclude: [] };
+      }
+      // Electron mode: mark as desktop-like so server-mode presence guards don't fire.
+      // The actual mode flag comes from bootstrap but for data-layer purposes
+      // Electron behaves like desktop (single user, no conflict detection).
+      _publicConfig.appMode = _publicConfig.appMode || 'desktop';
+
+      setTypeFormatsMap(_serverSettings.typeFormats);
+      const _oldKeysE = Object.keys(typeFormats);
+      if (_oldKeysE.some(k => !['section','song','liturgy','label','note','media'].includes(k))) {
+        const _migrated = {};
+        _oldKeysE.forEach(k => {
+          const newKey = migrateItemType(k);
+          if (!_migrated[newKey] || Object.keys(_migrated[newKey]).length === 0) {
+            _migrated[newKey] = typeFormats[k];
+          }
+        });
+        setTypeFormatsMap(_migrated);
+      }
+
+      if (Array.isArray(_serverSettings.staffData) && _serverSettings.staffData.length)
+        setStaffData(_serverSettings.staffData);
+
+      // Songs: supabase rows have {id, title, data} — merge the data field which
+      // holds the full song dict (mirrors how storage.py saves songs).
+      if (Array.isArray(songsRaw)) {
+        songDb = songsRaw.map(row => (row.data && typeof row.data === 'object') ? row.data : row);
+      }
+
+      // Announcements: supabase rows have {id, title, body, state} — use state
+      // field which holds the full announcement dict saved by sdSaveAnnouncements.
+      setAnnData(Array.isArray(annsRaw)
+        ? annsRaw.map(row => {
+            const a = (row.state && typeof row.state === 'object') ? row.state : row;
+            return { title: a.title || '', body: a.body || '', url: a.url || '' };
+          })
+        : []);
+
+      setVrData(Array.isArray(vrDataResp)
+        ? vrDataResp.map(r => ({ title: r.title || '', body: r.body || '', url: r.url || '', _breakBefore: !!r._breakBefore, _noBreakBefore: !!r._noBreakBefore }))
+        : []);
+      setServingTeamFilterMap(_serverSettings.servingTeamFilter);
+      setCalendarSettings(_serverSettings.calUrls, _serverSettings.calExclude);
+      if (_serverSettings.docTemplate && typeof _serverSettings.docTemplate === 'object') {
+        setActiveDocTemplate(_serverSettings.docTemplate);
+      }
+      applyDocTemplate();
+      if (typeof _serverSettings.editorDisplayName === 'string') {
+        setEditorDisplayName(_serverSettings.editorDisplayName);
+      }
+      // Hide Drive export buttons (not wired in Electron mode yet)
+      const driveJsonE = document.getElementById('bulk-drive-json');
+      const drivePdfE  = document.getElementById('bulk-drive-pdf');
+      if (driveJsonE) driveJsonE.style.display = 'none';
+      if (drivePdfE)  drivePdfE.style.display  = 'none';
+      return; // ← early return; server path below is skipped
+    }
+
+    // ── Server/browser path: unchanged ────────────────────────────────────────
     const [projectsData, bootstrap, annsData, templatesData, vrDataResp] = await Promise.all([
       apiFetch('/api/projects').catch(() => ({ projects: [] })),
       apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),

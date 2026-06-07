@@ -3,7 +3,12 @@ let songDb = [];
 let sdbEditingIdx = -1; // -1 = new entry, >= 0 = editing existing
 
 function saveSongDb() {
-  apiFetch('/api/songs', 'POST', songDb).catch(err => setStatus('Song database save failed: ' + (err.message || err), 'error'));
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronMode) {
+    sdSaveSongs(songDb).catch(err => setStatus('Song database save failed: ' + (err.message || err), 'error'));
+  } else {
+    apiFetch('/api/songs', 'POST', songDb).catch(err => setStatus('Song database save failed: ' + (err.message || err), 'error'));
+  }
   renderSongDb();
 }
 

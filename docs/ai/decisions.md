@@ -4,6 +4,20 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-06 — issue-277-D: Electron dispatch via globalThis globals (not ESM imports)
+
+**Context.** supabase-data.js (277-C) uses `export function` (ESM) syntax. The renderer legacy scripts (projects.js, api.js, etc.) are loaded as plain `<script>` tags via `loadLegacyScripts()` in main.js — they run in the global scope and cannot use `import` statements. Adding supabase-data.js to `LEGACY_SCRIPT_PATHS` would cause a syntax error (`export` keyword is invalid in non-module script context).
+
+**Decision.** Route supabase-data.js through main.js (which IS an ES module entry point). main.js imports all 20 sd* functions and puts them on `globalThis`. The legacy scripts call them as `sdGetProjects(...)` etc. — always available as globals. Same pattern used for the `*Core` pure functions. `isElectronMode()` is exported from auth-ui.js onto globalThis so all scripts can gate the dispatch.
+
+**Consequences.**
+- supabase-data.js is unchanged (its public API is its ESM exports).
+- auth-ui.js gains a public `isElectronMode()` wrapper and `_getSupabaseClient` on globalThis. (The private `_isElectronMode` is still the implementation; the public wrapper just delegates.)
+- Every call site in the legacy scripts guards with `typeof isElectronMode === 'function' && isElectronMode()` to be safe if auth-ui.js hasn't loaded yet.
+- The `TODO(#216): revision snapshot handled by DB trigger` comment in saveProjectToServer documents that Electron-mode saves won't build history until #216's trigger lands.
+
+**Alternative considered.** Add supabase-data.js to `loadLegacyScripts` with guard code stripping `export` keywords at load time — rejected as fragile and complex. The globalThis export pattern is already established in the codebase.
+
 ## 2026-06-05 — Presence project_id is TEXT, not uuid (fix forward migration, not edit-in-place)
 
 **Context.** `workspace_presences.project_id` was declared `uuid` in `20260603000003_workspace_presences.sql`, but project ids are application-generated TEXT (`proj_<timestamp>_<rand>`) and `public.projects.id` is `text`. Every presence read/heartbeat 500'd with `InvalidTextRepresentation`; the frontend's best-effort error swallowing hid it.

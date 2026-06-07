@@ -300,6 +300,15 @@ async function initAuth() {
   return false;
 }
 
+/**
+ * Return true when running inside Electron with the auth deep-link bridge.
+ * Exported on globalThis so other renderer modules (projects.js, api.js, etc.)
+ * can use it for the Electron-path dispatch without duplicating the check.
+ */
+function isElectronMode() {
+  return _isElectronMode();
+}
+
 Object.assign(globalThis, {
   BulletinAuthUI: {
     initAuth,
@@ -310,6 +319,7 @@ Object.assign(globalThis, {
     getCurrentUser,
     showLoginScreen,
     showApp,
+    isElectronMode,
   },
   initAuth,
   signInWithGoogle,
@@ -319,4 +329,6 @@ Object.assign(globalThis, {
   getCurrentUser,
   showLoginScreen,
   showApp,
+  isElectronMode,
+  _getSupabaseClient,
 });
