@@ -2756,11 +2756,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if user is None:
             return
 
-        from db import admin_transaction  # noqa: PLC0415
+        import db as _db  # noqa: PLC0415
         workspace_id = user.get('workspace_id')
         caller_id    = user.get('user_id') or user.get('id')
 
-        with admin_transaction() as conn:
+        # Use the caller's JWT (RLS-scoped) instead of the owner-role admin
+        # connection (#277-G, defence-in-depth): the workspace_members_select
+        # policy lets a member read their own workspace's members and
+        # profiles_select lets the join read co-workspace profiles, so no
+        # RLS-bypassing connection is required. RLS also bounds the result to
+        # the caller's workspace independently of the workspace_id filter.
+        with _db.transaction(user.get('claims')) as conn:
             rows = conn.execute(
                 """
                 SELECT wm.user_id, wm.role,
