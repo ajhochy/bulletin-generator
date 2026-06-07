@@ -30,6 +30,7 @@ CI_PYTEST_TARGETS = [
     "tests/test_update.py",
     "tests/test_drive.py",
     "tests/test_propresenter_export.py",
+    "tests/test_revision_snapshots.py",
 ]
 
 MANUAL_SMOKE_DOC = "docs/testing/manual-smoke.md"

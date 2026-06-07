@@ -1,0 +1,47 @@
+{
+  "issue": "216",
+  "generated": "2026-06-06",
+  "criteria": [
+    {
+      "criterion_id": "issue-216-c1",
+      "text": "Every successful project save (not just the /restore path) appends exactly one project_revisions row.",
+      "mode": "unit",
+      "test_file": "tests/test_revision_snapshots.py",
+      "test_id": "TestSaveProjectRevisionSnapshot::test_issue_216_c1_snapshot_inserted_exactly_once_per_save",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-216-c2",
+      "text": "The snapshot uses the freshly-incremented revision (revision_number = the RETURNING revision), so revision numbers are unique per project.",
+      "mode": "unit",
+      "test_file": "tests/test_revision_snapshots.py",
+      "test_id": "TestSaveProjectRevisionSnapshot::test_issue_216_c2_snapshot_uses_new_incremented_revision",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-216-c3",
+      "text": "The snapshot row carries all required fields (snap_id uuid, project_id, revision_number, state, summary) so it can restore a previous version.",
+      "mode": "unit",
+      "test_file": "tests/test_revision_snapshots.py",
+      "test_id": "TestSaveProjectRevisionSnapshot::test_issue_216_c3_snapshot_has_required_fields",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-216-c4",
+      "text": "Revision numbers are unique per project at the DB level: a duplicate (project_id, revision_number) is rejected by a unique index.",
+      "mode": "integration",
+      "test_file": "tests/test_revision_unique_constraint.py",
+      "test_id": "test_issue_216_c5_duplicate_revision_rejected",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-216-c5",
+      "text": "Electron-mode (renderer/supabase-js) saves also snapshot history. Implemented server-side here (PostgresStorageBackend.save_project); the renderer path (277-C/D) needs a matching project_revisions insert in supabase-data.js sdSaveProject.",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Renderer-side snapshot belongs on the unmerged 277-C/D stack; this PR fixes the server-mode regression. Approach changed from a DB trigger to application-level because a trigger cannot run revisions.generate_summary (Python), cannot be deployed by the agent (gated), and removing the app-level snapshot before deploy would create a live-regression window. The unique-index migration (c4) ALSO needs a live supabase db push (human-authorized, like 277-B). See decisions.md 2026-06-06."
+    }
+  ],
+  "stack": "python",
+  "not_tested": ["issue-216-c5"]
+}

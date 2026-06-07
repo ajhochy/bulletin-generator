@@ -324,6 +324,71 @@ class TestSaveProjectTransactionalRevisionSnapshot:
 
 
 # =============================================================================
+# save_project — revision snapshot on EVERY save (issue #216)
+# =============================================================================
+
+class TestSaveProjectRevisionSnapshot:
+    """#216: a normal save_project() (not just /restore) must append exactly one
+    project_revisions row using the freshly-incremented revision.
+
+    save_project() issues the same 4-call execute() sequence as
+    save_project_transactional(): SELECT prev state, INSERT upsert RETURNING,
+    SELECT profiles (enrichment), INSERT project_revisions — so _make_conn_for_save
+    is reused.
+    """
+
+    _PROJECT_ID = str(uuid.uuid4())
+
+    def test_issue_216_c1_snapshot_inserted_exactly_once_per_save(self):
+        from storage import PostgresStorageBackend
+
+        project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
+        project_row = _pg_project_row(self._PROJECT_ID, revision=2)
+        conn = _make_conn_for_save(project_row)
+
+        backend = PostgresStorageBackend()
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
+            backend.save_project(project_data, updated_by_user_id=None)
+
+        # 4 execute calls; the last is the project_revisions snapshot INSERT.
+        assert conn.execute.call_count == 4
+        snapshot_sql = conn.execute.call_args_list[3][0][0]
+        assert "project_revisions" in snapshot_sql
+
+    def test_issue_216_c2_snapshot_uses_new_incremented_revision(self):
+        from storage import PostgresStorageBackend
+
+        project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
+        project_row = _pg_project_row(self._PROJECT_ID, revision=7)
+        conn = _make_conn_for_save(project_row)
+
+        backend = PostgresStorageBackend()
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
+            backend.save_project(project_data, updated_by_user_id=None)
+
+        params = conn.execute.call_args_list[3][0][1]
+        assert params["revision_number"] == 7  # the RETURNING revision, not the client's
+
+    def test_issue_216_c3_snapshot_has_required_fields(self):
+        from storage import PostgresStorageBackend
+
+        project_data = {"id": self._PROJECT_ID, "name": "Sunday Service"}
+        project_row = _pg_project_row(self._PROJECT_ID, revision=2)
+        conn = _make_conn_for_save(project_row)
+
+        backend = PostgresStorageBackend()
+        with patch("db.transaction", lambda claims=None: _fake_tx(conn)):
+            backend.save_project(project_data, updated_by_user_id=None)
+
+        params = conn.execute.call_args_list[3][0][1]
+        for key in ("snap_id", "project_id", "revision_number", "state", "summary"):
+            assert key in params, f"snapshot params missing {key}"
+        assert params["project_id"] == self._PROJECT_ID
+        # snap_id must be a valid UUID
+        uuid.UUID(params["snap_id"])
+
+
+# =============================================================================
 # get_project_revisions
 # =============================================================================
 
