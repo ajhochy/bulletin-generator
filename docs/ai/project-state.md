@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-06 (Supabase/Electron migration MERGED to `main` via PR #276; quick-wins #278/#256 + e2e presence de-flake landed; main CI green)_
+_Last updated: 2026-06-06 (docs issues #224/#225 complete on `feat/desktop-anon-key-rls`; verification PASS)_
 
 ## Current focus
 
@@ -11,6 +11,13 @@ Issues 001–023 are implemented and automated-verified. Issue 023 (remove confl
 The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-core.yml`).
 
 ## Recently completed
+
+- **#224 + #225 — docs: Docker env README + architecture + operator backup runbook (2026-06-06, `feat/desktop-anon-key-rls`).** Documentation-only updates. No application logic changed. Verification PASS: 119 vitest, vite build, pytest subset, server import.
+  - `README.md`: replaced stale Docker/server-mode env var table — removed `AUTH_GOOGLE_*` / `GOOGLE_WORKSPACE_DOMAIN` (not read by any code), added Supabase vars table, corrected "What is stored / What stays on disk" (fonts → Supabase Storage, not `data/fonts/`), updated migration command to `scripts/migrate_to_supabase.py`, added backup/restore section.
+  - `docs/ARCHITECTURE.md`: replaced collab-v1 Storage/Auth/Migration sections with current Supabase architecture. Auth now describes Supabase JWT verification (removed `AUTH_GOOGLE_*` / `sessions` table). Ownership/presence model documented. Migration pipeline updated to `scripts/migrate_to_supabase.py`.
+  - `.env.example`: added `OAUTH_STATE_SECRET` commented entry. Updated DATABASE_URL comment to show Supabase connection string example. Clarified Google Calendar section (Supabase Auth handles user login separately).
+  - `docs/operator-runbook.md`: added "Backup & Restore" section 6 (pg_dump workflow, Storage backup via Supabase CLI, restore, full rollback). Fixed section 4 env var tables — separated required vs optional; removed stale `SESSION_SECRET`; annotated `POSTGRES_*` as local Docker postgres only; added `OAUTH_STATE_SECRET`.
+  - Scripts (`scripts/backup.sh`, `scripts/restore.sh`, `scripts/backup-compose.sh`) already existed and needed no changes.
 
 - **#277 decomposed (S2-hybrid) + 6 of 7 sub-issues landed as draft PRs (2026-06-06).** Removing the bundled extractable `DATABASE_URL` from the desktop build by routing desktop data through supabase-js + the anon key (RLS the boundary). Architecture **S2-hybrid, electron-only** (Docker/server mode unchanged). Plan: `current-plan.md`; decision: `decisions.md` (2026-06-06). All PRs CI-green; **manual merge pending**.
   - **277-A** ([#284](https://github.com/ajhochy/bulletin-generator/pull/284), `issue-277-A`): `db.py` `IS_DESKTOP` includes `"electron"` → sidecar fails fast cleanly without `DATABASE_URL`. Contract tests wired into CI `python` job.
@@ -82,6 +89,26 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
+
+### 2026-06-06 — issue-224-225-docs-and-backup
+- Files modified:
+  - `README.md` — replaced stale Docker/server-mode env var table (removed `AUTH_GOOGLE_*`, `GOOGLE_WORKSPACE_DOMAIN`; added Supabase vars). Updated "What is stored / What stays on disk" to reflect Supabase Storage. Updated migration command to `scripts/migrate_to_supabase.py`. Added backup/restore section with pointers to scripts. Updated Google Calendar section.
+  - `docs/ARCHITECTURE.md` — replaced stale collab-v1 Storage/Auth/Migration sections. Auth now describes Supabase Auth (removed `AUTH_GOOGLE_*`, `GOOGLE_WORKSPACE_DOMAIN`, `sessions` table). Storage section now lists Supabase Postgres tables + Storage buckets correctly (fonts in `workspace-fonts` bucket, not `data/fonts/`). Added Ownership/Presence model note. Updated Server Mode Data Directory Layout to reflect that `./data` holds only backup output.
+  - `.env.example` — added `OAUTH_STATE_SECRET` commented entry with explanation. Updated DATABASE_URL comment to show Supabase connection string example. Updated Google Calendar section comment to clarify Supabase Auth handles user login.
+  - `docs/operator-runbook.md` — added "Backup & Restore" section 6 (pg_dump workflow, Storage backup via Supabase CLI, restore, full rollback procedure). Updated section 4 env var tables: separated "Required for server mode" from "Optional for server mode"; removed stale `SESSION_SECRET`; annotated `POSTGRES_*` as local Docker postgres only; added `OAUTH_STATE_SECRET`.
+- Checks run:
+  - `.venv/bin/python3 -c "import server"` → PASS
+  - `bash -n scripts/backup.sh` → PASS
+  - `bash -n scripts/restore.sh` → PASS
+  - `bash -n scripts/backup-compose.sh` → PASS
+  - `ai-workflow checks --level pr` → PASS (119 vitest + 1 skipped, vite build green, pytest subset)
+- Decisions made:
+  - Did NOT change `docker-compose.yml` — the `postgres` service is still present and valid (local dev still uses it); removing it would be scope creep.
+  - Did NOT change `MANUAL-STEPS.md` — it has a "Legacy Collab-v1" section that's correctly labeled as legacy history. Removing it would lose context about the `AUTH_GOOGLE_*` migration origin.
+  - `OAUTH_STATE_SECRET` added to `.env.example` as a commented optional entry (falls back to `SUPABASE_JWT_SECRET` if unset — server.py documented this already).
+  - Scripts already existed (`backup.sh`, `restore.sh`, `backup-compose.sh`) — no new script was needed, just documentation.
+- Deviations from spec: issue #224 said "GOOGLE_WORKSPACE_DOMAIN=visaliacrc.com" as a required var — grepped the entire repo and found it is NOT read by any Python or JS code (only appears in legacy `MANUAL-STEPS.md` and the old README/ARCHITECTURE sections). Documented as not used.
+- Concerns: `scripts/backup.sh` archives `data/fonts/user` and `data/fonts/cache` (filesystem), but in Supabase server mode fonts live in Storage, not `./data/fonts`. The script's font-copy step will silently skip with "[--]" if those dirs don't exist, which is correct behavior. Added a note in operator-runbook pointing to Supabase CLI for Storage backup.
 
 ### 2026-06-05 — oauth-state-multitenancy
 - Files modified:
