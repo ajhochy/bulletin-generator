@@ -1,14 +1,10 @@
 # Project State
 
-_Last updated: 2026-06-06 (issue-277-D: Electron dispatch through supabase-data.js — verification-gate PASS; branch `issue-277-D`, uncommitted working tree)_
+_Last updated: 2026-06-06 (Supabase/Electron migration MERGED to `main` via PR #276; quick-wins #278/#256 + e2e presence de-flake landed; main CI green)_
 
 ## Current focus
 
-**Branch `issue-277-D`** (stacked on `issue-277-C`): Renderer-side Supabase data routing complete. All 8 call-site modules wired; 12 new dispatch unit tests green; vite build clean.
-
-Immediate next: commit this branch, open draft PR, and run the Electron dev-mode manual smoke to confirm `isElectronMode()=true` routes through Supabase REST (not `/api/projects`).
-
-**`main`** (base): contains the full Supabase + Multi-tenant + Electron migration — PR #276 merged 2026-06-06 (merge commit `8212654`), main CI green.
+**`main`** now contains the full Supabase + Multi-tenant + Electron migration — PR #276 (`feat/supabase-multitenant-electron` → `main`, merge commit `8212654`) merged 2026-06-06 with all checks green (js, python, db-integration, e2e-core). The `feat/supabase-multitenant-electron` branch is retained (not deleted).
 
 Issues 001–023 are implemented and automated-verified. Issue 023 (remove conflict detection, add presence heartbeat + read-only mode for non-owners) is DONE.
 
@@ -44,18 +40,13 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## In progress
 
-- **issue-277-D**: Electron data-dispatch wiring complete (verification-gate PASS). Needs:
-  1. Commit + draft PR (branch `issue-277-D`).
-  2. Electron dev-mode smoke: open app, sign in, load/save a project, inspect Network tab to confirm `/api/projects` is NOT called and `supabase.co/rest/v1/projects` IS called.
-  3. Announcements delete-then-insert smoke: delete an announcement, confirm it disappears from `announcements` table (RLS DELETE policy must allow it).
-  4. Settings persistence smoke: save staff data, reload app, confirm `workspace_settings.settings.staffData` updated.
-- **TODO(#216)**: `saveProjectToServer` in Electron mode does NOT snapshot project_revisions. DB trigger from #216 needed for history.
 - Manual smoke for issue 023 pending — requires live Supabase session + two users:
   1. Owner opens workspace project → no readonly-banner, autosave fires.
   2. Non-owner opens same project → readonly-banner appears, edits suppressed, Duplicate creates private copy.
   3. Network tab: 30s `POST /api/presence/heartbeat`, `DELETE /api/presence` on tab close.
   4. Presence badge `● X is editing` visible when another user has project open.
 - Manual smoke for OAuth connect-path scoping pending — needs 2 workspaces: as a member of workspace B, connect PCO (and Google), confirm the token row lands in B's `workspace_settings` (not LIMIT 1) and workspace A is unaffected; then B can load PCO service types. Set `OAUTH_STATE_SECRET` in server env (or rely on `SUPABASE_JWT_SECRET`/client-secret fallback).
+- Draft PR for `feat/supabase-multitenant-electron` not yet opened.
 
 ## Open risks
 
@@ -81,32 +72,6 @@ Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
 4. Open draft PR for `feat/supabase-multitenant-electron`
 
 ## Recent coding-agent runs
-
-### 2026-06-06 — issue-277-D: Electron-mode data dispatch through supabase-data.js
-- Files modified:
-  - `src/js/auth-ui.js` — exported `isElectronMode()` (public wrapper for `_isElectronMode()`) and `_getSupabaseClient` onto `globalThis` so legacy renderer scripts can call them.
-  - `src/js/main.js` — imported all 20 supabase-data.js functions and exposed them on `globalThis` so legacy scripts (api.js, projects.js, etc.) can call them.
-  - `src/js/api.js` — wired `loadAllFromServer()`: Electron path reads projects/announcements/songs/settings/templates via sdGetXxx; server path unchanged.
-  - `src/js/projects.js` — wired: `saveProjectToServer` (sdSaveProject), `deleteProjectFromServer` (sdDeleteProject), `loadProjectById` (sdGetProject), `restoreOnStartup` startup load (sdGetProject), `startFilesAutoRefresh` (sdGetProjects), `_startPresenceHeartbeat` (sdPostPresenceHeartbeat + sdGetPresence with client-side 90s TTL filter), `_stopPresenceHeartbeat` (sdDeletePresence), `handleHandoff` members (sdGetMembers) + transfer (sdTransferProject + sdGetProjects), `initProjects` beforeunload (sdDeletePresence), read-only mode guard extended to Electron. TODO(#216) comment added in saveProjectToServer Electron path.
-  - `src/js/announcements.js` — wired `saveAnnGlobal()`: Electron path does delete-then-insert (delete().not('id','is',null) + sdSaveAnnouncements) to match Python's full-replace behavior; server path unchanged.
-  - `src/js/songs.js` — wired `saveSongDb()`: Electron → sdSaveSongs; server → apiFetch unchanged.
-  - `src/js/staff.js` — wired `saveStaffData()`: Electron → read-merge-write via sdGetSettings+sdSaveSettings with workspaceId from JWT claims; server → apiFetch unchanged.
-  - `src/js/calendar.js` — wired Drive folder ID prefetch and `saveDriveFolderId()`: Electron → sdGetSettings + sdSaveSettings; server → apiFetch unchanged.
-  - `tests/electron-dispatch.spec.js` — NEW: 12 unit tests covering dispatch logic for all 6 call site groups (isElectronMode true/false for each).
-  - `docs/ai/contracts/issue-277-D.json` — NEW: acceptance contract (15 automated + 14 manual-smoke/limitations listed in not_tested).
-- Checks run:
-  - `node --check` on all 8 modified JS files → PASS
-  - `npm test` → 119 passed / 1 skipped (12 new dispatch tests green; 107 pre-existing unchanged)
-  - `npm run build` (vite) → clean build
-- Decisions made: see `docs/ai/decisions.md` 2026-06-06 entry.
-- Deviations from spec:
-  - Limitation #3 (announcements full-replace): implemented as delete-then-insert using `sb.from('announcements').delete().not('id','is',null)` which relies on RLS scoping the delete to the workspace. This requires a correct RLS DELETE policy on announcements — noted in contract not_tested.
-  - `volunteer-roles.js`, `templates.js`, `editor.js`, `state.js`, `pco.js`, `app.js` settings saves are NOT wired (outside 277-D permitted files). These remain as apiFetch calls in Electron mode.
-- Concerns:
-  - workspace_id resolution depends on JWT user_metadata/app_metadata fields being populated by provision_first_login. If these fields are absent, sdSaveSettings/sdPostPresenceHeartbeat may fail with a constraint violation.
-  - TODO(#216): revision snapshots (project_revisions) are NOT created by Electron-mode saves. DB trigger from #216 is required for history.
-  - The announcements delete-all relies on RLS `DELETE` policy — needs smoke verification.
-  - Settings merge (read-merge-write) in staff.js/calendar.js has a TOCTOU race for concurrent saves (acceptable in single-user Electron mode).
 
 ### 2026-06-05 — oauth-state-multitenancy
 - Files modified:
