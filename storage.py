@@ -1959,7 +1959,10 @@ def get_storage(
     request and lets Postgres RLS see the verified Supabase JWT claims.
     """
     app_mode = os.environ.get("APP_MODE", "desktop").strip().lower()
-    is_desktop = app_mode == "desktop"
+    # "electron" is a desktop variant: the renderer does data via supabase-js and
+    # the sidecar has no DATABASE_URL, so it must NOT get a PostgresStorageBackend
+    # (which would raise on every DB op). Mirror server.py:263 / db.py.
+    is_desktop = app_mode in ("desktop", "electron")
 
     if is_desktop:
         if data_dir is None:

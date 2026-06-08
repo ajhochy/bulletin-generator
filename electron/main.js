@@ -257,7 +257,12 @@ function spawnSidecar() {
   const { cmd, args } = resolveSidecar();
 
   const env = Object.assign({}, process.env, {
-    APP_MODE: 'server',
+    // Electron desktop runs the sidecar in electron mode: data flows from the
+    // renderer directly to Supabase (supabase-data.js), and the sidecar serves
+    // static files, the PCO proxy, Google Calendar, and PDF — reading
+    // workspace_settings via Supabase REST (#294), so NO DATABASE_URL is needed
+    // or bundled (#277-F).
+    APP_MODE: 'electron',
     PORT: String(PORT),
   });
 

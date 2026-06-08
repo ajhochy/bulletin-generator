@@ -131,15 +131,30 @@ async function _fetchIdentityWithSession(session) {
     throw err;
   }
   const data = await res.json();
-  // /api/me returns workspace_id / role / user_id at the TOP LEVEL (server mode),
-  // not under a `user` key. Surface workspace_id onto the identity object so
-  // electron-mode renderer writes (supabase-data.js) can populate the row's
-  // workspace_id for RLS WITH CHECK (is_workspace_member). Without this the
-  // renderer has no workspace_id → presence/save upserts 403.
+  // /api/me returns workspace_id / role / user_id at the TOP LEVEL in SERVER
+  // mode. In ELECTRON mode the sidecar treats the request as desktop and returns
+  // {mode:'desktop', user:null} — no workspace_id. The renderer needs
+  // workspace_id for RLS WITH CHECK on every write (supabase-data.js), so when
+  // /api/me doesn't supply it, resolve it directly from Supabase via the user's
+  // own workspace_members row (RLS-scoped) — mode-independent.
   const base = data.user || session.user || null;
+  let workspaceId = data.workspace_id ?? (base && base.workspace_id) ?? null;
+  if (!workspaceId) {
+    try {
+      const client = _getSupabaseClient();
+      if (client) {
+        const { data: wm } = await client
+          .from('workspace_members')
+          .select('workspace_id')
+          .limit(1)
+          .maybeSingle();
+        if (wm && wm.workspace_id) workspaceId = wm.workspace_id;
+      }
+    } catch (_) { /* leave null; writes will surface a clear error */ }
+  }
   if (base && typeof base === 'object') {
     return Object.assign({}, base, {
-      workspace_id: data.workspace_id ?? base.workspace_id ?? null,
+      workspace_id: workspaceId,
       role: data.role ?? base.role ?? null,
     });
   }
