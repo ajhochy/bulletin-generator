@@ -30,6 +30,22 @@ function _authRedirectUrl() {
   return `${window.location.origin}${window.location.pathname}`;
 }
 
+/**
+ * Pass-through replacement for supabase-js's default Web Locks (navigator.locks)
+ * auth lock.  supabase-js serialises token reads/refreshes behind a global lock
+ * named `lock:sb-<ref>-auth-token`; in the sandboxed Electron renderer that lock
+ * can be acquired and never released, which deadlocks `getSession()` and hangs
+ * `initAuth()` → the app never leaves its default shell (no login screen, no
+ * profile, tabs never initialise).  Electron is a single-window app with no
+ * cross-tab token coordination to protect, so we replace the lock with a no-op
+ * that simply runs the critical section.  (Confirmed via electron-mode smoke,
+ * issue #277-F: default lock → getSession hangs; pass-through → resolves
+ * instantly.)
+ */
+function _passthroughLock(_name, _acquireTimeout, fn) {
+  return fn();
+}
+
 function _getSupabaseClient() {
   if (_supabaseClient) return _supabaseClient;
   const config = _authConfig();
@@ -39,13 +55,19 @@ function _getSupabaseClient() {
   if (!config.url || !config.anonKey || typeof createClient !== 'function') {
     return null;
   }
+  const authOptions = {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: window.localStorage,
+  };
+  // Only disable Web Locks in Electron, where the lock deadlocks the renderer.
+  // Server/browser mode keeps the default lock for cross-tab coordination.
+  if (_isElectronMode()) {
+    authOptions.lock = _passthroughLock;
+  }
   _supabaseClient = createClient(config.url, config.anonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      storage: window.localStorage,
-    },
+    auth: authOptions,
   });
   return _supabaseClient;
 }
@@ -285,9 +307,18 @@ async function initAuth() {
 
   // Wire BEFORE getSession so the SIGNED_IN event from an in-progress
   // OAuth PKCE exchange is not missed if getSession() returns null.
-  client.auth.onAuthStateChange(async (event, session) => {
+  //
+  // IMPORTANT: keep this callback synchronous and do NOT `await` Supabase calls
+  // inside it. supabase-js dispatches auth events while holding GoTrue's internal
+  // auth lock; awaiting a Supabase call here (via _applySession →
+  // _fetchIdentityWithSession → client.from(...)) reentrantly waits on that same
+  // lock and DEADLOCKS initialisation — getSession() never resolves, initAuth()
+  // never returns, and the app is stuck in its default shell (no login screen,
+  // no profile, tabs never initialise). Defer the work to a fresh macrotask so
+  // the lock is released first. (issue #277-F electron-mode smoke)
+  client.auth.onAuthStateChange((event, session) => {
     if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-      await _applySession(session);
+      setTimeout(() => { _applySession(session); }, 0);
     } else if (event === 'SIGNED_OUT') {
       _currentSession = null;
       _currentUser = null;
