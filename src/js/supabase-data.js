@@ -120,6 +120,26 @@ function _throwIfError(result, context = '') {
   }
 }
 
+/**
+ * Resolve the current session's workspace_id + user_id for stamping onto writes.
+ *
+ * Every workspace table's RLS WITH CHECK requires the row's workspace_id to pass
+ * is_workspace_member() (projects additionally need owner_user_id = auth.uid();
+ * workspace_presences needs user_id = auth.uid()). The renderer must therefore
+ * stamp these onto every INSERT/UPSERT. workspace_id is NOT in the JWT — it is
+ * surfaced onto getCurrentUser() from /api/me by auth-ui.js. Callers may also
+ * pass explicit { workspaceId, userId } (those win).
+ */
+function _sessionContext() {
+  const u = (typeof globalThis !== 'undefined' && typeof globalThis.getCurrentUser === 'function')
+    ? globalThis.getCurrentUser()
+    : null;
+  return {
+    workspaceId: (u && u.workspace_id) || null,
+    userId: (u && (u.id || u.user_id)) || null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Projects
 // ---------------------------------------------------------------------------
@@ -200,12 +220,13 @@ export async function sdGetProject(id, { client } = {}) {
  */
 export async function sdSaveProject(project, { client } = {}) {
   const sb = client || _resolveClient();
+  const ctx = _sessionContext();  // RLS: is_workspace_member(workspace_id) AND owner_user_id = auth.uid()
   const payload = {
     id: project.id,
     name: project.name || '',
     state: project.state ?? project,  // full project is the state
-    owner_user_id: project.owner_user_id || null,
-    workspace_id: project.workspace_id || null,
+    owner_user_id: project.owner_user_id || ctx.userId || null,
+    workspace_id: project.workspace_id || ctx.workspaceId || null,
     visibility: project.visibility || 'workspace',
     updated_at: new Date().toISOString(),
   };
@@ -362,10 +383,12 @@ export async function sdGetAnnouncements({ client } = {}) {
  * @param {{ client?: object }} [opts]
  * @returns {Promise<object[]>}  the upserted rows
  */
-export async function sdSaveAnnouncements(data, { client } = {}) {
+export async function sdSaveAnnouncements(data, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
+  const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
   const rows = (Array.isArray(data) ? data : []).map(item => ({
     id: item.id || undefined,
+    workspace_id: item.workspace_id || ws,
     title: item.title || '',
     body: item.body || '',
     state: item,       // full item dict stored in state JSONB (mirrors Python)
@@ -411,10 +434,12 @@ export async function sdGetSongs({ client } = {}) {
  * @param {{ client?: object }} [opts]
  * @returns {Promise<object[]>}
  */
-export async function sdSaveSongs(data, { client } = {}) {
+export async function sdSaveSongs(data, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
+  const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
   const rows = (Array.isArray(data) ? data : []).map(item => ({
     id: item.id || undefined,
+    workspace_id: item.workspace_id || ws,
     title: item.title || '',
     data: item,  // full song dict stored in data JSONB (mirrors Python)
   }));
@@ -464,8 +489,9 @@ export async function sdGetSettings({ client } = {}) {
  */
 export async function sdSaveSettings(settings, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
+  const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
   const payload = { settings };
-  if (workspaceId) payload.workspace_id = workspaceId;
+  if (ws) payload.workspace_id = ws;
   const result = await sb
     .from('workspace_settings')
     .upsert(payload, { onConflict: 'workspace_id' });
@@ -550,12 +576,15 @@ export async function sdGetPresence(projectId, { client } = {}) {
  */
 export async function sdPostPresenceHeartbeat(projectId, { client, userId, workspaceId } = {}) {
   const sb = client || _resolveClient();
+  const ctx = _sessionContext();  // RLS: user_id = auth.uid() AND is_workspace_member(workspace_id)
+  const uid = userId || ctx.userId;
+  const ws = workspaceId || ctx.workspaceId;
   const payload = {
     project_id: projectId,
     last_seen_at: new Date().toISOString(),
   };
-  if (userId) payload.user_id = userId;
-  if (workspaceId) payload.workspace_id = workspaceId;
+  if (uid) payload.user_id = uid;
+  if (ws) payload.workspace_id = ws;
   const result = await sb
     .from('workspace_presences')
     .upsert(payload, { onConflict: 'workspace_id,user_id,project_id' });
@@ -572,9 +601,10 @@ export async function sdPostPresenceHeartbeat(projectId, { client, userId, works
  */
 export async function sdDeletePresence({ client, userId } = {}) {
   const sb = client || _resolveClient();
+  const uid = userId || _sessionContext().userId;
   const q = sb.from('workspace_presences').delete();
-  if (userId) {
-    q.eq('user_id', userId);
+  if (uid) {
+    q.eq('user_id', uid);
   }
   const result = await q;
   _throwIfError(result, 'sdDeletePresence');
@@ -614,8 +644,9 @@ export async function sdGetTemplates({ client } = {}) {
  * @param {{ client?: object }} [opts]
  * @returns {Promise<object[]>}
  */
-export async function sdSaveTemplates(data, { client } = {}) {
+export async function sdSaveTemplates(data, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
+  const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
   // Filter out built-in/default templates — never overwrite them (mirrors Python)
   const custom = (Array.isArray(data) ? data : []).filter(
     t => !t.is_default && !t.built_in && !t.builtIn,
@@ -625,6 +656,7 @@ export async function sdSaveTemplates(data, { client } = {}) {
   }
   const rows = custom.map(item => ({
     id: item.id || undefined,
+    workspace_id: item.workspace_id || ws,
     name: item.name || '',
     template_data: item,
     is_default: false,

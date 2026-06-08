@@ -312,13 +312,14 @@ describe('sdSaveAnnouncements', () => {
     const chain = makeMockFrom({ data: anns, error: null });
     const client = { from: vi.fn(() => chain), rpc: vi.fn() };
 
-    const result = await sdSaveAnnouncements(anns, { client });
+    const result = await sdSaveAnnouncements(anns, { client, workspaceId: 'ws-uuid-1' });
 
     expect(client.from).toHaveBeenCalledWith('announcements');
     expect(chain.upsert).toHaveBeenCalled();
     const upsertArg = chain.upsert.mock.calls[0][0];
     expect(Array.isArray(upsertArg)).toBe(true);
-    expect(upsertArg[0]).toMatchObject({ id: 'ann-1', title: 'Potluck' });
+    // RLS WITH CHECK requires workspace_id on every inserted row.
+    expect(upsertArg[0]).toMatchObject({ id: 'ann-1', title: 'Potluck', workspace_id: 'ws-uuid-1' });
     expect(result).toEqual(anns);
   });
 
