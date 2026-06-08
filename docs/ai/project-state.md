@@ -1,6 +1,6 @@
 # Project State
 
-_Last updated: 2026-06-06 (issues #279 + #280 complete on `feat/desktop-anon-key-rls`; verification PASS — 149 pytest, 119 vitest, vite build)_
+_Last updated: 2026-06-08 (issue #294 complete on `feat/desktop-anon-key-rls`; verification PASS — 166 pytest, 120 vitest, vite build)_
 
 ## Current focus
 
@@ -12,8 +12,12 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## Recently completed
 
-- **All backlog work consolidated into ONE PR [#293](https://github.com/ajhochy/bulletin-generator/pull/293) (branch `feat/desktop-anon-key-rls`); draft PRs #284–#287/#289–#292 CLOSED as superseded (2026-06-06).** All CI green (js, python, db-integration, e2e-core). Contains #277-A/B/C/D(+e2e smoke)/E/G, #216, #224, #225, #279, #280, #272. **Both Supabase migrations DEPLOYED LIVE + verified** (`transfer_project_owner` RPC `20260606000001`; `project_revisions` unique index `20260606000002`). #180 scope-checked + closed. Follow-ups filed: **#294** (277-F PCO/calendar blocker), **#295** (renderer-side revision snapshot), #288 (new-member 403 race).
-  - **277-F NOT done — blocked on PCO/calendar (#294).** Flipping the packaged sidecar to `APP_MODE=electron` (required to boot without `DATABASE_URL`) switches server-side storage to local JSON, breaking the **server-side PCO proxy + Google-calendar** (they read workspace tokens via storage). PCO-scoped fix; the renderer data path itself is done + e2e-proven. **🔴 extractable-`DATABASE_URL` risk stands until 277-F lands; keep releases draft/non-public.**
+- **#294 — electron sidecar PCO proxy + Google calendar via Supabase REST (2026-06-08, `feat/desktop-anon-key-rls`).** Verification PASS: 166 pytest (incl. 17 new REST settings contract tests), 120 vitest, vite build. Branch `feat/desktop-anon-key-rls`, commit `376252ce`.
+  - **server.py:** new `_SupabaseRestSettings` class (module-level, after `_save_settings`): reads/writes `workspace_settings` via Supabase REST API using caller JWT + anon key; `_ok()` guards on env; `get_settings()` → GET with workspace_id cache; `save_settings()` → PATCH filtered by `workspace_id=eq.<id>` with `Prefer: return=representation`; both never raise. New `Handler._settings_storage()` method: in electron mode extracts JWT from `Authorization: Bearer` header, returns `_SupabaseRestSettings(jwt)` if env vars present, else falls back to `_storage_for_user`. `Handler._proxy_pco` and `Handler._handle_cal` now call `self._settings_storage(user)` instead of `self._storage_for_user(user)`. Server mode completely unchanged.
+  - **tests/test_supabase_rest_settings.py:** 17 unit tests covering `_ok()` gating, `get_settings()` parse/cache/empty/error, `save_settings()` PATCH URL filter/body/response/error/workspace-fetch/unresolvable paths. All mock `urllib.request.urlopen`; no DB needed. Wired into `ci.yml` `python` job and `scripts/run_ai_workflow.py` `CI_PYTEST_TARGETS`.
+  - **277-F blocker (#294) is now resolved in code.** The PCO proxy + Google calendar will read settings via REST in electron mode. 277-F (remove DATABASE_URL from release-electron.yml + flip APP_MODE=electron) can proceed after PR #293 is merged and the manual Electron smoke passes.
+- **All backlog work consolidated into ONE PR [#293](https://github.com/ajhochy/bulletin-generator/pull/293) (branch `feat/desktop-anon-key-rls`); draft PRs #284–#287/#289–#292 CLOSED as superseded (2026-06-06).** All CI green (js, python, db-integration, e2e-core). Contains #277-A/B/C/D(+e2e smoke)/E/G, #216, #224, #225, #279, #280, #272, **#294**. **Both Supabase migrations DEPLOYED LIVE + verified** (`transfer_project_owner` RPC `20260606000001`; `project_revisions` unique index `20260606000002`). #180 scope-checked + closed. Follow-ups: **#295** (renderer-side revision snapshot), #288 (new-member 403 race).
+  - **277-F is unblocked** — PCO/calendar fix (#294) landed. 277-F requires: PR #293 merged, manual Electron smoke passes, then remove `DATABASE_URL` from `release-electron.yml` and flip `APP_MODE=electron`. **🔴 extractable-`DATABASE_URL` risk stands until 277-F lands; keep releases draft/non-public.**
   - **#272 manual cutover items remain** (qa-matrix-m5.md): PDF fidelity, PCO import + calendar fetch, Storage-URL isolation, Electron auto-update + session persistence, packaged cross-tenant. Automatable portion (cross-tenant isolation, ownership/transfer, revision history, presence, electron data-routing) is `@core` e2e, green in CI.
 - **#279 + #280 — sidecar port-bind error handling + PyInstaller onedir (2026-06-06, `feat/desktop-anon-key-rls`).** Verification PASS: 149 pytest (incl. 7 new port-bind contract tests), 119 vitest, vite build. Commit `16d18c4`.
   - **#279 — server.py:** `run_server()` now wraps `ThreadingHTTPServer(...)` in try/except; catches `EADDRINUSE` (98) and `WSAEADDRINUSE` (10048); prints `[server] FATAL: port <PORT> already in use — another instance or a stale sidecar is running.` to stderr; exits with code 3. No traceback. Other `OSError` variants re-raise unchanged.
@@ -94,14 +98,32 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## Next step
 
-1. **Open draft PR** for `feat/desktop-anon-key-rls` (covers #224, #225, #279, #280 and all prior work on this branch).
-2. **Manual smoke handoff for #279/#280** — trigger a build, crash the app, relaunch; confirm (a) stale-sidecar reap clears port without "Exit code 1" dialog, and (b) cold-start is noticeably faster with onedir.
-3. Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
+1. **Open draft PR** for `feat/desktop-anon-key-rls` (covers #224, #225, #279, #280, #294 and all prior work on this branch). Update PR #293 description to include #294.
+2. **Manual smoke handoff for #279/#280/#294** — trigger a build, crash the app, relaunch; confirm (a) stale-sidecar reap clears port without "Exit code 1" dialog, (b) cold-start is noticeably faster with onedir, (c) PCO import and Google Calendar work in the packaged Electron build (requires `SUPABASE_URL` + `SUPABASE_ANON_KEY` bundled and a Supabase JWT forwarded from renderer).
+3. **277-F** — after PR #293 merged + Electron smoke passes: remove `DATABASE_URL` from `release-electron.yml`, flip `APP_MODE=electron` in the Electron sidecar spawn, verify sidecar boots cleanly without DATABASE_URL. This closes the 🔴 extractable-creds risk.
+4. Run the QA matrix in `docs/ai/qa-matrix-m5.md` during the cutover session:
    - Automated security suite: `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py tests/test_auth_middleware.py -v`
-   - Manual items (issue 023 presence smoke, Electron smoke, first-login domain provisioning).
+   - Manual items (issue 023 presence smoke, Electron smoke, first-login domain provisioning, PCO proxy + calendar fetch via REST path).
    - Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
 
 ## Recent coding-agent runs
+
+### 2026-06-08 — issue-294-electron-supabase-rest-settings
+- Files modified:
+  - `server.py` — added `_SupabaseRestSettings` class (after `_save_settings`): reads/writes `workspace_settings` via Supabase REST API using caller JWT + anon key; `_ok()` guards on env vars + JWT; `get_settings()` GET + cache workspace_id; `save_settings()` PATCH filtered by `workspace_id=eq.<id>`; both never raise (log + return safe defaults on error). Added `Handler._settings_storage()` method (after `_storage_for_user`): if IS_ELECTRON + JWT + SUPABASE_URL + SUPABASE_ANON_KEY present, returns `_SupabaseRestSettings(jwt)`; else falls back to `_storage_for_user`. Changed `Handler._proxy_pco` and `Handler._handle_cal` to call `self._settings_storage(user)` instead of `self._storage_for_user(user)`.
+  - `tests/test_supabase_rest_settings.py` — new file: 17 unit tests covering `_ok()` gating, `get_settings()` parse/cache/empty/error paths, `save_settings()` PATCH URL/body/response/error/workspace-id-fetch/unresolvable cases. All mock urllib.request.urlopen; no DB required.
+  - `.github/workflows/ci.yml` — added `tests/test_supabase_rest_settings.py` to `python` job pytest line.
+  - `scripts/run_ai_workflow.py` — added `tests/test_supabase_rest_settings.py` to `CI_PYTEST_TARGETS`.
+- Checks run:
+  - `.venv/bin/python -c "import server"` → PASS
+  - `.venv/bin/python -m pytest tests/test_supabase_rest_settings.py -v` → 17 passed
+  - `python3 scripts/run_ai_workflow.py checks --level pr` → PASS (166 pytest, 120 vitest / 1 skipped, vite build)
+- Decisions made: `_settings_storage` is gated on `IS_ELECTRON` (not `IS_DESKTOP`) so the `desktop` (legacy PyInstaller) mode is unaffected and server mode is completely unchanged. The class uses `urllib.request` (already imported) rather than adding a new HTTP dependency. PATCH uses a `workspace_id=eq.<id>` PostgREST filter (never an unfiltered bulk update) — safe because RLS also enforces row ownership independently. Token-refresh write-back: `_refresh_pco_token` and `_refresh_google_token` both call `_save_settings(s, storage)` with the same storage object passed in — so when `storage` is a `_SupabaseRestSettings`, the refreshed token PATCH goes back through REST correctly. No change needed there.
+- Deviations from spec: none.
+- Concerns:
+  - The `_SupabaseRestSettings.save_settings()` PATCH uses `Prefer: return=representation` to get the updated row back. If the PostgREST version doesn't support it (very old Supabase), the response body may be empty and `save_settings` returns the input `data` as the fallback — which is safe.
+  - Token refresh write-back through REST is correct by design (same `storage` object), but live manual smoke on the Electron packaged build (PCO import after token expiry) is the only way to verify the full round-trip including the OAuth refresh path.
+  - `_handle_drive_upload` still uses `self._storage_for_user(user)` — not changed, per spec. Drive upload is not a concern for the 277-F gate and the spec explicitly listed only `_proxy_pco` + `_handle_cal`.
 
 ### 2026-06-06 — issue-279-port-bind-and-issue-280-onedir
 - Files modified:

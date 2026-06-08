@@ -424,6 +424,99 @@ def _save_settings(data: dict, storage=None) -> dict:
     return (storage or get_storage(DATA_DIR)).save_settings(data)
 
 
+class _SupabaseRestSettings:
+    """Read/write ``workspace_settings`` via the Supabase REST API using the
+    caller's JWT + the publishable anon key.
+
+    Used in electron mode where the sidecar has no DATABASE_URL, so
+    ``_storage_for_user`` would otherwise fall through to local JSON storage
+    (empty).  RLS scopes the query to the caller's own workspace automatically
+    — no workspace_id is needed server-side for the GET.
+
+    The interface matches the ``get_settings()`` / ``save_settings()`` contract
+    that every other storage backend exposes, so it slots in transparently
+    wherever a storage object is accepted.
+    """
+
+    def __init__(self, jwt: str):
+        self._jwt = jwt
+        base = os.environ.get("SUPABASE_URL", "").rstrip("/")
+        self._base = base
+        self._anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
+        self._workspace_id = None  # cached after first successful fetch
+
+    def _ok(self) -> bool:
+        """Return True only when all required env vars + JWT are present."""
+        return bool(self._jwt and self._base and self._anon_key)
+
+    def _headers(self) -> dict:
+        return {
+            "apikey": self._anon_key,
+            "Authorization": f"Bearer {self._jwt}",
+            "Content-Type": "application/json",
+        }
+
+    def _fetch_row(self):
+        """GET the caller's workspace_settings row. Returns the row dict or None."""
+        url = (
+            f"{self._base}/rest/v1/workspace_settings"
+            "?select=workspace_id,settings&limit=1"
+        )
+        req = urllib.request.Request(url, headers=self._headers(), method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                rows = json.loads(resp.read())
+            if rows:
+                self._workspace_id = rows[0].get("workspace_id")
+                return rows[0]
+            return None
+        except Exception as exc:
+            print(f"  [supabase-rest] _fetch_row failed: {exc}")
+            return None
+
+    def get_settings(self) -> dict:
+        """Return the workspace's settings dict, or {} on any error (never raises)."""
+        if not self._ok():
+            return {}
+        try:
+            row = self._fetch_row()
+            if row is None:
+                return {}
+            return row.get("settings") or {}
+        except Exception as exc:
+            print(f"  [supabase-rest] get_settings failed: {exc}")
+            return {}
+
+    def save_settings(self, data: dict) -> dict:
+        """PATCH the workspace's settings. Returns the updated settings or
+        *data* unchanged on any error (never raises)."""
+        if not self._ok():
+            return data
+        try:
+            # Resolve workspace_id (cached from a prior get_settings call, else fetch now)
+            if not self._workspace_id:
+                self._fetch_row()
+            if not self._workspace_id:
+                print("  [supabase-rest] save_settings: cannot resolve workspace_id")
+                return data
+            url = (
+                f"{self._base}/rest/v1/workspace_settings"
+                f"?workspace_id=eq.{self._workspace_id}"
+            )
+            body = json.dumps({"settings": data}).encode()
+            hdrs = dict(self._headers())
+            hdrs["Prefer"] = "return=representation"
+            req = urllib.request.Request(url, data=body, headers=hdrs, method="PATCH")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                rows = json.loads(resp.read())
+            if rows:
+                return rows[0].get("settings") or data
+            return data
+        except Exception as exc:
+            print(f"  [supabase-rest] save_settings failed: {exc}")
+            return data
+
+
 def _pco_auth_header(storage=None):
     """Return the OAuth Bearer header from stored access token, or None."""
     settings = _get_settings(storage)
@@ -1323,6 +1416,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             workspace_id=user.get("workspace_id"),
             user_claims=user.get("claims"),
         )
+
+    def _settings_storage(self, user):
+        """Return the settings storage object for the current request.
+
+        In electron mode, if the renderer forwarded a Supabase JWT in the
+        ``Authorization: Bearer`` header, and the env has SUPABASE_URL +
+        SUPABASE_ANON_KEY, return a ``_SupabaseRestSettings`` that reads/writes
+        the caller's ``workspace_settings`` row via the REST API (RLS-scoped by
+        the JWT).  This lets PCO proxy and Google Calendar work without a
+        DATABASE_URL.
+
+        Falls back to ``_storage_for_user`` for all other cases (server mode is
+        completely unchanged).
+        """
+        if IS_ELECTRON:
+            auth = self.headers.get("Authorization", "") or ""
+            jwt = auth[7:].strip() if auth[:7].lower() == "bearer " else ""
+            if jwt and os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_ANON_KEY"):
+                return _SupabaseRestSettings(jwt)
+        return self._storage_for_user(user)
 
     # ── Routing ────────────────────────────────────────────────────────────────
 
@@ -3005,7 +3118,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        storage = self._storage_for_user(user)
+        storage = self._settings_storage(user)
         auth = _pco_auth_header(storage)
         if not auth:
             return self._send_json({"errors": [{"detail": "Planning Center credentials are not configured."}]}, 503)
@@ -3378,7 +3491,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         user = self._require_auth()
         if user is None:
             return
-        storage = self._storage_for_user(user)
+        storage = self._settings_storage(user)
         try:
             qs = urllib.parse.urlparse(self.path).query
             params = urllib.parse.parse_qs(qs)
