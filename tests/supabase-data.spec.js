@@ -128,6 +128,17 @@ describe('sdGetProject', () => {
 
     await expect(sdGetProject('proj_missing', { client })).rejects.toThrow();
   });
+
+  it('unwraps the stored project wrapper so state = the editor content', async () => {
+    // Migrated/server-saved rows store the wrapper { id, name, state: <content>, ... }
+    const inner = { items: [{ type: 'song' }], svcTitle: 'Lake Service', coverImageUrl: 'x' };
+    const wrapped = { id: 'p1', name: 'B', state: { id: 'p1', name: 'B', state: inner, createdAt: 't' } };
+    const chain = makeMockFrom({ data: wrapped, error: null });
+    const client = { from: vi.fn(() => chain), rpc: vi.fn() };
+
+    const result = await sdGetProject('p1', { client });
+    expect(result.state).toEqual(inner);  // unwrapped to the inner content
+  });
 });
 
 describe('sdSaveProject', () => {
@@ -153,7 +164,13 @@ describe('sdSaveProject', () => {
     expect(upsertArg).toMatchObject({
       id: 'proj_abc',
       name: 'My Bulletin',
+      workspace_id: 'ws-uuid-1',
+      owner_user_id: 'user-uuid-1',
     });
+    // state column is stored as the wrapper { id, name, state: <content>, ... }
+    // so it stays readable by server.py (_pg_row_to_project) + the unwrap on read.
+    expect(upsertArg.state).toMatchObject({ id: 'proj_abc', name: 'My Bulletin' });
+    expect(upsertArg.state.state).toEqual({ items: [{ type: 'song', title: 'Amazing Grace' }] });
     expect(result).toEqual(saved);
   });
 

@@ -197,7 +197,17 @@ export async function sdGetProject(id, { client } = {}) {
     .eq('id', id)
     .single();
   _throwIfError(result, `sdGetProject(${id})`);
-  return result.data;
+  const row = result.data;
+  // Unwrap the stored project WRAPPER so callers get state = the editor content.
+  // Migrated/server-saved rows store state = { id, name, state: <content>, ... }
+  // (server.py surfaces project.state = the inner content via _pg_row_to_project).
+  // Flat-stored rows (state has top-level `items`) pass through unchanged.
+  if (row && row.state && typeof row.state === 'object'
+      && row.state.state && typeof row.state.state === 'object'
+      && !Array.isArray(row.state.items)) {
+    return Object.assign({}, row, { state: row.state.state });
+  }
+  return row;
 }
 
 /**
@@ -221,10 +231,23 @@ export async function sdGetProject(id, { client } = {}) {
 export async function sdSaveProject(project, { client } = {}) {
   const sb = client || _resolveClient();
   const ctx = _sessionContext();  // RLS: is_workspace_member(workspace_id) AND owner_user_id = auth.uid()
+  // The `state` JSONB column stores the project WRAPPER { id, name, state:
+  // <editor content>, createdAt, updatedAt } — the same shape migrated projects
+  // use and that server.py's _pg_row_to_project expects (it surfaces
+  // project.state = the inner content). Storing the flat content here would make
+  // the project unreadable in server mode (project.state would be undefined).
+  const content = (project.state && typeof project.state === 'object') ? project.state : project;
+  const stateColumn = {
+    id: project.id,
+    name: project.name || '',
+    state: content,
+    createdAt: project.createdAt || project.created_at || undefined,
+    updatedAt: project.updatedAt || new Date().toISOString(),
+  };
   const payload = {
     id: project.id,
     name: project.name || '',
-    state: project.state ?? project,  // full project is the state
+    state: stateColumn,
     owner_user_id: project.owner_user_id || ctx.userId || null,
     workspace_id: project.workspace_id || ctx.workspaceId || null,
     visibility: project.visibility || 'workspace',
