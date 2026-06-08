@@ -557,11 +557,32 @@ export async function sdSaveSettings(settings, { client, workspaceId } = {}) {
  */
 export async function sdGetMembers({ client } = {}) {
   const sb = client || _resolveClient();
-  const result = await sb
-    .from('workspace_members')
-    .select('user_id, role, profiles(display_name, email)');
-  _throwIfError(result, 'sdGetMembers');
-  return result.data;
+  // There is NO foreign key from workspace_members → profiles (both reference
+  // auth.users), so PostgREST cannot embed `profiles(...)` — that returns 400.
+  // Fetch members, then resolve names with a direct profiles read (the
+  // profiles_select RLS policy allows reading co-workspace profiles), and join
+  // client-side.
+  const membersRes = await sb.from('workspace_members').select('user_id, role');
+  _throwIfError(membersRes, 'sdGetMembers');
+  const members = Array.isArray(membersRes.data) ? membersRes.data : [];
+  const ids = members.map(m => m.user_id).filter(Boolean);
+  const byId = {};
+  if (ids.length) {
+    const profRes = await sb.from('profiles').select('id, display_name, email').in('id', ids);
+    if (!profRes.error && Array.isArray(profRes.data)) {
+      profRes.data.forEach(p => { byId[String(p.id)] = p; });
+    }
+  }
+  return members.map(m => {
+    const p = byId[String(m.user_id)] || {};
+    return {
+      user_id: m.user_id,
+      role: m.role,
+      display_name: p.display_name || null,
+      email: p.email || null,
+      profiles: { display_name: p.display_name || null, email: p.email || null },
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

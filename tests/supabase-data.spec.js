@@ -49,6 +49,7 @@ function makeMockFrom(opts = { data: [], error: null }) {
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
     gt: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     upsert: vi.fn().mockReturnThis(),
@@ -450,18 +451,21 @@ describe('sdSaveSettings', () => {
 // ---------------------------------------------------------------------------
 
 describe('sdGetMembers', () => {
-  it('queries workspace_members with profiles join', async () => {
-    const mockMembers = [
-      { user_id: 'user-1', role: 'owner', profiles: { display_name: 'Alice', email: 'alice@example.com' } },
-    ];
-    const chain = makeMockFrom({ data: mockMembers, error: null });
-    const client = { from: vi.fn(() => chain), rpc: vi.fn() };
+  it('joins workspace_members with a direct profiles read (no FK embed)', async () => {
+    const membersChain = makeMockFrom({ data: [{ user_id: 'user-1', role: 'owner' }], error: null });
+    const profilesChain = makeMockFrom({ data: [{ id: 'user-1', display_name: 'Alice', email: 'alice@example.com' }], error: null });
+    const client = { from: vi.fn(t => (t === 'profiles' ? profilesChain : membersChain)), rpc: vi.fn() };
 
     const result = await sdGetMembers({ client });
 
     expect(client.from).toHaveBeenCalledWith('workspace_members');
-    expect(chain.select).toHaveBeenCalledWith(expect.stringContaining('profiles'));
-    expect(result).toEqual(mockMembers);
+    expect(client.from).toHaveBeenCalledWith('profiles');
+    // must NOT embed profiles in the members select — there's no FK, so the
+    // PostgREST embed returns 400.
+    expect(membersChain.select).not.toHaveBeenCalledWith(expect.stringContaining('profiles'));
+    expect(profilesChain.in).toHaveBeenCalledWith('id', ['user-1']);
+    expect(result[0]).toMatchObject({ user_id: 'user-1', role: 'owner', display_name: 'Alice', email: 'alice@example.com' });
+    expect(result[0].profiles).toMatchObject({ display_name: 'Alice', email: 'alice@example.com' });
   });
 
   it('throws on supabase error', async () => {
