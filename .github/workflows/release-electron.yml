@@ -63,9 +63,13 @@ jobs:
       # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
       # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
       # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
-      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
-      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
-      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      # NOTE (issue #277-F): the owner-role DATABASE_URL is NO LONGER bundled. In
+      # Electron mode the renderer does all data CRUD via supabase-js + the anon key
+      # (RLS enforced), and the sidecar reaches Supabase via the user's JWT + anon key
+      # (PCO/calendar settings storage). A bundled DATABASE_URL would be extractable
+      # owner-role creds that bypass RLS — so only the anon key + OAuth client creds
+      # are embedded; rotate them if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY and DATABASE_URL are intentionally never bundled.
       - name: Write .env
         env:
           PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
@@ -74,7 +78,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
-          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
         run: |
           python - <<'PYEOF'
           import os
@@ -82,7 +85,6 @@ jobs:
               "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
               "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
               "SUPABASE_URL", "SUPABASE_ANON_KEY",
-              "DATABASE_URL",
           ]
           with open(".env", "w") as f:
               for k in keys:
@@ -217,9 +219,13 @@ jobs:
       # _load_dotenv(BASE_DIR/.env). (The desktop_config.py path is only read by the
       # deprecated launcher.py and is unused in Electron builds.) This .env is bundled
       # into the PyInstaller binary below so the packaged sidecar can reach Supabase.
-      # NOTE: this embeds DATABASE_URL + Supabase keys in the distributed binary —
-      # acceptable for a trusted single-org distribution; rotate creds if a build leaks.
-      # SUPABASE_SERVICE_ROLE_KEY is intentionally never bundled (god-mode key).
+      # NOTE (issue #277-F): the owner-role DATABASE_URL is NO LONGER bundled. In
+      # Electron mode the renderer does all data CRUD via supabase-js + the anon key
+      # (RLS enforced), and the sidecar reaches Supabase via the user's JWT + anon key
+      # (PCO/calendar settings storage). A bundled DATABASE_URL would be extractable
+      # owner-role creds that bypass RLS — so only the anon key + OAuth client creds
+      # are embedded; rotate them if a build leaks.
+      # SUPABASE_SERVICE_ROLE_KEY and DATABASE_URL are intentionally never bundled.
       - name: Write .env
         env:
           PCO_CLIENT_ID:        ${{ secrets.PCO_CLIENT_ID }}
@@ -228,7 +234,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY:    ${{ secrets.SUPABASE_ANON_KEY }}
-          DATABASE_URL:         ${{ secrets.DATABASE_URL }}
         shell: python
         run: |
           import os
@@ -236,7 +241,6 @@ jobs:
               "PCO_CLIENT_ID", "PCO_CLIENT_SECRET",
               "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
               "SUPABASE_URL", "SUPABASE_ANON_KEY",
-              "DATABASE_URL",
           ]
           with open(".env", "w") as f:
               for k in keys:
