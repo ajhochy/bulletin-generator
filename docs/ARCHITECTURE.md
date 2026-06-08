@@ -17,9 +17,9 @@ This project supports two first-class deployment modes from one codebase.
 
 - shared self-hosted deployment (Docker)
 - browser access for multiple users
-- Postgres-backed shared storage
-- collaboration metadata and conflict protection
-- Google Workspace authentication (Google OpenID Connect)
+- Supabase Postgres + Supabase Storage for all application data
+- Supabase Auth for user authentication (Google OAuth and email magic links)
+- ownership model with presence heartbeat and read-only mode for non-owners
 - admin-only deployment/update controls
 - updates via Watchtower sidecar
 
@@ -32,96 +32,124 @@ This project supports two first-class deployment modes from one codebase.
 All route handlers in `server.py` call a `StorageBackend` interface rather than reading or writing files directly. The concrete implementation is chosen at startup based on `APP_MODE`:
 
 - `JsonStorageBackend`: reads/writes JSON files in `DATA_DIR`. Used in desktop mode and local dev.
-- `PostgresStorageBackend`: reads/writes a Postgres database. Used in server mode (`APP_MODE=server`).
+- `PostgresStorageBackend`: reads/writes Supabase Postgres. Used in server mode (`APP_MODE=server`).
 
 Call `get_storage()` to obtain the active backend. The interface covers projects, settings, announcements, songs, templates, and font metadata.
 
-**What is stored in Postgres (server mode):**
+**What is stored in Supabase (server mode):**
 
-| Table / entity | Description |
-|----------------|-------------|
-| `projects` | All bulletin projects, with visibility and owner info |
-| `project_revisions` | Full revision history for every project save |
-| `settings` | Deployment-wide settings (one shared row) |
-| `announcements` | Announcement bank |
-| `songs` | Song database |
-| `templates` | Bulletin layout templates |
-| `fonts` | Font file metadata (family name, style, MIME type, path) |
-| `users` | Authenticated user records (email, name, Google sub) |
-| `sessions` | Signed browser sessions (cookie-based) |
+| Store | Table / bucket | Contents |
+|-------|---------------|----------|
+| Postgres | `projects` | All bulletin projects, with visibility and owner info |
+| Postgres | `project_revisions` | Full revision history for every project save |
+| Postgres | `workspace_settings` | Per-workspace settings (OAuth tokens, calendar config, etc.) |
+| Postgres | `announcements` | Announcement bank |
+| Postgres | `songs` | Song database |
+| Postgres | `templates` | Bulletin layout templates |
+| Postgres | `fonts` | Font file metadata (family name, MIME type, Storage path) |
+| Postgres | `workspaces` | Workspace records |
+| Postgres | `workspace_members` | Member roles within each workspace |
+| Postgres | `workspace_presences` | Active editor presence heartbeats |
+| Storage | `project-assets` | Cover images and staff logo images (uploaded on first save) |
+| Storage | `workspace-fonts` | User-uploaded font binary files |
+| Supabase Auth | — | User accounts and sessions |
 
-**What stays on disk (both modes):**
+**What stays on disk:**
 
-- Font binary files: `data/fonts/user/` and `data/fonts/cache/`
-- Migration backups: `data/backups/`
-- Desktop mode: all editable JSON files (no Postgres)
+- `data/backups/` — migration backup output (created by `scripts/backup.sh` and the migration script)
+- Desktop mode: all editable JSON files (no Postgres or Storage)
+
+In server mode, `data/fonts/` is **not** used. Font binaries are stored in the Supabase Storage `workspace-fonts` bucket.
 
 ### Auth Layer (`auth.py`)
 
-Server mode uses Google OpenID Connect for user authentication (separate from the Google Calendar/Drive integration).
+Server mode uses **Supabase Auth** for user authentication. The frontend receives
+a Supabase access token (JWT) and sends it as `Authorization: Bearer <token>` on
+every API request. `auth.py` verifies the token signature using `SUPABASE_JWT_SECRET`.
 
-- Route `GET /auth/google/login` → redirects to Google consent
-- Route `GET /auth/google/callback` → exchanges code, upserts the user in the `users` table, creates a signed session cookie
+- `SUPABASE_URL` — project URL, used to fetch the JWKS for token verification
+- `SUPABASE_JWT_SECRET` — signing secret (HS256), used as a fallback verifier
 
-Sessions are stored in the `sessions` table. The cookie carries a session token that is validated on each request.
+The old `auth.py` Google-OpenID-Connect app-login flow (`/auth/google/login`,
+`/auth/google/callback`, `AUTH_GOOGLE_*` env vars, `GOOGLE_WORKSPACE_DOMAIN`,
+`sessions` table) is **disabled**. Those routes return 404. Supabase Auth handles
+Google OAuth and email magic-link flows from the client side.
 
-Domain restriction: `GOOGLE_WORKSPACE_DOMAIN` limits which Google accounts can sign in. Only users whose email domain matches this value are allowed.
+**Google OAuth flows:**
 
-**Two Google OAuth flows — do not mix:**
+| Flow | Configured via | Scopes | Callback path |
+|------|---------------|--------|---------------|
+| User login | Supabase Dashboard only | `openid email profile` | Supabase-managed |
+| Calendar/Drive integration | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` in `.env` | `calendar drive` | `APP_URL/oauth/google/callback` |
 
-| Flow | Env vars | Scopes | Callback path | Stored in |
-|------|----------|--------|---------------|-----------|
-| App login (auth.py) | `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`, `AUTH_GOOGLE_REDIRECT_URI` | `openid email profile` | `/auth/google/callback` | `sessions` table |
-| Calendar/Drive (server.py) | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `calendar drive` | `/oauth/google/callback` | `settings.json` / settings table |
+The Calendar/Drive OAuth callback path in `server.py` also signs and verifies a
+workspace id into the OAuth `state` parameter using HMAC-SHA256
+(`OAUTH_STATE_SECRET` → `SUPABASE_JWT_SECRET` → client secret fallback), so a
+token connecting PCO/Google in workspace B cannot land in workspace A.
 
 ### Project Visibility Model
 
-Each project has a `visibility` field:
+All projects are **workspace-visible by default** — `save_project` always
+inserts `visibility='workspace'`. There is no private/share toggle. Editing is
+gated by ownership, and **hand-off** (`POST /api/projects/{id}/transfer`)
+reassigns the sole editor. The `'private'` column default is vestigial.
 
-- `private` — visible only to the owning user
-- `workspace` — visible to all authenticated users in the deployment
-- `legacy` — migrated from JSON; visible to all (treated like `workspace`)
+`storage.list_projects(user_id=...)` returns only projects the requesting user
+can see within the caller's workspace. When `workspace_id` is `None`
+(admin/migration paths), all projects are returned.
 
-`storage.list_projects(user_id=...)` returns only projects the requesting user can see. When `user_id` is `None` (admin/migration paths), all projects are returned.
+### Ownership and Presence Model
 
-### Revision History and Optimistic Locking
+- **Owner-only writes**: `POST /api/projects` returns 403 for non-owners. Frontend shows a toast.
+- **Read-only mode**: Non-owners see a banner with a Duplicate button. Autosave is suppressed.
+- **Duplicate**: Creates a new project owned by the current user.
+- **Hand-off**: `POST /api/projects/{id}/transfer` transfers ownership to another workspace member.
+- **Presence**: `POST /api/presence/heartbeat` (30 s), `GET /api/presence`, `DELETE /api/presence`. Best-effort; errors are swallowed.
 
-Every project save in server mode appends a row to `project_revisions`:
+Conflict detection and `_clientRevision` have been **removed**. No 409 responses are generated.
+
+### Revision History
+
+Every project save appends a row to `project_revisions`:
 
 - `revision` — monotonically incrementing integer
 - `summary` — human-readable description of what changed (generated by `revisions.py`)
 - `updated_by_email`, `updated_by_user_id` — attribution
 
-Conflict detection uses optimistic locking. The client includes `_clientRevision` with each save. If the stored revision does not match, `save_project_transactional()` raises `ConflictError` and the route returns HTTP 409 with the current server-side revision, timestamp, and editor name so the UI can show a conflict banner.
+### Migration Pipeline (`scripts/`)
 
-### Migration Pipeline (`migrations/`)
+`scripts/migrate_to_supabase.py` is the operator entry point for importing
+legacy JSON data into the Supabase multi-tenant schema.
 
-A one-time migration imports legacy JSON data into Postgres when upgrading an existing deployment.
+**What it migrates:**
 
-**Files:**
+| JSON file | Postgres table |
+|-----------|---------------|
+| `data/projects.json` | `projects` |
+| `data/announcements.json` | `announcements` |
+| `data/settings.json` | `workspace_settings` |
+| `data/song_database.json` | `songs` |
+| `data/templates.json` | `templates` |
 
-| Module | Migrates |
-|--------|---------|
-| `import_projects.py` | `data/projects.json` → `projects` table |
-| `import_settings.py` | `data/settings.json` → `settings` table |
-| `import_announcements.py` | `data/announcements.json` → `announcements` table |
-| `import_songs.py` | `data/song_database.json` → `songs` table |
-| `import_templates.py` | `data/templates.json` → `templates` table |
-| `import_fonts.py` | `data/fonts/` dirs → `fonts` metadata table (binaries stay on disk) |
-| `v001_initial_schema.py` | Creates all Postgres tables |
-| `run_all_migrations.py` | Operator entry point: runs all importers in sequence |
+OAuth tokens (`pcoAccessToken`, `pcoRefreshToken`, `googleAccessToken`,
+`googleRefreshToken`) are **excluded** — they are secrets and must be re-issued
+after migration.
+
+Font binaries are **not** migrated by this script. After migration, upload fonts
+via the app UI; they will be stored in the `workspace-fonts` Storage bucket.
 
 **Commands:**
 
 ```bash
-# Pre-flight check (no DB connection):
-docker compose exec app python -m migrations.run_all_migrations --check
+set -a && source .env && set +a
 
-# Dry run (validates JSON, connects to DB, no writes):
-docker compose exec app python -m migrations.run_all_migrations --dry-run
+# Dry run (no writes):
+APP_MODE=server .venv/bin/python scripts/migrate_to_supabase.py \
+  --source ./data --dry-run
 
-# Full migration (creates backup at data/backups/TIMESTAMP/ before writing):
-docker compose exec app python -m migrations.run_all_migrations
+# Execute:
+APP_MODE=server .venv/bin/python scripts/migrate_to_supabase.py \
+  --source ./data --execute
 ```
 
 All importers are idempotent — re-running skips records that already exist in Postgres.
@@ -169,16 +197,16 @@ Features that should usually be mode-specific:
 
 ## Server Mode: Data Directory Layout
 
-The repo's `docker-compose.yml` bind-mounts `./data:/app/data` — the host folder `./data` sits next to `docker-compose.yml` and holds `projects.json`, `settings.json`, etc.
+The repo's `docker-compose.yml` bind-mounts `./data:/app/data`. In the current
+Supabase architecture, this directory holds only migration output:
 
-**The Synology NAS production deployment uses a different host path: `./app/data:/app/data`.** The container side (`/app/data`) is identical; only the host side differs because of how the NAS organizes the stack's working directory.
+- `data/backups/` — timestamped pg_dump output from `scripts/backup.sh`
 
-Implications:
+Live application data (projects, songs, fonts, images) is stored entirely in
+Supabase Postgres and Supabase Storage — nothing is written to `./data` during
+normal operation.
 
-- Do **not** "fix" the repo's `./data:/app/data` to match the NAS — that would break every dev checkout and any other server deployment.
-- When pulling/restarting on the NAS, the bind-mount override is applied there (via the NAS's compose file or stack config), not in this repo.
-- Backups taken from the NAS live under `./app/data/`; backups from a dev or generic server install live under `./data/`. Same JSON schema, different host path.
-- If you ever need to migrate data between the two, copy the contents of the source `data/` folder into the destination's bind-mount target — no transformation needed.
+**The Synology NAS production deployment uses a different host path: `./app/data:/app/data`.** The container side (`/app/data`) is identical; only the host side differs because of how the NAS organizes the stack's working directory. Do **not** "fix" the repo's `./data:/app/data` to match the NAS.
 
 ## GitHub Organization
 

@@ -124,7 +124,9 @@ Users sign in with their own Planning Center and Google accounts through the pac
 
 ### Docker (server mode)
 
-Server mode requires Postgres and Google Workspace for user authentication.
+Server mode uses [Supabase](https://supabase.com) for Postgres storage, Auth,
+and file assets. User authentication is handled by Supabase Auth (Google OAuth
+and email magic links). There is no separate app-login Google OAuth flow.
 
 #### Environment variables
 
@@ -138,29 +140,45 @@ cp .env.example .env
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Full Postgres connection URL (auto-built from `POSTGRES_*` vars by default) |
-| `POSTGRES_DB` | Postgres database name (default: `bulletindb`) |
-| `POSTGRES_USER` | Postgres username (default: `bulletin`) |
-| `POSTGRES_PASSWORD` | Postgres password — **change before deploying** |
+| `DATABASE_URL` | Supabase Postgres direct connection URL (port 5432, session mode). Get from Dashboard → Settings → Database → Connection string. |
+| `SUPABASE_URL` | Public HTTPS URL of the Supabase project. Get from Dashboard → Settings → API → Project URL. |
+| `SUPABASE_ANON_KEY` | Browser-safe anon/publishable JWT. Get from Dashboard → Settings → API → anon (public). Safe to ship to the browser/Electron client. |
+| `SUPABASE_JWT_SECRET` | Server-side JWT signing secret. Used by `auth.py` to verify Supabase access tokens. Get from Dashboard → Settings → API → JWT Secret. **Never expose to frontend JS.** |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role API key (JWT) for Supabase Storage uploads. Used by `storage_assets.py` and `storage.py`. Get from Dashboard → Settings → API → service_role. **Server-side only.** |
 | `APP_URL` | Public URL of your deployment, e.g. `https://bulletin.yourchurch.org` |
-| `AUTH_GOOGLE_CLIENT_ID` | OAuth client ID for app login (Google Workspace identity) |
-| `AUTH_GOOGLE_CLIENT_SECRET` | OAuth client secret for app login |
-| `AUTH_GOOGLE_REDIRECT_URI` | Must be `APP_URL/auth/google/callback` |
-| `GOOGLE_WORKSPACE_DOMAIN` | Domain to restrict logins, e.g. `yourchurch.org` |
+| `PCO_CLIENT_ID` | Planning Center OAuth client ID |
+| `PCO_CLIENT_SECRET` | Planning Center OAuth client secret |
 
-**Two separate Google OAuth flows — do not mix them up:**
-
-- **App login** (`AUTH_GOOGLE_*`): authenticates users into the app itself. Uses identity scopes only (`openid email profile`). Redirect URI: `APP_URL/auth/google/callback`.
-- **Calendar/Drive integration** (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`): connects the shared Google Calendar feed. Uses calendar+drive scopes. Redirect URI: `APP_URL/oauth/google/callback`.
-
-These may point to the same Google OAuth client or to separate ones. Set them separately.
-
-**Also required (PCO):**
+**Optional but recommended:**
 
 | Variable | Purpose |
 |----------|---------|
-| `PCO_CLIENT_ID` | Planning Center OAuth client ID |
-| `PCO_CLIENT_SECRET` | Planning Center OAuth client secret |
+| `OAUTH_STATE_SECRET` | HMAC key for signing the OAuth `state` parameter (PCO and Google Calendar OAuth). Falls back to `SUPABASE_JWT_SECRET` if unset. Set an explicit value to isolate the OAuth signing key. |
+| `SUPABASE_SERVICE_ROLE_URL` | Postgres URL using service_role credentials — for RLS-bypassing admin work only (`db.admin_transaction()`). Falls back to `DATABASE_URL` if unset. |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID for Calendar + Drive integration. |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret for Calendar + Drive. |
+| `POSTGRES_DB` | Postgres database name used by the local `postgres` service in `docker-compose.yml`. Default: `bulletindb` |
+| `POSTGRES_USER` | Postgres username for the local `postgres` service. Default: `bulletin` |
+| `POSTGRES_PASSWORD` | Postgres password for the local `postgres` service. Required if running the bundled `postgres` container. |
+
+**Google OAuth flows — there is only one calendar/drive flow:**
+
+| Flow | Env vars | Scopes | Callback path |
+|------|----------|--------|---------------|
+| User login (Supabase Auth) | Configured in Supabase Dashboard only — not in `.env` | `openid email profile` | Supabase-managed |
+| Calendar/Drive integration | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | `calendar drive` | `APP_URL/oauth/google/callback` |
+
+The old `AUTH_GOOGLE_*` and `GOOGLE_WORKSPACE_DOMAIN` variables are **not
+used**. User authentication is delegated to Supabase Auth. Configure Google
+OAuth in the Supabase Dashboard (Authentication → Providers → Google).
+
+**OAuth redirect URIs to register:**
+
+| Provider | URI to register |
+|----------|-----------------|
+| Planning Center | `APP_URL/oauth/pco/callback` |
+| Google Calendar/Drive | `APP_URL/oauth/google/callback` |
+| Google (Supabase Auth) | `https://<supabase-ref>.supabase.co/auth/v1/callback` |
 
 #### First-run steps
 
@@ -168,34 +186,40 @@ These may point to the same Google OAuth client or to separate ones. Set them se
 
 ```bash
 cp .env.example .env
-# Set POSTGRES_PASSWORD, APP_URL, AUTH_GOOGLE_*, GOOGLE_WORKSPACE_DOMAIN,
-# GOOGLE_CLIENT_ID/SECRET, PCO_CLIENT_ID/SECRET
+# Set DATABASE_URL, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_JWT_SECRET,
+# SUPABASE_SERVICE_ROLE_KEY, APP_URL, PCO_CLIENT_ID/SECRET
 ```
 
-2. Register OAuth redirect URIs in Google Cloud Console:
-   - App login callback: `APP_URL/auth/google/callback`
-   - Calendar/Drive callback: `APP_URL/oauth/google/callback`
+2. Apply Supabase schema migrations (SQL files in `supabase/migrations/`) via
+   the Supabase Dashboard SQL editor or the Supabase CLI.
 
-3. Register the PCO redirect URI in Planning Center:
-   - `APP_URL/oauth/pco/callback`
+3. Register OAuth redirect URIs (see table above).
 
-4. Start all services:
+4. Start the container:
 
 ```bash
 docker compose up -d
 ```
 
-5. Run the one-time data migration (only needed when upgrading from a pre-Postgres deployment with existing JSON data):
+5. (One-time) If migrating from a legacy JSON-backed deployment, run the data
+   migration script to import existing JSON data into Supabase Postgres:
 
 ```bash
 # Preview what will be migrated (no writes):
-docker compose exec app python -m migrations.run_all_migrations --dry-run
+set -a && source .env && set +a
+APP_MODE=server .venv/bin/python scripts/migrate_to_supabase.py \
+  --source ./data --dry-run
 
-# Migrate (creates a timestamped backup first):
-docker compose exec app python -m migrations.run_all_migrations
+# Execute migration:
+APP_MODE=server .venv/bin/python scripts/migrate_to_supabase.py \
+  --source ./data --execute
 ```
 
-The migration creates a backup at `data/backups/TIMESTAMP/` before writing anything to Postgres. On a fresh deployment with no legacy JSON data, skip this step.
+The script migrates projects, announcements, settings, songs, and templates
+from JSON files into Postgres. OAuth tokens are excluded — they must be
+re-issued after migration. The script is idempotent: re-running is safe.
+
+On a fresh deployment with no legacy JSON data, skip this step.
 
 6. Open the app:
 
@@ -203,44 +227,58 @@ The migration creates a backup at `data/backups/TIMESTAMP/` before writing anyth
 http://localhost:8080/
 ```
 
-#### Postgres storage
+#### What is stored in Supabase (server mode)
 
-The `postgres` service uses a named Docker volume (`postgres_data`) for durable database storage. Do not run `docker compose down -v` — the `-v` flag removes named volumes and will destroy your database.
+| Store | Contents |
+|-------|----------|
+| Supabase Postgres | Projects, project revision history, announcements, songs, templates, font metadata, workspace settings, workspace members |
+| Supabase Storage (`project-assets`) | Cover images and staff logo images (base64 data URIs are uploaded on first save) |
+| Supabase Storage (`workspace-fonts`) | User-uploaded font binary files |
+| Supabase Auth | Users and sessions |
 
-To back up the database:
+Nothing from the app is stored on the container's local disk in server mode.
+The `./data:/app/data` bind-mount is retained as a working directory for
+migration backups (`data/backups/`) but holds no live application data.
+
+If `DATABASE_URL` is missing when `APP_MODE=server`, the server exits
+immediately with a clear error message pointing to `.env.example`.
+
+The Docker build runs the frontend `vite` build during image creation, so JS
+bundle regressions fail at build time rather than at runtime.
+
+#### Backup and restore
+
+Use `pg_dump` against the Supabase Postgres database:
 
 ```bash
-docker compose exec postgres pg_dump -U bulletin bulletindb > backup.sql
+# Set DATABASE_URL from your .env:
+export DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require'
+
+# Run the backup script (outputs to data/backups/YYYYMMDD_HHMMSS/):
+./scripts/backup.sh
+
+# Or inside the running Docker container:
+./scripts/backup-compose.sh
 ```
+
+The backup scripts create a timestamped directory containing `db.dump` (Postgres
+custom-format dump, restorable with `pg_restore`). Supabase Storage assets
+(cover/logo images, fonts) must be exported separately from the Supabase
+Dashboard (Storage → Download) or via the Supabase CLI.
 
 To restore:
 
 ```bash
-docker compose exec -T postgres psql -U bulletin bulletindb < backup.sql
+export DATABASE_URL='...'
+./scripts/restore.sh data/backups/YYYYMMDD_HHMMSS
 ```
 
-#### What is stored in Postgres (server mode)
-
-- Projects, project revision history
-- Settings (shared deployment-wide)
-- Announcements, songs, templates
-- Font file metadata (binary font files remain on disk)
-- Users and sessions (auth)
-
-#### What stays on disk
-
-- Font binary files: `data/fonts/` (mounted into the container via `./data`)
-- Migration backups: `data/backups/`
-
-If `DATABASE_URL` is missing when `APP_MODE=server`, the server exits immediately with a clear error message pointing to `.env.example`.
-
-The Docker build runs the frontend `vite` build during image creation, so JS bundle regressions fail at build time rather than at runtime.
+See `docs/operator-runbook.md` for the full backup and restore runbook.
 
 #### Rollback
 
-1. Restore Postgres from a `pg_dump` backup.
-2. Restore JSON source files from `data/backups/TIMESTAMP/` if needed.
-3. Restart the container: `docker compose up -d`.
+1. Restore Postgres from a `pg_dump` backup: `./scripts/restore.sh <backup_dir>`.
+2. Restart the container: `docker compose up -d`.
 
 ## Data and storage
 
@@ -265,15 +303,18 @@ In packaged desktop mode, the server stores writable data in the application sup
 
 ### Server mode
 
-In server mode (`APP_MODE=server`), editable content is stored in Postgres:
+In server mode (`APP_MODE=server`), all application data is stored in Supabase:
 
-- Projects (with full revision history)
-- Announcements, songs, templates
-- Settings (shared deployment-wide)
-- Font file metadata (binary files remain on disk at `data/fonts/`)
-- Users and sessions
+- **Supabase Postgres**: projects (with full revision history), announcements,
+  songs, templates, font metadata, workspace settings, workspace members.
+- **Supabase Storage `project-assets` bucket**: cover images and staff logo
+  images. Base64 data URIs are extracted and uploaded on first project save.
+- **Supabase Storage `workspace-fonts` bucket**: user-uploaded font binary files.
+- **Supabase Auth**: user accounts and sessions.
 
-JSON files in `data/` are only used during the one-time migration from a legacy JSON-backed deployment. Font binary files at `data/fonts/` are always read from disk regardless of mode.
+JSON files in `data/` are only used during the one-time migration from a legacy
+JSON-backed deployment. After migration, nothing is written to `data/` in server
+mode (the bind-mount is kept for migration backup output only).
 
 ## CI and releases
 
@@ -294,13 +335,15 @@ Planning Center access is handled server-side.
 
 ### Google Calendar / calendar feeds
 
-The app currently supports two calendar paths:
+The app supports two calendar paths:
 
 - local/server dev mode: `.env` calendar defaults via `CALENDAR_ICAL_URLS` and `CALENDAR_EXCLUDE_TITLES`
-- packaged desktop mode: bundled Google OAuth credentials in `desktop_config.py`, with users signing into their own Google accounts inside the app
+- Google Calendar API: connected via the Calendar/Drive OAuth flow (`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`). The OAuth callback is `APP_URL/oauth/google/callback`.
+- packaged desktop mode: bundled Google OAuth credentials in `desktop_config.py`
 
 Relevant env values:
 
+- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` — for Calendar/Drive OAuth
 - `CALENDAR_ICAL_URLS`
 - `CALENDAR_EXCLUDE_TITLES`
 

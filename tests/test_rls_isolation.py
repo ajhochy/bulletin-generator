@@ -28,10 +28,17 @@ import pytest
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 
-pytestmark = pytest.mark.skipif(
-    not DATABASE_URL,
-    reason="DATABASE_URL not set; RLS isolation tests require a live Supabase project",
-)
+# NOTE: the `integration` marker is REQUIRED. The CI db-integration job runs
+# `pytest ... -m integration`, so without it this entire security-critical suite
+# was silently DESELECTED in CI (it collected but never ran — issue #277-E). Keep
+# both marks: integration (so CI runs it) + skipif (so a no-DB run stays green).
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not DATABASE_URL,
+        reason="DATABASE_URL not set; RLS isolation tests require a live Supabase project",
+    ),
+]
 
 # Unique per-test-data marker so seed rows are recognizable and cleanup is total,
 # even if a previous run crashed before teardown.
@@ -334,3 +341,48 @@ class TestRLSIsolation:
                     "user_a must not be able to update user_b's project "
                     "(non-member of workspace_b — RLS USING silently returns 0 rows)"
                 )
+
+    # ── cross-tenant DELETE must affect 0 rows across every table (#277-E) ────
+    # The RLS USING clause filters workspace_b rows out of user_a's view, so a
+    # DELETE scoped to workspace_b matches nothing. (project_revisions has no
+    # delete policy at all — append-only — so it is likewise 0.)
+    @pytest.mark.parametrize("table", WORKSPACE_TABLES)
+    def test_cross_tenant_delete_blocked(self, table):
+        c = self.ctx
+        with _as_user(c["user_a"]) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"delete from public.{table} where workspace_id = %s", [c["ws_b"]]
+                )
+                assert cur.rowcount == 0, f"user_a must not delete workspace_b {table}"
+        # sanity: the workspace_b row still exists (seen via the owner connection)
+        with _service_conn() as svc:
+            with svc.cursor() as scur:
+                scur.execute(
+                    f"select count(*) from public.{table} where workspace_id = %s", [c["ws_b"]]
+                )
+                assert scur.fetchone()[0] >= 1, f"workspace_b {table} row must survive"
+
+    # ── cross-tenant UPDATE must affect 0 rows on writable tables (#277-E) ────
+    # Mirrors the projects non-owner case across the other workspace tables that
+    # carry a freely-updatable text column. RLS USING filters workspace_b rows
+    # out of user_a's view, so the UPDATE matches nothing.
+    @pytest.mark.parametrize(
+        "table,assign",
+        [
+            ("projects", "name = 'x_should_not_update'"),
+            ("announcements", "title = 'x_should_not_update'"),
+            ("songs", "title = 'x_should_not_update'"),
+            ("templates", "name = 'x_should_not_update'"),
+            ("workspace_settings", "settings = '{\"x\":1}'"),
+        ],
+    )
+    def test_cross_tenant_update_blocked(self, table, assign):
+        c = self.ctx
+        with _as_user(c["user_a"]) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"update public.{table} set {assign} where workspace_id = %s",
+                    [c["ws_b"]],
+                )
+                assert cur.rowcount == 0, f"user_a must not update workspace_b {table}"

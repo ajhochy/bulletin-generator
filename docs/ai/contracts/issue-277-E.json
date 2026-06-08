@@ -1,0 +1,48 @@
+{
+  "issue": "277-E",
+  "generated": "2026-06-06",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-E-c1",
+      "text": "The RLS isolation suite actually RUNS in CI: test_rls_isolation.py carries the `integration` marker so the db-integration job's `-m integration` filter selects it (previously all 25 tests were silently deselected).",
+      "mode": "integration",
+      "test_file": "tests/test_rls_isolation.py",
+      "test_id": "pytestmark integration + db-integration job",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-E-c2",
+      "text": "A workspace-A user cannot SELECT another workspace's rows (projects/project_revisions/workspace_settings/announcements/songs/templates/fonts) — returns 0 rows.",
+      "mode": "integration",
+      "test_file": "tests/test_rls_isolation.py",
+      "test_id": "test_cross_tenant_select_blocked",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-E-c3",
+      "text": "A workspace-A user cannot INSERT into another workspace (WITH CHECK rejects → InsufficientPrivilege).",
+      "mode": "integration",
+      "test_file": "tests/test_rls_isolation.py",
+      "test_id": "test_cross_tenant_insert_blocked",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-E-c4",
+      "text": "A workspace-A user cannot UPDATE another workspace's rows (projects/announcements/songs/templates/workspace_settings) — affects 0 rows.",
+      "mode": "integration",
+      "test_file": "tests/test_rls_isolation.py",
+      "test_id": "test_cross_tenant_update_blocked",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-E-c5",
+      "text": "A workspace-A user cannot DELETE another workspace's rows across every workspace table — affects 0 rows; the target rows survive (verified via owner connection).",
+      "mode": "integration",
+      "test_file": "tests/test_rls_isolation.py",
+      "test_id": "test_cross_tenant_delete_blocked",
+      "status": "pass"
+    }
+  ],
+  "stack": "python",
+  "not_tested": []
+}

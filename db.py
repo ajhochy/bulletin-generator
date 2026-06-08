@@ -23,7 +23,11 @@ from contextlib import contextmanager
 # ── Mode detection ────────────────────────────────────────────────────────────
 # Mirror the logic in server.py so this module can be imported standalone.
 _APP_MODE = os.environ.get("APP_MODE", "desktop").lower()
-IS_DESKTOP = _APP_MODE == "desktop"
+# "electron" is a desktop variant (single-user sidecar; data flows through the
+# renderer via supabase-js + anon key, not psycopg). Treat it as desktop so the
+# DB helpers fail fast with the clean "server mode only" RuntimeError instead of
+# attempting a DATABASE_URL connection the Electron build no longer bundles.
+IS_DESKTOP = _APP_MODE in ("desktop", "electron")
 
 # ── JSONB helpers (no DB required) ────────────────────────────────────────────
 

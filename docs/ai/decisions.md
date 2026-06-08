@@ -4,6 +4,63 @@ Append-only log of architecture / workflow decisions worth preserving across ses
 
 ---
 
+## 2026-06-06 — Issues #279 + #280: PID lock file for stale-sidecar detection; onedir for cold-start
+
+**Context.** Issue #279: if the Electron app crashes (bypassing `before-quit`), the Python sidecar stays alive holding port 8765. On next launch, the new sidecar bind fails with a raw OSError traceback → Electron shows "Exit code 1". Issue #280: PyInstaller `--onefile` unpacks the whole runtime to a temp dir on every launch; `--onedir` copies once and stays.
+
+**Decision — #279 server.py:** Catch `OSError` at the `ThreadingHTTPServer(...)` constructor, check `errno.EADDRINUSE` (98 on POSIX) or `WSAEADDRINUSE` (10048 on Windows, obtained via `getattr` so it's safe on non-Windows), print a distinct `[server] FATAL: port <PORT> already in use — another instance or a stale sidecar is running.` to stderr, and exit with code 3. Exit code 3 was chosen as a recognizable sentinel distinct from Python's standard 1 (unhandled exception) and 2 (CLI misuse). All other `OSError` variants re-raise unchanged.
+
+**Decision — #279 electron/main.js:** PID lock file at `os.tmpdir()/bulletin-generator-sidecar.pid`. Written immediately after `spawn()` returns the child PID; removed on `killSidecar()` (clean quit) and on the sidecar's `exit` event. At `app.whenReady`, `reapStaleSidecar()` reads the file, calls `process.kill(pid, 0)` to confirm the process is still alive, sends `SIGTERM` if so, and waits 1500ms for the OS to release the port. **Why PID lock over HTTP probe:** an HTTP probe to 127.0.0.1:8765 cannot distinguish our orphaned sidecar from any other service the user is running on that port (e.g. another app or a previous dev server). The PID lock positively identifies the process we spawned. **Why `os.tmpdir()`:** survives app crashes (not cleaned on crash), writable on both macOS and Windows without special permissions, and distinct from the app bundle location which varies between dev and packaged modes. **PID-reuse risk noted but accepted:** the OS recycles PIDs slowly; a collision between a killed-sidecar PID and an unrelated new process only occurs during crash recovery, not normal launch.
+
+**Decision — #280 PyInstaller onedir:** `--onedir` places all shared libraries alongside the executable in `dist/server/` instead of packing them into a single fat binary that must be re-extracted to a tmp dir on every launch. The `resolveSidecar()` packaged path changes from `<resourcesPath>/server` to `<resourcesPath>/server/server`. The `extraResources` config in `package.json` changes from a single-file filter to copying the entire `dist/server/` directory tree into `<app>/Contents/Resources/server/`. Cold-start speedup (no per-launch unpack) and the executable path change are only verifiable in a packaged build.
+
+**Consequences.**
+- `server.py`: cleaner error for the most common desktop crash-recovery scenario.
+- `electron/main.js`: ~80 lines of new helpers; app startup adds `reapStaleSidecar()` (≈0ms normally, 1.5s only on crash recovery).
+- `release-electron.yml`: both macOS and Windows build steps are `--onedir` now; `ls dist/server/` replaces `ls -lh dist/server` as the post-build check.
+- `package.json` extraResources: the glob change means no single-file `server`/`server.exe` at the resource root any more — only the `server/` subdirectory. Old packaged builds will not find `<resourcesPath>/server` (file) but `resolveSidecar()` correctly falls back to dev-mode for that case.
+
+---
+
+## 2026-06-06 — Issue #277: S2 hybrid for anon-key desktop path; sidecar keeps OAuth callbacks + PCO/Cal/PDF
+
+**Context.** Issue #277 requires removing DATABASE_URL from the Electron desktop build. Two candidate shapes: S1 (sidecar calls PostgREST via anon key) and S2 (renderer does CRUD directly via supabase-js). Planning investigation confirmed all data tables have correct RLS policies for the `authenticated` role. Security advisor shows no RLS gaps. The only structural blocker is `transfer_project_owner`, which uses `admin_transaction()` because the `projects_update` WITH CHECK requires `owner_user_id = auth.uid()` on the NEW row — impossible when the caller transfers ownership to a different user.
+
+**Decision.** Use **S2 hybrid**:
+- Renderer (`supabase-data.js`) handles all routine CRUD: projects, announcements, songs, workspace_settings, project_revisions, workspace_presences, templates, fonts metadata, workspace_members.
+- The `transfer_project_owner` operation is implemented as a **SECURITY DEFINER RPC** in a new migration (`transfer_project_owner_rpc.sql`). The renderer calls `supabase.rpc('transfer_project_owner', {...})`. The function validates caller = current owner + target is workspace member, then UPDATEs. No DATABASE_URL needed.
+- The sidecar keeps: static serving, PCO proxy, Google Calendar fetch, PDF generation, OAuth callbacks (PCO/Google — unauthenticated redirects that cannot use a user JWT at the callback moment; sidecar writes tokens via owner-role which is acceptable since that path runs only on the server anyway and is not bundled in the Electron binary).
+- `APP_MODE=electron` is treated as desktop-equivalent in `_validate_server_config()` (no DATABASE_URL required at boot). Sidecar endpoints that touch psycopg return 501/no-op in electron mode.
+
+**S1 rejected.** Rewriting psycopg queries to HTTP REST in Python gains nothing architecturally — the sidecar still needs DATABASE_URL and the renderer still can't bypass the sidecar.
+
+**Consequences.**
+- New file: `src/js/supabase-data.js`.
+- New migration: `supabase/migrations/20260606000001_transfer_owner_rpc.sql`.
+- `server.py` `_validate_server_config()`: add `IS_ELECTRON` bypass.
+- `release-electron.yml`: remove `DATABASE_URL` from the `.env` step (after all sub-issues land).
+- Server (Docker) mode is entirely unaffected — psycopg + DATABASE_URL kept.
+- Old draft prereleases (v0.0.1/2/3) carry DATABASE_URL in bundled .env — delete them after the new build lands and DB password is rotated.
+
+---
+
+## 2026-06-06 — #216 revision snapshots: application-level, not a DB trigger
+
+**Context.** #216 requires appending a `project_revisions` snapshot on every successful save (regression: only the `/restore` path snapshotted). The initial plan (and the 277-D deferral note) assumed a DB trigger so it would cover both the server (psycopg) and renderer (supabase-js) write paths uniformly.
+
+**Decision.** Implement it **application-level** in `PostgresStorageBackend.save_project` (mirroring `save_project_transactional`), plus a unique index on `project_revisions (project_id, revision_number)`. A DB trigger was rejected for three reasons:
+1. **Summary.** `project_revisions.summary` is a stored column produced by `revisions.generate_summary` (Python). A trigger can't run that, so a trigger-based snapshot would lose the #217 summaries (or require porting 176 lines of diff logic to plpgsql).
+2. **Deploy gate.** The `supabase/migrations` track isn't applied by CI and the agent is (correctly) blocked from a direct live apply — so a trigger couldn't be verified live by the agent.
+3. **Live-regression window.** Removing the existing app-level `/restore` snapshot in favor of an undeployed trigger would stop snapshots in production until the trigger is deployed.
+
+**Consequences.**
+- `save_project` now does a 4-statement sequence (SELECT prev state → upsert RETURNING → profiles enrich → INSERT project_revisions), matching the transactional path. Existing `save_project` mocks (`test_project_metadata`, `test_storage_assets`) were updated for the new sequence.
+- A unique index migration (`20260606000002_project_revisions_unique_revision.sql`) hard-enforces "unique revision numbers per project" (verified: zero existing dupes). Needs a live `supabase db push` (human-authorized, like 277-B).
+- **Renderer (electron) path still needs its own snapshot.** Electron saves go renderer→Supabase, bypassing `save_project`, so they won't snapshot until `supabase-data.js` `sdSaveProject` (277-C/D) inserts a `project_revisions` row. Tracked as a follow-up on the #277 stack.
+- Also wired the previously-orphaned `tests/test_revision_snapshots.py` into the CI `python` job (it ran nowhere before).
+
+---
+
 ## 2026-06-05 — Presence project_id is TEXT, not uuid (fix forward migration, not edit-in-place)
 
 **Context.** `workspace_presences.project_id` was declared `uuid` in `20260603000003_workspace_presences.sql`, but project ids are application-generated TEXT (`proj_<timestamp>_<rand>`) and `public.projects.id` is `text`. Every presence read/heartbeat 500'd with `InvalidTextRepresentation`; the frontend's best-effort error swallowing hid it.

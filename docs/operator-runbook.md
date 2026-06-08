@@ -20,6 +20,7 @@ distribution.
 3. [Docker server mode (browser deployments)](#3-docker-server-mode-browser-deployments)
 4. [Environment variables reference](#4-environment-variables-reference)
 5. [First-login provisioning — domain allow-list](#5-first-login-provisioning--domain-allow-list)
+6. [Backup and restore](#6-backup-and-restore)
 
 ---
 
@@ -364,20 +365,29 @@ Copy `.env.example` to `.env` and fill in every value before running the app.
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | Postgres connection URL. Use the **session-mode / direct** connection (port 5432), not the transaction-mode pooler (6543). Example: `postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Service-role JWT (HTTP API key). Used by `storage.py` for server-initiated Storage uploads (cover/logo images). Get from Dashboard → Settings → API → service_role (secret). **Never bundle into Electron, commit a real value, or log it.** |
-| `SUPABASE_SERVICE_ROLE_URL` | Postgres URL using service_role credentials. For RLS-bypassing admin work (seed + migration tooling via `db.admin_transaction()`). If unset, `db.admin_transaction()` falls back to `DATABASE_URL`. Format: `postgresql://postgres.<ref>:<service_role_pw>@aws-1-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
-| `POSTGRES_DB` | Postgres database name (used in `DATABASE_URL`). Default: `bulletindb` |
-| `POSTGRES_USER` | Postgres username. Default: `bulletin` |
-| `POSTGRES_PASSWORD` | Postgres password. **Required.** Change before deploying. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Service-role JWT (HTTP API key). Used by `storage.py` for server-initiated Storage uploads (cover/logo images, font binaries). Get from Dashboard → Settings → API → service_role (secret). **Never bundle into Electron, commit a real value, or log it.** |
 | `APP_URL` | Public URL of the server (used for OAuth redirect URIs). Leave blank for local/desktop use. Example: `https://bulletin.yourchurch.org` |
-| `SESSION_SECRET` | 64-char random hex for HTTP session signing. Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+
+### Optional for server mode
+
+| Variable | Description |
+|----------|-------------|
+| `OAUTH_STATE_SECRET` | Explicit HMAC key for signing the OAuth `state` parameter in PCO and Google Calendar/Drive OAuth flows. Falls back to `SUPABASE_JWT_SECRET` if unset. Recommended: set a dedicated value so the OAuth signing key has its own rotation schedule. Generate: `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `SUPABASE_SERVICE_ROLE_URL` | Postgres URL using service_role credentials. For RLS-bypassing admin work only (seed + migration tooling via `db.admin_transaction()`). If unset, `db.admin_transaction()` falls back to `DATABASE_URL`. Format: `postgresql://postgres.<ref>:<service_role_pw>@aws-1-<region>.pooler.supabase.com:5432/postgres?sslmode=require` |
+| `POSTGRES_DB` | Postgres database name for the **local Docker postgres service** (not Supabase). Used in the default `DATABASE_URL` in `.env.example`. Default: `bulletindb`. |
+| `POSTGRES_USER` | Postgres username for the local Docker postgres service. Default: `bulletin` |
+| `POSTGRES_PASSWORD` | Postgres password for the local Docker postgres service. Change before deploying. |
+
+> **Note:** `POSTGRES_*` vars are used by the `postgres` container in
+> `docker-compose.yml` only when you run a local bundled Postgres. They are
+> **not** used when `DATABASE_URL` points directly to a Supabase project.
 
 ### Optional / Google Calendar integration
 
 | Variable | Description |
 |----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID for Calendar + Drive integration (separate from Supabase auth). |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret for Calendar + Drive. |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID for Calendar + Drive integration (separate from Supabase Auth login). |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret for Calendar + Drive. Callback: `APP_URL/oauth/google/callback`. |
 | `CALENDAR_ICAL_URLS` | JSON array of iCal feed URLs to import. |
 | `CALENDAR_EXCLUDE_TITLES` | JSON array of event titles to suppress from the "This Week" page. |
 | `WATCHTOWER_TOKEN` | HTTP API token for Watchtower (Docker server mode auto-update). Default: `bulletin-updater`. Only reachable within the Docker network. |
@@ -490,6 +500,169 @@ No self-serve workspace UI is planned for v1. Workspace access is granted by:
 
 Never put authorization decisions in user-editable Supabase `user_metadata`.
 Membership must come from database rows only.
+
+---
+
+## 6. Backup and restore
+
+### 6.1 What needs to be backed up
+
+In server mode, all application data lives in Supabase — not on local disk.
+A complete backup covers two stores:
+
+| Store | What it holds | How to back up |
+|-------|--------------|----------------|
+| Supabase Postgres | Projects, songs, announcements, templates, fonts metadata, workspace settings, workspace members | `pg_dump` via `scripts/backup.sh` |
+| Supabase Storage | Cover/logo images (`project-assets` bucket), font binaries (`workspace-fonts` bucket) | Supabase CLI or Dashboard export |
+
+### 6.2 Postgres backup with `scripts/backup.sh`
+
+The repo ships three helper scripts in `scripts/`:
+
+| Script | Use |
+|--------|-----|
+| `scripts/backup.sh` | Runs `pg_dump` from the host (or inside the container) |
+| `scripts/backup-compose.sh` | Runs `backup.sh` inside the running Docker container via `docker compose exec` |
+| `scripts/restore.sh` | Restores a `pg_dump` backup using `pg_restore` |
+
+All scripts read `DATABASE_URL` from the environment — secrets are never passed
+as command-line arguments (no shell history exposure).
+
+**Prerequisites:**
+
+- `postgresql-client` installed on the host (`pg_dump` and `pg_restore` must be
+  in PATH). On Debian/Ubuntu: `apt-get install postgresql-client`.
+- `DATABASE_URL` exported in the shell (or in `.env`).
+
+**Run from the host (bare server or NAS host):**
+
+```bash
+# Load DATABASE_URL from .env:
+set -a && source .env && set +a
+
+# Run backup (outputs to data/backups/YYYYMMDD_HHMMSS/):
+./scripts/backup.sh
+
+# Optional: specify a custom output directory:
+./scripts/backup.sh /path/to/backups
+```
+
+Output directory contains:
+
+- `db.dump` — Postgres custom-format dump (binary, compressed). Restore with
+  `pg_restore`.
+
+**Run inside the Docker container:**
+
+```bash
+# Passes DATABASE_URL from the host environment into the container:
+export DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres?sslmode=require'
+./scripts/backup-compose.sh
+
+# Or with a custom destination inside the container:
+./scripts/backup-compose.sh /app/data/backups
+```
+
+### 6.3 Scheduling regular backups
+
+For unattended backups, add a cron job on the host:
+
+```bash
+# Edit the crontab:
+crontab -e
+```
+
+Add a daily backup at 02:00, writing to a directory that persists on the host:
+
+```cron
+0 2 * * * set -a; source /path/to/.env; set +a; /path/to/scripts/backup.sh /path/to/backups >> /var/log/bulletin-backup.log 2>&1
+```
+
+Rotate old backups to cap disk usage (keep 30 days):
+
+```bash
+find /path/to/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} +
+```
+
+### 6.4 Supabase Storage backup
+
+`pg_dump` captures Postgres rows but not the binary files stored in Supabase
+Storage buckets (`project-assets`, `workspace-fonts`).
+
+**Option A — Supabase CLI (recommended):**
+
+```bash
+# Install the Supabase CLI if not already installed:
+# https://supabase.com/docs/guides/cli
+
+# Pull all objects from a bucket to a local directory:
+supabase storage cp --project-ref <ref> \
+  'ss://project-assets' ./backups/storage/project-assets --recursive
+
+supabase storage cp --project-ref <ref> \
+  'ss://workspace-fonts' ./backups/storage/workspace-fonts --recursive
+```
+
+**Option B — Supabase Dashboard:**
+
+1. Open Dashboard → Storage → select the bucket (`project-assets` or
+   `workspace-fonts`).
+2. Use the bucket browser to select and download files.
+3. Repeat for each bucket.
+
+> **Frequency note:** Cover/logo images and fonts change infrequently. A weekly
+> Storage backup is sufficient for most deployments. Postgres data (projects,
+> songs, etc.) changes with every edit and warrants daily backups.
+
+### 6.5 Restore from a Postgres backup
+
+```bash
+# Load DATABASE_URL:
+set -a && source .env && set +a
+
+# Run the restore script (prompts for confirmation before writing):
+./scripts/restore.sh data/backups/YYYYMMDD_HHMMSS
+```
+
+The restore script runs `pg_restore --clean --if-exists`, which drops and
+recreates all objects in the dump before restoring rows. This is safe for a
+full-restore scenario but will destroy any data added after the backup was taken.
+
+**Restore to a fresh Supabase project:**
+
+1. Create the new Supabase project and apply all schema migrations (section 1.4).
+2. Set `DATABASE_URL` to the new project's connection string.
+3. Run `./scripts/restore.sh <backup_dir>`.
+
+> Re-applying the schema migrations first ensures the table structure matches
+> what `pg_restore` expects. If the dump was taken after a migration that the
+> new project has not applied, `pg_restore` will fail with "relation does not
+> exist" errors.
+
+### 6.6 Restore Supabase Storage files
+
+After a Postgres restore, re-upload Storage files using the Supabase CLI:
+
+```bash
+# Re-upload project assets:
+supabase storage cp --project-ref <ref> \
+  ./backups/storage/project-assets 'ss://project-assets' --recursive
+
+# Re-upload fonts:
+supabase storage cp --project-ref <ref> \
+  ./backups/storage/workspace-fonts 'ss://workspace-fonts' --recursive
+```
+
+### 6.7 Full rollback procedure
+
+Use this sequence if a deployment goes wrong and you need to revert to a known
+good state:
+
+1. Stop the container: `docker compose down`.
+2. Restore Postgres: `./scripts/restore.sh <backup_dir>`.
+3. Re-upload Storage files (section 6.6) if needed.
+4. Restart: `docker compose up -d`.
+5. Verify: `curl http://localhost:8080/api/bootstrap` → `200 OK`.
 
 ---
 

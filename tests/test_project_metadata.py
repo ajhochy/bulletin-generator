@@ -202,10 +202,17 @@ class TestPgRowToProject:
 def _make_pg_save_mock(returned_row: dict):
     """Return a mock (transaction, conn) for save_project().
 
-    save_project() calls _pg_enrich_project_row() after RETURNING, which
-    issues a second conn.execute() to fetch profiles.  We return two cursors:
-    the first for the INSERT RETURNING, the second (profiles) returns no rows.
+    Since #216, save_project() issues four conn.execute() calls in order:
+      1. SELECT state           — prev state for the revision summary
+      2. INSERT ... RETURNING    — the upsert (params asserted by these tests)
+      3. SELECT profiles         — _pg_enrich_project_row() attribution lookup
+      4. INSERT project_revisions — the #216 revision snapshot
     """
+    prev_cursor = MagicMock()
+    prev_cursor.fetchone.return_value = (
+        json.dumps({"id": returned_row.get("id"), "name": "prev"}),
+    )
+
     mock_returning_cursor = MagicMock()
     mock_returning_cursor.fetchone.return_value = tuple(returned_row.values())
     mock_returning_cursor.description = [(col, None) for col in returned_row.keys()]
@@ -213,8 +220,12 @@ def _make_pg_save_mock(returned_row: dict):
     mock_profiles_cursor = MagicMock()
     mock_profiles_cursor.fetchall.return_value = []  # no profiles rows in test
 
+    snapshot_cursor = MagicMock()
+
     mock_conn = MagicMock()
-    mock_conn.execute.side_effect = [mock_returning_cursor, mock_profiles_cursor]
+    mock_conn.execute.side_effect = [
+        prev_cursor, mock_returning_cursor, mock_profiles_cursor, snapshot_cursor,
+    ]
 
     from contextlib import contextmanager
 
@@ -269,8 +280,9 @@ class TestPostgresSaveProjectAttribution:
             kwargs = extra_kwargs or {}
             backend.save_project({"id": project_id, "name": "Test"}, **kwargs)
 
-        # Extract the params dict passed to the first conn.execute() (INSERT RETURNING).
-        call_args = mock_conn.execute.call_args_list[0]
+        # Extract the params dict passed to the upsert (INSERT ... RETURNING).
+        # Since #216 the prev-state SELECT is call index 0, so the upsert is index 1.
+        call_args = mock_conn.execute.call_args_list[1]
         return call_args[0][1]  # positional arg 1 = params dict
 
     def test_updated_by_user_id_from_kwarg(self):

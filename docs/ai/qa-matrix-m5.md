@@ -1,6 +1,7 @@
 # M5 End-to-End Multitenant QA Matrix
 
 _Created: 2026-06-03 (issue 016)_
+_Updated: 2026-06-06 (issue #272 M5 cutover QA — smoke-test-writer pass)_
 
 > **Note on environment:** The staging Supabase project IS the production project. All
 > automated tests run against it (guarded by `DATABASE_URL`). Manual items are
@@ -11,7 +12,7 @@ _Created: 2026-06-03 (issue 016)_
 
 ## How to use this matrix
 
-- **Automated** items run via `pytest` or `ai-workflow checks`. Mark pass/fail after the
+- **Automated** items run via `pytest` or `npx playwright test`. Mark pass/fail after the
   run and record the date.
 - **Manual** items require a human with live credentials. Perform them in a single
   cutover-readiness session and initial the checkbox.
@@ -32,6 +33,7 @@ _Created: 2026-06-03 (issue 016)_
 | S4 | Valid JWT, no workspace membership → 403 | Automated | `APP_MODE=server .venv/bin/pytest tests/test_auth_middleware.py::TestRequireAuth::test_valid_token_without_membership_returns_403 -v` | Test passes; `_send_json` called with status 403 | [ ] |
 | S5 | Within-workspace SELECT is visible | Automated | `APP_MODE=server .venv/bin/pytest tests/test_rls_isolation.py::TestRLSIsolation::test_within_workspace_select_visible -v` | 7 parametrized cases pass; each table returns >= 1 row for owner | [ ] |
 | S6 | First-login domain provisioning | Manual | Sign in to the app with a `@visaliacrc.com` Google account that has no prior `workspace_members` row. Observe auto-provisioning. | User lands in the app with the Visalia CRC workspace loaded; no 403 page shown; `workspace_members` row appears in Supabase dashboard | [ ] |
+| S7 | Cross-tenant isolation (e2e API+UI) | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Cross-tenant isolation"` | Workspace-B user sees 0 projects in Files list; `/api/projects` returns empty array for B; A's project name absent — **BLOCKER** | [x] PASS 2026-06-06 |
 
 **Full automated security suite (shortcut):**
 ```bash
@@ -51,9 +53,70 @@ All tests must pass (currently: 3x7 + 1 RLS class + 6 auth_middleware + 3 first-
 | # | Item | Type | Steps | Pass criteria | Status |
 |---|------|------|-------|---------------|--------|
 | C1 | Owner can save their own project | Manual | 1. Sign in as `ajh@visaliacrc.com`. 2. Open any project. 3. Make an edit and save. | Save succeeds (HTTP 200); project state persists on reload | [ ] |
-| C2 | Non-owner sees read-only indication | Manual | 1. Sign in as a second `@visaliacrc.com` workspace member account that does not own the project. 2. Open a project owned by `ajh@visaliacrc.com`. 3. Attempt to save. | Save attempt returns HTTP 403; UI surfaces an error message (e.g. "You do not have permission to save this project") | [ ] |
-| C3 | Transfer ownership works | Manual | 1. Sign in as the current owner (`ajh@visaliacrc.com`). 2. Call `POST /api/projects/{id}/transfer` with `{ "to_user_id": "<second-user-id>" }`. 3. Sign in as the second user and save. 4. Attempt to save as the original owner. | Transfer returns HTTP 200; second user can save; original owner receives 403 on subsequent saves | [ ] |
-| C4 | Presence badge appears for workspace viewers | Manual | 1. Open the same project in two browser tabs under different workspace accounts simultaneously. | A presence indicator (avatar or badge) appears showing both users are viewing the project | [ ] |
+| C2 | Non-owner sees read-only indication | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Ownership model and transfer"` | Read-only banner visible; `#readonly-banner` contains "changes won't save" | [x] PASS 2026-06-06 |
+| C3 | Transfer ownership works | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Ownership model and transfer"` | `POST /api/projects/{id}/transfer` returns 200; new owner saves OK; old owner gets 403 | [x] PASS 2026-06-06 |
+| C4 | Presence badge appears for workspace viewers | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "presence"` (see `server-mode-behaviors.spec.ts`) | `#presence-badge` visible to second member; confirmed present in server-mode-behaviors.spec.ts | [x] PASS (existing spec, confirmed) |
+| C5 | Non-owner save → 403 (API) | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Ownership model and transfer"` | Direct POST as non-owner returns HTTP 403 | [x] PASS 2026-06-06 |
+| C6 | Duplicate creates non-owner copy | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Ownership model and transfer"` | After click on `#readonly-duplicate-btn`, read-only banner hidden; new project id differs from original | [x] PASS 2026-06-06 |
+| C7 | Revision history: N saves → N entries; restore works | **Automated (E2E)** | `E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Revision history"` | `GET /api/projects/{id}/history` returns ≥3 entries after 3 saves; `POST .../restore` returns 200 with project | [x] PASS 2026-06-06 |
+
+---
+
+## E2E coverage map (automated, `@core`, server mode)
+
+All specs are in `tests/e2e/features/`. Run with:
+```bash
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core
+```
+
+| Spec file | What it verifies |
+|-----------|-----------------|
+| `flows/smoke.spec.ts` | App boots, authenticates, navigates all tabs, persists a project, exports PDF |
+| `projects.spec.ts` | Create / list / open / select / delete projects |
+| `server-mode-behaviors.spec.ts` | Read-only banner for non-owners; presence badge (existing) |
+| `multitenant-isolation.spec.ts` | **NEW** Cross-tenant isolation (S7); ownership + 403 + duplicate + transfer (C2/C3/C5/C6); revision history (C7) |
+| `editor-order-of-worship.spec.ts` | Item add/edit/reorder |
+| `editor-sections.spec.ts` | Section heading create/delete |
+| `format.spec.ts` | Per-type and per-item formatting |
+| `announcements.spec.ts` | Announcement card CRUD |
+| `song-database.spec.ts` | Song lookup and save |
+| `settings-branding.spec.ts` | Branding settings round-trip |
+| `templates.spec.ts` | Template selection and preview |
+| `calendar.spec.ts` | Calendar events UI |
+| `electron-mode-data-routing.spec.ts` | Electron renderer uses supabase-data.js (not server API) for project/song reads |
+
+---
+
+## Manual items (not automatable in server mode)
+
+| # | Item | Why manual | Steps to verify | Pass criteria |
+|---|------|-----------|----------------|---------------|
+| M1 | PDF export visual fidelity | Requires human visual inspection of rendered PDF | Open any project with songs + announcements + cover. Click "Export PDF". | Pagination, page breaks, footers, cover, and any QR codes visually correct | [ ] |
+| M2 | PCO import (live creds) | Requires real PCO OAuth tokens — out of e2e scope | Connect PCO. Click "Import from PCO". Select a real service plan. | Songs, sections, order of worship load correctly; notes/media items hidden | [ ] |
+| M3 | Google Calendar fetch (live creds) | Requires real Google OAuth tokens | Connect Google Calendar. Fetch events for the current week. | Events filtered by Sun–Sat window; correct titles/times appear | [ ] |
+| M4 | Image/font Storage isolation (direct URL) | Requires inspecting signed URL scope | Upload a logo as workspace A. Attempt to access the Storage URL as workspace B (without re-signing). | B cannot access A's storage objects without a fresh signed URL | [ ] |
+| M5 | Electron auto-update across app restart | Requires packaged runtime + new release tag | Tag a new version; push. Open old packaged app. | Auto-updater dialog appears; install + restart completes cleanly | DEFERRED |
+| M6 | Cross-tenant isolation in packaged Electron (renderer→Supabase) | Packaged runtime required; `electron-mode-data-routing.spec.ts` proves data routing in dev | Build the `.app` bundle; sign in as workspace A and B in two Electron windows | B cannot see A's projects or storage objects | [ ] |
+| M7 | First-login domain provisioning (S6 above) | Requires a new `@visaliacrc.com` account with no prior membership row | Create a net-new Google account `@visaliacrc.com` and sign in | Auto-provisioned into workspace; no 403 page | [ ] |
+
+---
+
+## UNVERIFIED items (failing placeholder tests)
+
+There are no placeholder failing tests required: every previously-manual item in the
+ownership model is now automated (C2–C7). The remaining manual items (M1–M7) all have
+clear "why manual" justifications:
+
+- M1 (PDF): subjective visual; cannot be deterministic.
+- M2 (PCO): requires real OAuth tokens; `pco-live.spec.ts` covers the connected state.
+- M3 (Google Calendar): requires real OAuth tokens.
+- M4 (Storage isolation): requires signed URL mechanics; DB-level covered by pytest.
+- M5 (Electron auto-update): packaged-runtime gated.
+- M6 (Packaged Electron cross-tenant): packaged-runtime gated.
+- M7 (Domain provisioning): net-new account gated; non-automatable in current CI.
+
+To make M4 deterministic: add a signed-URL scope assertion in the Supabase RLS policy
+test suite (verify that storage policies restrict bucket access per workspace_id).
 
 ---
 
@@ -105,21 +168,37 @@ APP_MODE=server .venv/bin/pytest \
   -m integration \
   -q
 
-# 3. Migration dry-run
+# 3. E2E core lane (requires .env.e2e with SUPABASE_* keys)
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core
+
+# 4. Migration dry-run
 python scripts/migrate_to_supabase.py \
   --source /Volumes/docker/bulletingenerator
 ```
 
 ---
 
-## Cutover readiness checklist
+## Cutover readiness sign-off (issue #272 M5)
 
-Before switching production traffic to the Supabase backend, all items below must be checked:
+### Verified by CI / automated e2e (2026-06-06)
 
-- [ ] All Security surface items (S1-S6) green
-- [ ] All Ownership model surface items (C1-C4) green
-- [ ] Electron items E1-E3 green (E4 deferred)
+| Item | Spec / command | Result |
+|------|---------------|--------|
+| **[BLOCKER] Cross-tenant API+UI isolation** | `multitenant-isolation.spec.ts` — "Cross-tenant isolation" | **PASS** |
+| **[BLOCKER] Non-owner save → 403** | `multitenant-isolation.spec.ts` — "Ownership model and transfer" | **PASS** |
+| Read-only banner for non-owners | `multitenant-isolation.spec.ts` + `server-mode-behaviors.spec.ts` | **PASS** |
+| Duplicate to own copy | `multitenant-isolation.spec.ts` — "Ownership model and transfer" | **PASS** |
+| Transfer ownership | `multitenant-isolation.spec.ts` — "Ownership model and transfer" | **PASS** |
+| Presence badge (second member) | `server-mode-behaviors.spec.ts` — "presence" | **PASS** |
+| Revision history (≥3 after 3 saves) | `multitenant-isolation.spec.ts` — "Revision history" | **PASS** |
+| Restore to prior revision | `multitenant-isolation.spec.ts` — "Revision history" | **PASS** |
+
+### Requires human sign-off before cutover
+
+- [ ] All Security surface items S1–S6 green (pytest RLS + auth_middleware suite)
+- [ ] All Electron items E1–E3 green (E4 deferred)
 - [ ] Data migration D1 green; D2 completed on a rehearsal run
+- [ ] Manual items M1–M7 as applicable (M4, M6, M7 are lower priority for initial cutover)
 - [ ] `npm install` run and `package-lock.json` committed (electron-updater in lock file)
 - [ ] `bulletingen://auth-callback` added to Supabase redirect allow-list
 - [ ] PKCE confirmed active in Supabase Auth dashboard

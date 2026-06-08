@@ -53,8 +53,12 @@ const READY_POLL_INTERVAL_MS = 200;
  *   Spawn `python3 server.py` relative to the repo root (__dirname/../).
  */
 function resolveSidecar() {
-  // Packaged: resourcesPath points to <app>.app/Contents/Resources/
-  const packagedBin = path.join(process.resourcesPath, process.platform === 'win32' ? 'server.exe' : 'server');
+  // Packaged (--onedir): PyInstaller produces a directory named `server/`
+  // containing the executable at `server/server` (macOS/Linux) or
+  // `server/server.exe` (Windows). electron-builder copies the whole
+  // directory into <app>.app/Contents/Resources/server/ via extraResources.
+  const exeName = process.platform === 'win32' ? 'server.exe' : 'server';
+  const packagedBin = path.join(process.resourcesPath, 'server', exeName);
   if (process.resourcesPath && fs.existsSync(packagedBin)) {
     // Pass the port explicitly: server.py reads the port from argv[1] and
     // defaults to 8080 otherwise (it does not read the PORT env var), but
@@ -157,6 +161,89 @@ function handleDeepLink(url) {
   }
 }
 
+// ── PID-lock file (stale-sidecar detection, issue #279) ───────────────────────
+
+/**
+ * Return the path of the sidecar PID lock file.
+ * Placed in os.tmpdir() so it survives app crashes (unlike in-bundle locations)
+ * and works on both macOS and Windows without special permissions.
+ */
+function sidecarLockPath() {
+  return path.join(os.tmpdir(), 'bulletin-generator-sidecar.pid');
+}
+
+/**
+ * Check whether a process with the given PID is still running.
+ * Cross-platform: on POSIX we send signal 0; on Windows we use `tasklist`.
+ * Returns true if the process exists, false otherwise.
+ */
+function isProcessRunning(pid) {
+  try {
+    // signal 0 does not kill — it only checks existence on POSIX.
+    process.kill(pid, 0);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+/**
+ * If a stale sidecar PID lock file exists and the process is still alive, kill
+ * it and wait briefly for the port to be released.  Then remove the lock file.
+ *
+ * Returns a Promise that resolves once any stale process has been reaped (or
+ * immediately when there is nothing to reap).
+ */
+async function reapStaleSidecar() {
+  const lockFile = sidecarLockPath();
+  if (!fs.existsSync(lockFile)) return;
+
+  let stalePid;
+  try {
+    stalePid = parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
+  } catch (_e) {
+    // Unreadable lock file — remove it and proceed.
+    try { fs.unlinkSync(lockFile); } catch (_) {}
+    return;
+  }
+
+  if (!stalePid || isNaN(stalePid)) {
+    try { fs.unlinkSync(lockFile); } catch (_) {}
+    return;
+  }
+
+  if (isProcessRunning(stalePid)) {
+    console.log(`[sidecar] Found stale sidecar PID=${stalePid} — killing it.`);
+    try {
+      process.kill(stalePid, 'SIGTERM');
+    } catch (_e) {
+      // Already gone between the check and the kill — that's fine.
+    }
+    // Give the OS up to 1.5 s to release the port.
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+  }
+
+  try { fs.unlinkSync(lockFile); } catch (_) {}
+}
+
+/**
+ * Write the sidecar PID to the lock file.  Called after spawn so the PID is
+ * known.  A crash that skips before-quit leaves this file on disk for the next
+ * launch to reap.
+ */
+function writeSidecarLock(pid) {
+  try {
+    fs.writeFileSync(sidecarLockPath(), String(pid), 'utf8');
+  } catch (e) {
+    console.warn(`[sidecar] Could not write PID lock: ${e.message}`);
+  }
+}
+
+/** Remove the lock file on clean exit. */
+function removeSidecarLock() {
+  try { fs.unlinkSync(sidecarLockPath()); } catch (_) {}
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 let mainWindow = null;
@@ -170,7 +257,12 @@ function spawnSidecar() {
   const { cmd, args } = resolveSidecar();
 
   const env = Object.assign({}, process.env, {
-    APP_MODE: 'server',
+    // Electron desktop runs the sidecar in electron mode: data flows from the
+    // renderer directly to Supabase (supabase-data.js), and the sidecar serves
+    // static files, the PCO proxy, Google Calendar, and PDF — reading
+    // workspace_settings via Supabase REST (#294), so NO DATABASE_URL is needed
+    // or bundled (#277-F).
+    APP_MODE: 'electron',
     PORT: String(PORT),
   });
 
@@ -178,6 +270,10 @@ function spawnSidecar() {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
+
+  // Write the PID lock so a subsequent launch can detect and reap this
+  // sidecar if the app crashes without running before-quit (issue #279).
+  writeSidecarLock(sidecar.pid);
 
   sidecar.stdout.on('data', (data) => {
     process.stdout.write(`[server] ${data}`);
@@ -190,6 +286,7 @@ function spawnSidecar() {
   sidecar.on('exit', (code, signal) => {
     if (sidecarExited) return; // expected quit-path
     sidecarExited = true;
+    removeSidecarLock();
 
     const detail = signal
       ? `Signal: ${signal}`
@@ -207,6 +304,7 @@ function killSidecar() {
   if (sidecar && !sidecarExited) {
     sidecarExited = true;
     sidecar.kill('SIGTERM');
+    removeSidecarLock();
   }
 }
 
@@ -218,7 +316,7 @@ function createWindow() {
     height: 900,
     title: 'Bulletin Generator',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -292,17 +390,20 @@ function createTray() {
 
 // ── PDF generation via Electron (issue 012) ───────────────────────────────────
 
-ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, filename }) => {
+ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, filename, save }) => {
   if (typeof html !== 'string' || !html.trim()) {
     throw new Error('pdf:generate — html must be a non-empty string');
   }
+  // save !== false → show a Save dialog and write the file (download action).
+  // save === false → return the PDF bytes as base64 (in-app upload, e.g. Drive).
+  const saveToDisk = save !== false;
   const pageW = typeof pageWidth  === 'number' ? pageWidth  : 5.5;
   const pageH = typeof pageHeight === 'number' ? pageHeight : 8.5;
   const safeName = (typeof filename === 'string' ? filename.trim() : '') || 'bulletin.pdf';
+  const defaultName = safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`;
 
   const tmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), 'bulletin-pdf-'));
   const htmlPath = path.join(tmpDir, 'input.html');
-  const pdfPath  = path.join(tmpDir, safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`);
 
   fs.writeFileSync(htmlPath, html, 'utf8');
 
@@ -313,18 +414,56 @@ ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, fil
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
+  let pdfData;
   try {
     await win.loadFile(htmlPath);
-    const pdfData = await win.webContents.printToPDF({
-      pageSize: { width: Math.round(pageW * 25400), height: Math.round(pageH * 25400) },
+    // did-finish-load does not guarantee web fonts and (remote) images have
+    // finished decoding. Wait for them — hard-capped — so they aren't missing
+    // from the captured PDF.
+    await win.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const done = () => resolve(true);
+        const fontsReady = (document.fonts && document.fonts.ready)
+          ? document.fonts.ready : Promise.resolve();
+        const imgs = Array.from(document.images || []);
+        const imgsReady = Promise.all(imgs.map((img) => img.complete
+          ? null
+          : new Promise((r) => { img.addEventListener('load', r); img.addEventListener('error', r); })));
+        Promise.all([fontsReady, imgsReady]).then(() => setTimeout(done, 150));
+        setTimeout(done, 4000); // hard cap so generation never hangs
+      })
+    `).catch(() => {});
+    // pageSize width/height are in INCHES for this Electron build's printToPDF
+    // (Electron 28). Passing microns produced a MediaBox 25400× too large, so the
+    // content rendered into a microscopic corner and the page looked blank.
+    pdfData = await win.webContents.printToPDF({
+      pageSize: { width: pageW, height: pageH },
       printBackground: true,
-      margins: { marginType: 'none' },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
-    fs.writeFileSync(pdfPath, pdfData);
-    return pdfPath;
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }
+
+  // In-app consumers (e.g. Google Drive upload) need the raw bytes, not a file.
+  if (!saveToDisk) {
+    return { base64: Buffer.from(pdfData).toString('base64') };
+  }
+
+  // Ask the user where to save (the renderer cannot trigger a browser download
+  // in Electron — /api/pdf is disabled in this mode). Returns a structured
+  // result so the renderer can show an accurate status.
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Bulletin PDF',
+    defaultPath: defaultName,
+    filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) {
+    return { canceled: true };
+  }
+  fs.writeFileSync(filePath, pdfData);
+  shell.showItemInFolder(filePath);
+  return { canceled: false, filePath };
 });
 
 // ── Auto-update (electron-updater, issue 014) ─────────────────────────────────
@@ -366,6 +505,11 @@ function configureAutoUpdater() {
 
 app.whenReady().then(async () => {
   console.log(`[electron] PID=${process.pid} whenReady fired, gotLock=${gotLock}`);
+
+  // Reap any orphaned sidecar from a prior crash before spawning a new one
+  // (issue #279: stale process keeps port 8765 bound → bind fails → "Exit code 1").
+  await reapStaleSidecar();
+
   spawnSidecar();
 
   try {

@@ -100,6 +100,40 @@ set -a; source .env; set +a
 APP_MODE=server .venv/bin/pytest tests/test_migrations.py tests/test_rls_isolation.py tests/test_db.py -m integration -q
 ```
 
+## E2E Playwright tests (server mode)
+
+The `core` lane exercises the server-mode API and UI flows. It requires `.env.e2e` to
+be populated with `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY`
+(auto-derived from `.env` by the dev setup).
+
+```bash
+# Run the full core lane (all @core specs)
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core
+
+# Run just the multitenant isolation specs (cross-tenant, ownership, revisions)
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "multitenant-isolation"
+
+# Run individual test groups
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Cross-tenant isolation"
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Ownership model and transfer"
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "Revision history"
+E2E_PYTHON=.venv/bin/python npx playwright test --project=core -g "presence"
+```
+
+Expected result: **21 passed** for the full core lane (as of 2026-06-06 on branch
+`feat/desktop-anon-key-rls`).
+
+Key specs:
+
+| Spec | What it covers |
+|------|---------------|
+| `tests/e2e/features/multitenant-isolation.spec.ts` | Cross-tenant isolation (workspace B can't see A's projects); ownership model (read-only banner, 403 on non-owner save, duplicate, transfer); revision history (≥3 revisions after 3 saves, restore) |
+| `tests/e2e/features/server-mode-behaviors.spec.ts` | Read-only banner (existing); presence badge (existing) |
+| `tests/e2e/flows/smoke.spec.ts` | App boot, auth, PDF export |
+
+BrokenPipeError messages in the server log during tests are benign (connection closed
+before response completes, a side-effect of page.reload racing with in-flight requests).
+
 ## Pre-handoff verification
 
 Before opening a PR or claiming done:
@@ -108,3 +142,4 @@ Before opening a PR or claiming done:
 2. Start the app (`python3 server.py` or the preview server) and load `/`.
 3. Console must be clean after the changed flow runs.
 4. If the change touches Template Designer wiring, exercise at least one element of every zone — not just the one you changed.
+5. Run `E2E_PYTHON=.venv/bin/python npx playwright test --project=core` — all 21 must pass.

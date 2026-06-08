@@ -54,23 +54,54 @@ async function _duplicateProjectForCurrentUser() {
 // Desktop mode: no-op.
 
 function _startPresenceHeartbeat(projectId) {
-  if (!isServerMode()) return;
+  // Guard: server mode needs heartbeat through /api/presence; Electron mode needs
+  // it through sdPostPresenceHeartbeat; desktop (non-server, non-electron) skips.
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (!isServerMode() && !_electronMode) return;
   _stopPresenceHeartbeat(); // clear any existing timer
 
   const _heartbeat = () => {
-    apiFetch('/api/presence/heartbeat', 'POST', { project_id: projectId })
-      .catch(() => {}); // best-effort
+    if (_electronMode) {
+      // Electron path: use supabase-data.js with session-supplied userId/workspaceId
+      const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      const session = (typeof getSession === 'function') ? getSession() : null;
+      const userId = currentUser?.id || currentUser?.user_id || null;
+      // workspace_id: prefer the server-resolved value surfaced by /api/me onto
+      // getCurrentUser() (it is NOT in the JWT metadata — workspace membership
+      // lives in the DB). Fall back to metadata for safety.
+      const workspaceId = currentUser?.workspace_id
+        || currentUser?.user_metadata?.workspace_id
+        || currentUser?.app_metadata?.workspace_id
+        || session?.user?.user_metadata?.workspace_id
+        || session?.user?.app_metadata?.workspace_id
+        || null;
+      sdPostPresenceHeartbeat(projectId, { userId, workspaceId }).catch(() => {}); // best-effort
+    } else {
+      apiFetch('/api/presence/heartbeat', 'POST', { project_id: projectId })
+        .catch(() => {}); // best-effort
+    }
   };
 
   _heartbeat(); // send immediately on project open
   _presenceTimer = setInterval(_heartbeat, 30000);
 
   // Poll once on project open to check if someone else is actively editing
-  apiFetch(`/api/presence?project_id=${encodeURIComponent(projectId)}`)
-    .then(data => {
+  const _getPresence = _electronMode
+    ? (() => {
+        // Electron path: 90-second TTL filter applied client-side (limitation from 277-C)
+        const cutoff = new Date(Date.now() - 90000).toISOString();
+        return sdGetPresence(projectId).then(rows =>
+          (rows || []).filter(p => p.last_seen_at && p.last_seen_at >= cutoff)
+        );
+      })
+    : (() => apiFetch(`/api/presence?project_id=${encodeURIComponent(projectId)}`).then(data =>
+        Array.isArray(data) ? data : (data?.presences || [])
+      ));
+
+  _getPresence()
+    .then(presences => {
       const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
       const currentUserId = currentUser?.id || currentUser?.user_id || null;
-      const presences = Array.isArray(data) ? data : (data?.presences || []);
       const others = presences.filter(p => {
         const uid = p.user_id || p.userId;
         return currentUserId ? String(uid) !== String(currentUserId) : true;
@@ -90,7 +121,13 @@ function _stopPresenceHeartbeat() {
     clearInterval(_presenceTimer);
     _presenceTimer = null;
   }
-  if (isServerMode()) {
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronMode) {
+    // Electron path: delete presence via Supabase with session-supplied userId
+    const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+    const userId = currentUser?.id || currentUser?.user_id || null;
+    sdDeletePresence({ userId }).catch(() => {}); // best-effort
+  } else if (isServerMode()) {
     apiFetch('/api/presence', 'DELETE').catch(() => {}); // best-effort
   }
   _hidePresenceBadge();
@@ -244,11 +281,35 @@ async function saveProjectToServer(project) {
   }
   _saveInFlight = true;
   try {
-    const requestProject = buildProjectSaveRequestCore(project, {
-      isServerMode: isServerMode(),
-      editorDisplayName: _editorDisplayName,
-    });
-    await apiFetch('/api/projects', 'POST', requestProject);
+    const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+    if (_electronMode) {
+      // Electron path: write directly to Supabase via supabase-data.js.
+      // TODO(#216): revision snapshot handled by DB trigger (not implemented
+      // here — see issue #216 which will add a DB trigger for BOTH server- and
+      // renderer-writes).  Until #216 lands, Electron-mode saves do NOT create
+      // project_revisions snapshots.
+      const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      const session = (typeof getSession === 'function') ? getSession() : null;
+      const userId = currentUser?.id || currentUser?.user_id || null;
+      const workspaceId = currentUser?.workspace_id
+        || currentUser?.user_metadata?.workspace_id
+        || currentUser?.app_metadata?.workspace_id
+        || session?.user?.user_metadata?.workspace_id
+        || session?.user?.app_metadata?.workspace_id
+        || null;
+      const payload = Object.assign({}, project, {
+        owner_user_id: project.owner_user_id || userId,
+        workspace_id: project.workspace_id || workspaceId,
+      });
+      await sdSaveProject(payload);
+    } else {
+      // Server/browser path: unchanged
+      const requestProject = buildProjectSaveRequestCore(project, {
+        isServerMode: isServerMode(),
+        editorDisplayName: _editorDisplayName,
+      });
+      await apiFetch('/api/projects', 'POST', requestProject);
+    }
   } catch (err) {
     const failure = deriveProjectSaveFailureCore({
       errorStatus: err.status,
@@ -268,8 +329,13 @@ async function saveProjectToServer(project) {
 }
 
 function deleteProjectFromServer(projectId) {
-  apiFetch('/api/projects/' + projectId, 'DELETE')
-    .catch(err => setStatus('Delete failed: ' + (err.message || err), 'error'));
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (_electronMode) {
+    sdDeleteProject(projectId).catch(err => setStatus('Delete failed: ' + (err.message || err), 'error'));
+  } else {
+    apiFetch('/api/projects/' + projectId, 'DELETE')
+      .catch(err => setStatus('Delete failed: ' + (err.message || err), 'error'));
+  }
 }
 
 function projectById(id) {
@@ -495,8 +561,15 @@ async function loadProjectById(id) {
   let project = meta;
   if (!project.state) {
     try {
-      const res = await apiFetch('/api/projects/' + id);
-      project = res.project || meta;
+      const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+      if (_electronMode) {
+        project = await sdGetProject(id);
+        // supabase-data returns rows where state is in the `state` column
+        // (same shape as the server's /api/projects/:id response.project)
+      } else {
+        const res = await apiFetch('/api/projects/' + id);
+        project = res.project || meta;
+      }
     } catch (e) {
       setStatus('Could not load project.', 'error');
       return;
@@ -513,7 +586,9 @@ async function loadProjectById(id) {
   setStatus(`Loaded "${project.name}".`, 'success');
 
   // Determine read-only mode: non-owner viewing a workspace project
-  if (isServerMode() && project.owner_user_id) {
+  // Also applies in Electron mode (same ownership semantics via RLS).
+  const _emForReadOnly = typeof isElectronMode === 'function' && isElectronMode();
+  if ((isServerMode() || _emForReadOnly) && project.owner_user_id) {
     const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
     const currentUserId = currentUser?.id || currentUser?.user_id || null;
     if (currentUserId && String(project.owner_user_id) !== String(currentUserId)) {
@@ -623,8 +698,13 @@ async function restoreOnStartup() {
     // Fetch full state on demand — the list only contains metadata now.
     if (!project.state) {
       try {
-        const res = await apiFetch('/api/projects/' + project.id);
-        project = res.project || project;
+        const _electronModeStartup = typeof isElectronMode === 'function' && isElectronMode();
+        if (_electronModeStartup) {
+          project = await sdGetProject(project.id);
+        } else {
+          const res = await apiFetch('/api/projects/' + project.id);
+          project = res.project || project;
+        }
       } catch (_) { /* fall through with empty state */ }
     }
     activeProjectId = project.id;
@@ -633,8 +713,9 @@ async function restoreOnStartup() {
     restored = true;
     setStatus(`Loaded "${project.name}".`, 'success');
     storeActiveProjectId();
-    // Determine read-only mode for loaded project
-    if (isServerMode() && project.owner_user_id) {
+    // Determine read-only mode for loaded project (server + Electron share ownership model)
+    const _emStartupReadOnly = typeof isElectronMode === 'function' && isElectronMode();
+    if ((isServerMode() || _emStartupReadOnly) && project.owner_user_id) {
       const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
       const currentUserId = currentUser?.id || currentUser?.user_id || null;
       if (currentUserId && String(project.owner_user_id) !== String(currentUserId)) {
@@ -688,12 +769,20 @@ let _filesRefreshTimer = null;
 
 function startFilesAutoRefresh() {
   stopFilesAutoRefresh();
-  if (!isServerMode()) return;
+  const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+  if (!isServerMode() && !_electronMode) return;
   _filesRefreshTimer = setInterval(async () => {
     try {
-      const res = await apiFetch('/api/projects');
+      let freshProjects;
+      if (_electronMode) {
+        freshProjects = await sdGetProjects();
+        if (typeof attachOwnerLabels === 'function') freshProjects = attachOwnerLabels(freshProjects);
+      } else {
+        const res = await apiFetch('/api/projects');
+        freshProjects = res.projects || [];
+      }
       const prev = projects.slice();
-      setProjects(res.projects || []);
+      setProjects(freshProjects);
       renderProjectSelect();
       renderFilesList();
 
@@ -701,7 +790,7 @@ function startFilesAutoRefresh() {
       const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
       const currentUserId = currentUser?.id || currentUser?.user_id || null;
       if (currentUserId) {
-        (res.projects || []).forEach(p => {
+        freshProjects.forEach(p => {
           const updatedMs = p.updatedAt ? new Date(p.updatedAt).getTime() : 0;
           const updatedByMe = !p.updated_by_user_id || String(p.updated_by_user_id) === String(currentUserId);
           const isNewToYou = String(p.owner_user_id) === String(currentUserId)
@@ -1000,49 +1089,113 @@ async function inlineExternalImages(html) {
   return doc.documentElement.outerHTML;
 }
 
-async function generateAndDownloadPdf(pagesHtml, filename) {
-  setStatus('Generating PDF…', 'info');
-  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
-  try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
+// ── PDF delivery (mode-aware) ──────────────────────────────────────────────
+// In Electron the server-side /api/pdf route is disabled — the main process
+// renders the PDF via printToPDF over IPC (window.electronAPI.generatePdf).
+// For "download" actions it shows a Save dialog and writes the file; for in-app
+// consumers that need the raw bytes (e.g. Google Drive upload) it returns
+// base64. In server/browser mode we POST to /api/pdf and use the returned blob.
+function _isElectronPdf() {
+  return typeof isElectronMode === 'function' && isElectronMode()
+    && typeof window !== 'undefined' && window.electronAPI
+    && typeof window.electronAPI.generatePdf === 'function';
+}
 
-  const _pdfSession = typeof getSession === 'function' ? getSession() : null;
-  const _pdfHeaders = { 'Content-Type': 'application/json' };
-  if (_pdfSession?.access_token) _pdfHeaders['Authorization'] = `Bearer ${_pdfSession.access_token}`;
+function _pdfAuthHeaders() {
+  const sess = typeof getSession === 'function' ? getSession() : null;
+  const headers = { 'Content-Type': 'application/json' };
+  if (sess?.access_token) headers['Authorization'] = `Bearer ${sess.access_token}`;
+  return headers;
+}
 
-  let resp;
-  try {
-    resp = await fetch('/api/pdf', {
-      method: 'POST',
-      headers: _pdfHeaders,
-      body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
-    });
-  } catch (e) {
-    setStatus('PDF generation failed — network error.', 'error');
-    return;
-  }
+function _b64ToPdfBlob(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: 'application/pdf' });
+}
 
+async function _postPdfBlob({ html, filename, pageWidth, pageHeight }) {
+  const resp = await fetch('/api/pdf', {
+    method: 'POST',
+    headers: _pdfAuthHeaders(),
+    body: JSON.stringify({ html, filename, pageWidth, pageHeight }),
+  });
   if (!resp.ok) {
     let msg = 'PDF generation failed.';
     try { const err = await resp.json(); msg = err.error || msg; } catch (e) {}
-    setStatus(msg, 'error');
-    return;
+    throw new Error(msg);
   }
+  return resp.blob();
+}
 
-  const blob = await resp.blob();
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
+function _triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  setStatus('PDF downloaded!', 'success');
 }
 
-async function buildProjectPdfBlob(id) {
-  const project = projectById(id);
+// "Download" a PDF: Electron → main-process Save dialog; otherwise → browser
+// download. Returns { saved, canceled }.
+async function _deliverPdfDownload({ html, filename, pageWidth, pageHeight }) {
+  if (_isElectronPdf()) {
+    const r = await window.electronAPI.generatePdf({ html, filename, pageWidth, pageHeight });
+    if (r && r.canceled) return { saved: false, canceled: true };
+    return { saved: true, canceled: false };
+  }
+  const blob = await _postPdfBlob({ html, filename, pageWidth, pageHeight });
+  _triggerBlobDownload(blob, filename);
+  return { saved: true, canceled: false };
+}
+
+// Generate a PDF and return its bytes as a Blob (for in-app upload, e.g. Drive).
+async function _pdfBlobForUpload({ html, filename, pageWidth, pageHeight }) {
+  if (_isElectronPdf()) {
+    const r = await window.electronAPI.generatePdf({ html, filename, pageWidth, pageHeight, save: false });
+    if (!r || !r.base64) throw new Error('PDF generation failed.');
+    return _b64ToPdfBlob(r.base64);
+  }
+  return _postPdfBlob({ html, filename, pageWidth, pageHeight });
+}
+
+async function generateAndDownloadPdf(pagesHtml, filename) {
+  setStatus('Generating PDF…', 'info');
+  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+  try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
+
+  try {
+    const r = await _deliverPdfDownload({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h });
+    if (r.canceled) { setStatus('PDF save cancelled.', 'info'); return; }
+    setStatus(_isElectronPdf() ? 'PDF saved!' : 'PDF downloaded!', 'success');
+  } catch (e) {
+    setStatus(e.message || 'PDF generation failed.', 'error');
+  }
+}
+
+// Prepare a project's print HTML (+ filename + page dims) for export. Returns
+// null when there is nothing to print. Shared by the download and Drive flows.
+async function _prepareProjectPdf(id) {
+  let project = projectById(id);
   if (!project) return null;
+
+  // The file list holds metadata only (no `state`); fetch the full state on
+  // demand for export of a non-active project.
+  if (!project.state) {
+    try {
+      const _em = typeof isElectronMode === 'function' && isElectronMode();
+      if (_em) {
+        project = await sdGetProject(id);
+      } else {
+        const res = await apiFetch('/api/projects/' + id);
+        project = res.project || project;
+      }
+    } catch (_) { /* fall through with whatever we have */ }
+  }
 
   const prevState = collectCurrentProjectState();
   const prevStaffLogoUrl = staffLogoUrl;
@@ -1076,39 +1229,32 @@ async function buildProjectPdfBlob(id) {
 
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
-  const _pdfSess2 = typeof getSession === 'function' ? getSession() : null;
-  const _pdfHdrs2 = { 'Content-Type': 'application/json' };
-  if (_pdfSess2?.access_token) _pdfHdrs2['Authorization'] = `Bearer ${_pdfSess2.access_token}`;
+  return { html, filename, pageDims, project };
+}
 
-  const resp = await fetch('/api/pdf', {
-    method: 'POST',
-    headers: _pdfHdrs2,
-    body: JSON.stringify({ html, filename, pageWidth: pageDims.w, pageHeight: pageDims.h }),
+// Build a PDF blob for a project (used by the Google Drive upload flow, which
+// needs the raw bytes). Returns { blob, filename, project } or null.
+async function buildProjectPdfBlob(id) {
+  const prep = await _prepareProjectPdf(id);
+  if (!prep) return null;
+  const blob = await _pdfBlobForUpload({
+    html: prep.html, filename: prep.filename,
+    pageWidth: prep.pageDims.w, pageHeight: prep.pageDims.h,
   });
-
-  if (!resp.ok) {
-    let msg = 'PDF generation failed.';
-    try { const err = await resp.json(); msg = err.error || msg; } catch (e) {}
-    throw new Error(msg);
-  }
-
-  return { blob: await resp.blob(), filename, project };
+  return { blob, filename: prep.filename, project: prep.project };
 }
 
 async function downloadProjectAsPdf(id) {
   setStatus('Generating PDF…', 'info');
   try {
-    const result = await buildProjectPdfBlob(id);
-    if (!result) return;
-    const url = URL.createObjectURL(result.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = result.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setStatus('PDF downloaded!', 'success');
+    const prep = await _prepareProjectPdf(id);
+    if (!prep) return;
+    const r = await _deliverPdfDownload({
+      html: prep.html, filename: prep.filename,
+      pageWidth: prep.pageDims.w, pageHeight: prep.pageDims.h,
+    });
+    if (r.canceled) { setStatus('PDF save cancelled.', 'info'); return; }
+    setStatus(_isElectronPdf() ? 'PDF saved!' : 'PDF downloaded!', 'success');
   } catch (e) {
     setStatus(e.message || 'PDF generation failed.', 'error');
   }
@@ -1163,8 +1309,20 @@ async function handleHandoff(projectId) {
   // Fetch workspace members (excluding self)
   let members = [];
   try {
-    const res = await apiFetch('/api/workspace/members');
-    members = res.members || [];
+    const _electronMode = typeof isElectronMode === 'function' && isElectronMode();
+    if (_electronMode) {
+      const rows = await sdGetMembers();
+      // sdGetMembers returns rows with profiles join: { user_id, role, profiles: { display_name, email } }
+      members = (rows || []).map(m => ({
+        user_id: m.user_id,
+        role: m.role,
+        display_name: m.profiles?.display_name || '',
+        email: m.profiles?.email || '',
+      }));
+    } else {
+      const res = await apiFetch('/api/workspace/members');
+      members = res.members || [];
+    }
   } catch (e) {
     setStatus('Could not load workspace members.', 'error');
     return;
@@ -1207,11 +1365,18 @@ async function handleHandoff(projectId) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Transferring…';
     try {
-      await apiFetch(`/api/projects/${projectId}/transfer`, 'POST', { to_user_id: toUserId });
-      modal.remove();
-      // Refresh project list so ownership badge updates
-      const res = await apiFetch('/api/projects');
-      setProjects(res.projects || []);
+      const _emTransfer = typeof isElectronMode === 'function' && isElectronMode();
+      if (_emTransfer) {
+        await sdTransferProject(projectId, toUserId);
+        modal.remove();
+        const freshProjects = await sdGetProjects();
+        setProjects(freshProjects);
+      } else {
+        await apiFetch(`/api/projects/${projectId}/transfer`, 'POST', { to_user_id: toUserId });
+        modal.remove();
+        const res = await apiFetch('/api/projects');
+        setProjects(res.projects || []);
+      }
       renderProjectSelect();
       renderFilesList();
       setStatus(`"${proj.name}" handed off.`, 'success');
@@ -1422,7 +1587,13 @@ function initProjects() {
   // Send DELETE /api/presence on page unload (best-effort)
   window.addEventListener('pagehide', () => _stopPresenceHeartbeat());
   window.addEventListener('beforeunload', () => {
-    if (isServerMode()) {
+    const _emUnload = typeof isElectronMode === 'function' && isElectronMode();
+    if (_emUnload) {
+      // Electron path: delete presence via supabase-data.js (best-effort, fire-and-forget)
+      const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      const userId = currentUser?.id || currentUser?.user_id || null;
+      sdDeletePresence({ userId }).catch(() => {});
+    } else if (isServerMode()) {
       apiFetch('/api/presence', 'DELETE').catch(() => {});
     }
   });

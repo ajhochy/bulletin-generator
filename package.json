@@ -33,11 +33,10 @@
     ],
     "extraResources": [
       {
-        "from": "dist",
-        "to": ".",
+        "from": "dist/server",
+        "to": "server",
         "filter": [
-          "server",
-          "server.exe"
+          "**/*"
         ]
       }
     ],

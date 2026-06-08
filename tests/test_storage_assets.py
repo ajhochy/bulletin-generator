@@ -317,20 +317,40 @@ class TestStorageIntegrationWithStoragePy(unittest.TestCase):
         return PostgresStorageBackend(workspace_id=workspace_id)
 
     def _mock_transaction(self):
-        """Return a context-manager mock that yields a fake conn."""
-        conn = MagicMock()
-        cursor = MagicMock()
-        cursor.fetchone.return_value = (
+        """Return a context-manager mock that yields a fake conn.
+
+        Routes conn.execute() by SQL so it is robust to save_project()'s
+        multi-statement sequence (since #216: prev-state SELECT, upsert
+        RETURNING, profiles enrichment, project_revisions snapshot INSERT).
+        """
+        row_cursor = MagicMock()
+        row_cursor.fetchone.return_value = (
             "proj-1", "Test", None, "workspace",
             '{"id":"proj-1","name":"Test"}', 1,
             None, None, None, None, "ws-abc",
         )
-        cursor.description = [
+        row_cursor.description = [
             ("id",), ("name",), ("owner_user_id",), ("visibility",),
             ("state",), ("revision",), ("created_at",), ("updated_at",),
             ("created_by_user_id",), ("updated_by_user_id",), ("workspace_id",),
         ]
-        conn.execute.return_value = cursor
+
+        def _route(sql, params=None):
+            s = " ".join(str(sql).split())
+            if s.startswith("SELECT state FROM projects"):
+                prev = MagicMock()
+                prev.fetchone.return_value = ('{"id":"proj-1","name":"Test"}',)
+                return prev
+            if "INSERT INTO projects" in s:
+                return row_cursor
+            if "profiles" in s:
+                prof = MagicMock()
+                prof.fetchall.return_value = []
+                return prof
+            return MagicMock()  # project_revisions snapshot INSERT, etc.
+
+        conn = MagicMock()
+        conn.execute.side_effect = _route
         ctx = MagicMock()
         ctx.__enter__ = MagicMock(return_value=conn)
         ctx.__exit__ = MagicMock(return_value=False)

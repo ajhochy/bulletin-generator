@@ -1,0 +1,145 @@
+{
+  "issue": "issue-277-D",
+  "title": "Wire renderer data operations through supabase-data.js in Electron mode",
+  "generated": "2026-06-06",
+  "context": "Issue #277-D of the #277 S2-hybrid migration. Routes all renderer data operations through src/js/supabase-data.js (supabase-js + anon key, RLS-enforced) when running in Electron, while leaving the server/browser mode path (apiFetch → server.py) completely unchanged. isElectronMode() from auth-ui.js gates each call site.",
+  "stack": "javascript",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-D-c1",
+      "text": "loadAllFromServer() in api.js calls sdGetProjects/sdGetAnnouncements/sdGetSongs/sdGetSettings/sdGetTemplates when isElectronMode() is true, and does NOT call apiFetch('/api/projects').",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "api.js loadAllFromServer dispatch > calls sdGetProjects (not apiFetch /api/projects) when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c2",
+      "text": "loadAllFromServer() in api.js calls apiFetch('/api/projects') (not sdGetProjects) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "api.js loadAllFromServer dispatch > calls apiFetch /api/projects (not sdGetProjects) when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c3",
+      "text": "saveProjectToServer() calls sdSaveProject (not apiFetch) when isElectronMode() is true.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "projects.js saveProjectToServer dispatch > calls sdSaveProject (not apiFetch) when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c4",
+      "text": "saveProjectToServer() calls apiFetch /api/projects (not sdSaveProject) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "projects.js saveProjectToServer dispatch > calls apiFetch /api/projects (not sdSaveProject) when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c5",
+      "text": "deleteProjectFromServer() calls sdDeleteProject (not apiFetch) when isElectronMode() is true.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "projects.js deleteProjectFromServer dispatch > calls sdDeleteProject (not apiFetch) when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c6",
+      "text": "deleteProjectFromServer() calls apiFetch DELETE (not sdDeleteProject) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "projects.js deleteProjectFromServer dispatch > calls apiFetch DELETE (not sdDeleteProject) when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c7",
+      "text": "saveAnnGlobal() in announcements.js performs delete-then-insert (supabase delete + sdSaveAnnouncements) when isElectronMode() is true, and does NOT call apiFetch.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "announcements.js saveAnnGlobal dispatch > uses Supabase delete+insert path when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c8",
+      "text": "saveAnnGlobal() calls apiFetch POST /api/announcements (not sdSaveAnnouncements) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "announcements.js saveAnnGlobal dispatch > calls apiFetch POST /api/announcements when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c9",
+      "text": "saveSongDb() in songs.js calls sdSaveSongs (not apiFetch) when isElectronMode() is true.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "songs.js saveSongDb dispatch > calls sdSaveSongs (not apiFetch) when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c10",
+      "text": "saveSongDb() calls apiFetch /api/songs (not sdSaveSongs) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "songs.js saveSongDb dispatch > calls apiFetch /api/songs (not sdSaveSongs) when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c11",
+      "text": "saveStaffData() in staff.js calls sdGetSettings then sdSaveSettings (not apiFetch) when isElectronMode() is true.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "staff.js saveStaffData dispatch > calls sdGetSettings then sdSaveSettings (not apiFetch) when isElectronMode() is true",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c12",
+      "text": "saveStaffData() calls apiFetch /api/settings (not sdSaveSettings) when isElectronMode() is false.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "staff.js saveStaffData dispatch > calls apiFetch /api/settings (not sdSaveSettings) when isElectronMode() is false",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c13",
+      "text": "node --check on all modified JS files passes with no syntax errors.",
+      "mode": "unit",
+      "test_file": "src/js/{api,projects,announcements,songs,staff,calendar,auth-ui,main}.js",
+      "test_id": "node --check",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c14",
+      "text": "npm test: all 119 tests pass (107 pre-existing + 12 new dispatch tests), 1 skipped.",
+      "mode": "unit",
+      "test_file": "tests/electron-dispatch.spec.js",
+      "test_id": "npm test",
+      "status": "pass"
+    },
+    {
+      "criterion_id": "issue-277-D-c15",
+      "text": "npm run build: vite build produces a clean build with no errors.",
+      "mode": "unit",
+      "test_file": "vite.config.js",
+      "test_id": "npm run build",
+      "status": "pass"
+    }
+  ],
+  "not_tested": [
+    "MANUAL SMOKE REQUIRED — open project loads via Supabase REST (not /api/projects): verify in browser Network tab that opening a project in Electron makes a POST to supabase.co/rest/v1/projects, not /api/projects.",
+    "MANUAL SMOKE REQUIRED — save round-trip: edit bulletin text + save; confirm row appears in Supabase projects table with updated state JSONB.",
+    "MANUAL SMOKE REQUIRED — transfer works: requires 277-B transfer_project_owner RPC to be deployed to the Supabase project.",
+    "MANUAL SMOKE REQUIRED — presence badge: open same project as two users; confirm the second user sees '● [user] is editing' badge. Requires live Supabase session.",
+    "MANUAL SMOKE REQUIRED — PDF still works: PDF generation still goes through /api/pdf (Python sidecar + Chrome) in Electron mode — it is NOT routed through Supabase. Confirm PDF export works after this change.",
+    "MANUAL SMOKE REQUIRED — delete announcement actually removes it: verify that deleting an announcement in Electron mode removes it from the announcements table (full-replace via delete-then-insert).",
+    "MANUAL SMOKE REQUIRED — settings merge (staff, calendar Drive folder): save staff data, reload app, confirm staff data persists in workspace_settings.settings JSONB.",
+    "LIMITATION (deferred to #216): saveProjectToServer in Electron mode does NOT create project_revisions snapshots. The comment '// TODO(#216): revision snapshot handled by DB trigger' is in place. Until the #216 DB trigger lands, revision history will not accumulate for Electron-mode saves.",
+    "LIMITATION: sdGetPresence TTL filter (90 seconds) is applied client-side (filter rows by last_seen_at >= now()-90s) rather than at the DB level. This matches the server's 90s window semantically but wastes one round-trip row if stale rows exist.",
+    "LIMITATION: Announcement full-replace uses sb.from('announcements').delete().not('id','is',null) to delete all workspace-scoped rows before re-inserting. RLS must scope the delete correctly (workspace_id = auth.uid()'s workspace). If RLS does not include a workspace_id delete policy, this step will silently delete nothing. Verify RLS policies allow DELETE on announcements for the workspace owner/members.",
+    "LIMITATION: Settings merge (read-then-write) in staff.js saveStaffData() and calendar.js saveDriveFolderId() has a TOCTOU race if two concurrent saves happen simultaneously — the second read may get stale data and overwrite the first save. Acceptable for single-user Electron mode.",
+    "LIMITATION: volunteer-roles.js, templates.js, editor.js, state.js, pco.js, app.js settings saves are NOT routed through supabase-data.js yet (those files are outside the 277-D permitted edit scope). They will still call apiFetch('/api/settings',...) in Electron mode. These are follow-up work.",
+    "LIMITATION: handleHandoff members fetch in Electron mode does not filter out the current user. All workspace members are returned; the UI shows all. The server-side handler excludes self — minor UX gap in Electron mode.",
+    "LIMITATION: sdSaveSettings requires workspace_id for the upsert ON CONFLICT; if workspace_id is null (user metadata not populated), the upsert may fail with a constraint violation. Confirm workspace_id is set in user.user_metadata.workspace_id after provision_first_login."
+  ]
+}

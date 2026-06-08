@@ -1,0 +1,47 @@
+{
+  "issue": "277-A",
+  "generated": "2026-06-06",
+  "criteria": [
+    {
+      "criterion_id": "issue-277-A-c1",
+      "text": "With APP_MODE=electron, db.py treats electron as desktop (db.IS_DESKTOP is True), mirroring server.py:263.",
+      "mode": "unit",
+      "test_file": "tests/test_issue_277_a_electron_db_mode.py",
+      "test_id": "test_issue_277_a_c1_electron_is_desktop",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-277-A-c2",
+      "text": "In electron mode db.get_connection() raises a clean 'server mode' RuntimeError rather than attempting a psycopg connection (no DATABASE_URL required).",
+      "mode": "unit",
+      "test_file": "tests/test_issue_277_a_electron_db_mode.py",
+      "test_id": "test_issue_277_a_c2_electron_get_connection_clean_runtimeerror",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-277-A-c3",
+      "text": "In electron mode db.transaction() raises a clean 'server mode' RuntimeError before touching DATABASE_URL.",
+      "mode": "unit",
+      "test_file": "tests/test_issue_277_a_electron_db_mode.py",
+      "test_id": "test_issue_277_a_c3_electron_transaction_clean_runtimeerror",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-277-A-c4",
+      "text": "Regression guard: APP_MODE=server is still NOT treated as desktop (server mode unaffected).",
+      "mode": "unit",
+      "test_file": "tests/test_issue_277_a_electron_db_mode.py",
+      "test_id": "test_issue_277_a_c4_server_mode_unaffected",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-277-A-c5",
+      "text": "Packaged Electron sidecar launches with no DATABASE_URL in env and does not sys.exit (full app boot).",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Requires a packaged DMG launch on a real machine; server.py _validate_server_config already early-returns for IS_DESKTOP. Covered by the gated 277-F manual Electron smoke."
+    }
+  ],
+  "stack": "python",
+  "not_tested": ["issue-277-A-c5"]
+}

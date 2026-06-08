@@ -18,7 +18,12 @@
  *       → Promise<string>  (absolute path to the written PDF temp file)
  */
 
-import { contextBridge, ipcRenderer } from 'electron';
+// CommonJS (.cjs) on purpose: the BrowserWindow runs with Electron's default
+// sandbox:true, where preload scripts must be CommonJS (require), not ESM. The
+// repo is "type":"module", so a .js preload would parse as ESM and fail with
+// "Cannot use import statement outside a module". .cjs forces CommonJS and
+// loads in both dev and packaged builds.
+const { contextBridge, ipcRenderer } = require('electron');
 
 // ── Auth deep-link bridge ─────────────────────────────────────────────────────
 contextBridge.exposeInMainWorld('electronAuth', {
