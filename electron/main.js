@@ -390,17 +390,20 @@ function createTray() {
 
 // ── PDF generation via Electron (issue 012) ───────────────────────────────────
 
-ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, filename }) => {
+ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, filename, save }) => {
   if (typeof html !== 'string' || !html.trim()) {
     throw new Error('pdf:generate — html must be a non-empty string');
   }
+  // save !== false → show a Save dialog and write the file (download action).
+  // save === false → return the PDF bytes as base64 (in-app upload, e.g. Drive).
+  const saveToDisk = save !== false;
   const pageW = typeof pageWidth  === 'number' ? pageWidth  : 5.5;
   const pageH = typeof pageHeight === 'number' ? pageHeight : 8.5;
   const safeName = (typeof filename === 'string' ? filename.trim() : '') || 'bulletin.pdf';
+  const defaultName = safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`;
 
   const tmpDir   = fs.mkdtempSync(path.join(os.tmpdir(), 'bulletin-pdf-'));
   const htmlPath = path.join(tmpDir, 'input.html');
-  const pdfPath  = path.join(tmpDir, safeName.endsWith('.pdf') ? safeName : `${safeName}.pdf`);
 
   fs.writeFileSync(htmlPath, html, 'utf8');
 
@@ -411,18 +414,56 @@ ipcMain.handle('pdf:generate', async (_event, { html, pageWidth, pageHeight, fil
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
+  let pdfData;
   try {
     await win.loadFile(htmlPath);
-    const pdfData = await win.webContents.printToPDF({
-      pageSize: { width: Math.round(pageW * 25400), height: Math.round(pageH * 25400) },
+    // did-finish-load does not guarantee web fonts and (remote) images have
+    // finished decoding. Wait for them — hard-capped — so they aren't missing
+    // from the captured PDF.
+    await win.webContents.executeJavaScript(`
+      new Promise((resolve) => {
+        const done = () => resolve(true);
+        const fontsReady = (document.fonts && document.fonts.ready)
+          ? document.fonts.ready : Promise.resolve();
+        const imgs = Array.from(document.images || []);
+        const imgsReady = Promise.all(imgs.map((img) => img.complete
+          ? null
+          : new Promise((r) => { img.addEventListener('load', r); img.addEventListener('error', r); })));
+        Promise.all([fontsReady, imgsReady]).then(() => setTimeout(done, 150));
+        setTimeout(done, 4000); // hard cap so generation never hangs
+      })
+    `).catch(() => {});
+    // pageSize width/height are in INCHES for this Electron build's printToPDF
+    // (Electron 28). Passing microns produced a MediaBox 25400× too large, so the
+    // content rendered into a microscopic corner and the page looked blank.
+    pdfData = await win.webContents.printToPDF({
+      pageSize: { width: pageW, height: pageH },
       printBackground: true,
-      margins: { marginType: 'none' },
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
     });
-    fs.writeFileSync(pdfPath, pdfData);
-    return pdfPath;
   } finally {
     if (!win.isDestroyed()) win.destroy();
   }
+
+  // In-app consumers (e.g. Google Drive upload) need the raw bytes, not a file.
+  if (!saveToDisk) {
+    return { base64: Buffer.from(pdfData).toString('base64') };
+  }
+
+  // Ask the user where to save (the renderer cannot trigger a browser download
+  // in Electron — /api/pdf is disabled in this mode). Returns a structured
+  // result so the renderer can show an accurate status.
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save Bulletin PDF',
+    defaultPath: defaultName,
+    filters: [{ name: 'PDF Document', extensions: ['pdf'] }],
+  });
+  if (canceled || !filePath) {
+    return { canceled: true };
+  }
+  fs.writeFileSync(filePath, pdfData);
+  shell.showItemInFolder(filePath);
+  return { canceled: false, filePath };
 });
 
 // ── Auto-update (electron-updater, issue 014) ─────────────────────────────────

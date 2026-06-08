@@ -1089,47 +1089,97 @@ async function inlineExternalImages(html) {
   return doc.documentElement.outerHTML;
 }
 
-async function generateAndDownloadPdf(pagesHtml, filename) {
-  setStatus('Generating PDF…', 'info');
-  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
-  try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
+// ── PDF delivery (mode-aware) ──────────────────────────────────────────────
+// In Electron the server-side /api/pdf route is disabled — the main process
+// renders the PDF via printToPDF over IPC (window.electronAPI.generatePdf).
+// For "download" actions it shows a Save dialog and writes the file; for in-app
+// consumers that need the raw bytes (e.g. Google Drive upload) it returns
+// base64. In server/browser mode we POST to /api/pdf and use the returned blob.
+function _isElectronPdf() {
+  return typeof isElectronMode === 'function' && isElectronMode()
+    && typeof window !== 'undefined' && window.electronAPI
+    && typeof window.electronAPI.generatePdf === 'function';
+}
 
-  const _pdfSession = typeof getSession === 'function' ? getSession() : null;
-  const _pdfHeaders = { 'Content-Type': 'application/json' };
-  if (_pdfSession?.access_token) _pdfHeaders['Authorization'] = `Bearer ${_pdfSession.access_token}`;
+function _pdfAuthHeaders() {
+  const sess = typeof getSession === 'function' ? getSession() : null;
+  const headers = { 'Content-Type': 'application/json' };
+  if (sess?.access_token) headers['Authorization'] = `Bearer ${sess.access_token}`;
+  return headers;
+}
 
-  let resp;
-  try {
-    resp = await fetch('/api/pdf', {
-      method: 'POST',
-      headers: _pdfHeaders,
-      body: JSON.stringify({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h }),
-    });
-  } catch (e) {
-    setStatus('PDF generation failed — network error.', 'error');
-    return;
-  }
+function _b64ToPdfBlob(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: 'application/pdf' });
+}
 
+async function _postPdfBlob({ html, filename, pageWidth, pageHeight }) {
+  const resp = await fetch('/api/pdf', {
+    method: 'POST',
+    headers: _pdfAuthHeaders(),
+    body: JSON.stringify({ html, filename, pageWidth, pageHeight }),
+  });
   if (!resp.ok) {
     let msg = 'PDF generation failed.';
     try { const err = await resp.json(); msg = err.error || msg; } catch (e) {}
-    setStatus(msg, 'error');
-    return;
+    throw new Error(msg);
   }
+  return resp.blob();
+}
 
-  const blob = await resp.blob();
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
+function _triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  setStatus('PDF downloaded!', 'success');
 }
 
-async function buildProjectPdfBlob(id) {
+// "Download" a PDF: Electron → main-process Save dialog; otherwise → browser
+// download. Returns { saved, canceled }.
+async function _deliverPdfDownload({ html, filename, pageWidth, pageHeight }) {
+  if (_isElectronPdf()) {
+    const r = await window.electronAPI.generatePdf({ html, filename, pageWidth, pageHeight });
+    if (r && r.canceled) return { saved: false, canceled: true };
+    return { saved: true, canceled: false };
+  }
+  const blob = await _postPdfBlob({ html, filename, pageWidth, pageHeight });
+  _triggerBlobDownload(blob, filename);
+  return { saved: true, canceled: false };
+}
+
+// Generate a PDF and return its bytes as a Blob (for in-app upload, e.g. Drive).
+async function _pdfBlobForUpload({ html, filename, pageWidth, pageHeight }) {
+  if (_isElectronPdf()) {
+    const r = await window.electronAPI.generatePdf({ html, filename, pageWidth, pageHeight, save: false });
+    if (!r || !r.base64) throw new Error('PDF generation failed.');
+    return _b64ToPdfBlob(r.base64);
+  }
+  return _postPdfBlob({ html, filename, pageWidth, pageHeight });
+}
+
+async function generateAndDownloadPdf(pagesHtml, filename) {
+  setStatus('Generating PDF…', 'info');
+  let html = await buildPrintDocHtml(pagesHtml, filename.replace(/\.pdf$/i, ''));
+  try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
+
+  try {
+    const r = await _deliverPdfDownload({ html, filename, pageWidth: getPageDims().w, pageHeight: getPageDims().h });
+    if (r.canceled) { setStatus('PDF save cancelled.', 'info'); return; }
+    setStatus(_isElectronPdf() ? 'PDF saved!' : 'PDF downloaded!', 'success');
+  } catch (e) {
+    setStatus(e.message || 'PDF generation failed.', 'error');
+  }
+}
+
+// Prepare a project's print HTML (+ filename + page dims) for export. Returns
+// null when there is nothing to print. Shared by the download and Drive flows.
+async function _prepareProjectPdf(id) {
   let project = projectById(id);
   if (!project) return null;
 
@@ -1179,39 +1229,32 @@ async function buildProjectPdfBlob(id) {
 
   try { html = await inlineExternalImages(html); } catch (e) { /* proceed anyway */ }
 
-  const _pdfSess2 = typeof getSession === 'function' ? getSession() : null;
-  const _pdfHdrs2 = { 'Content-Type': 'application/json' };
-  if (_pdfSess2?.access_token) _pdfHdrs2['Authorization'] = `Bearer ${_pdfSess2.access_token}`;
+  return { html, filename, pageDims, project };
+}
 
-  const resp = await fetch('/api/pdf', {
-    method: 'POST',
-    headers: _pdfHdrs2,
-    body: JSON.stringify({ html, filename, pageWidth: pageDims.w, pageHeight: pageDims.h }),
+// Build a PDF blob for a project (used by the Google Drive upload flow, which
+// needs the raw bytes). Returns { blob, filename, project } or null.
+async function buildProjectPdfBlob(id) {
+  const prep = await _prepareProjectPdf(id);
+  if (!prep) return null;
+  const blob = await _pdfBlobForUpload({
+    html: prep.html, filename: prep.filename,
+    pageWidth: prep.pageDims.w, pageHeight: prep.pageDims.h,
   });
-
-  if (!resp.ok) {
-    let msg = 'PDF generation failed.';
-    try { const err = await resp.json(); msg = err.error || msg; } catch (e) {}
-    throw new Error(msg);
-  }
-
-  return { blob: await resp.blob(), filename, project };
+  return { blob, filename: prep.filename, project: prep.project };
 }
 
 async function downloadProjectAsPdf(id) {
   setStatus('Generating PDF…', 'info');
   try {
-    const result = await buildProjectPdfBlob(id);
-    if (!result) return;
-    const url = URL.createObjectURL(result.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = result.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    setStatus('PDF downloaded!', 'success');
+    const prep = await _prepareProjectPdf(id);
+    if (!prep) return;
+    const r = await _deliverPdfDownload({
+      html: prep.html, filename: prep.filename,
+      pageWidth: prep.pageDims.w, pageHeight: prep.pageDims.h,
+    });
+    if (r.canceled) { setStatus('PDF save cancelled.', 'info'); return; }
+    setStatus(_isElectronPdf() ? 'PDF saved!' : 'PDF downloaded!', 'success');
   } catch (e) {
     setStatus(e.message || 'PDF generation failed.', 'error');
   }
