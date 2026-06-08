@@ -386,13 +386,19 @@ export async function sdGetAnnouncements({ client } = {}) {
 export async function sdSaveAnnouncements(data, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
   const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
-  const rows = (Array.isArray(data) ? data : []).map(item => ({
-    id: item.id || undefined,
-    workspace_id: item.workspace_id || ws,
-    title: item.title || '',
-    body: item.body || '',
-    state: item,       // full item dict stored in state JSONB (mirrors Python)
-  }));
+  const rows = (Array.isArray(data) ? data : []).map(item => {
+    // Omit id when absent so the DB default (gen_random_uuid()) fires — sending
+    // id: undefined/null violates the NOT NULL constraint (the default only
+    // applies when the column is absent from the INSERT).
+    const row = {
+      workspace_id: item.workspace_id || ws,
+      title: item.title || '',
+      body: item.body || '',
+      state: item,       // full item dict stored in state JSONB (mirrors Python)
+    };
+    if (item.id) row.id = item.id;
+    return row;
+  });
   const result = await sb
     .from('announcements')
     .upsert(rows, { onConflict: 'id' });
@@ -437,12 +443,16 @@ export async function sdGetSongs({ client } = {}) {
 export async function sdSaveSongs(data, { client, workspaceId } = {}) {
   const sb = client || _resolveClient();
   const ws = workspaceId || _sessionContext().workspaceId;  // RLS: is_workspace_member(workspace_id)
-  const rows = (Array.isArray(data) ? data : []).map(item => ({
-    id: item.id || undefined,
-    workspace_id: item.workspace_id || ws,
-    title: item.title || '',
-    data: item,  // full song dict stored in data JSONB (mirrors Python)
-  }));
+  const rows = (Array.isArray(data) ? data : []).map(item => {
+    // Omit id when absent so the DB default (gen_random_uuid()) fires.
+    const row = {
+      workspace_id: item.workspace_id || ws,
+      title: item.title || '',
+      data: item,  // full song dict stored in data JSONB (mirrors Python)
+    };
+    if (item.id) row.id = item.id;
+    return row;
+  });
   const result = await sb
     .from('songs')
     .upsert(rows, { onConflict: 'id' });
@@ -654,13 +664,17 @@ export async function sdSaveTemplates(data, { client, workspaceId } = {}) {
   if (custom.length === 0) {
     return [];
   }
-  const rows = custom.map(item => ({
-    id: item.id || undefined,
-    workspace_id: item.workspace_id || ws,
-    name: item.name || '',
-    template_data: item,
-    is_default: false,
-  }));
+  const rows = custom.map(item => {
+    // Omit id when absent so the DB default (gen_random_uuid()) fires.
+    const row = {
+      workspace_id: item.workspace_id || ws,
+      name: item.name || '',
+      template_data: item,
+      is_default: false,
+    };
+    if (item.id) row.id = item.id;
+    return row;
+  });
   const result = await sb
     .from('templates')
     .upsert(rows, { onConflict: 'id' });
