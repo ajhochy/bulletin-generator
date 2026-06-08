@@ -66,8 +66,11 @@ function _startPresenceHeartbeat(projectId) {
       const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
       const session = (typeof getSession === 'function') ? getSession() : null;
       const userId = currentUser?.id || currentUser?.user_id || null;
-      // workspace_id lives in the JWT user_metadata or app_metadata
-      const workspaceId = currentUser?.user_metadata?.workspace_id
+      // workspace_id: prefer the server-resolved value surfaced by /api/me onto
+      // getCurrentUser() (it is NOT in the JWT metadata — workspace membership
+      // lives in the DB). Fall back to metadata for safety.
+      const workspaceId = currentUser?.workspace_id
+        || currentUser?.user_metadata?.workspace_id
         || currentUser?.app_metadata?.workspace_id
         || session?.user?.user_metadata?.workspace_id
         || session?.user?.app_metadata?.workspace_id
@@ -288,7 +291,8 @@ async function saveProjectToServer(project) {
       const currentUser = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
       const session = (typeof getSession === 'function') ? getSession() : null;
       const userId = currentUser?.id || currentUser?.user_id || null;
-      const workspaceId = currentUser?.user_metadata?.workspace_id
+      const workspaceId = currentUser?.workspace_id
+        || currentUser?.user_metadata?.workspace_id
         || currentUser?.app_metadata?.workspace_id
         || session?.user?.user_metadata?.workspace_id
         || session?.user?.app_metadata?.workspace_id

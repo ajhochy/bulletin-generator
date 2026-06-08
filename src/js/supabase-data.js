@@ -515,10 +515,16 @@ export async function sdGetMembers({ client } = {}) {
  */
 export async function sdGetPresence(projectId, { client } = {}) {
   const sb = client || _resolveClient();
+  // NOTE: workspace_presences has no display_name column (the server got it via
+  // a profiles JOIN); selecting it returns 400. Select only real columns and
+  // apply the 90-second TTL filter server-side (mirrors the Python handler).
+  // Callers can resolve user_id → display name from the members list if needed.
+  const cutoff = new Date(Date.now() - 90000).toISOString();
   const result = await sb
     .from('workspace_presences')
-    .select('user_id, display_name, last_seen_at')
+    .select('user_id, last_seen_at')
     .eq('project_id', projectId)
+    .gt('last_seen_at', cutoff)
     .order('last_seen_at', { ascending: false });
   _throwIfError(result, `sdGetPresence(${projectId})`);
   return result.data;

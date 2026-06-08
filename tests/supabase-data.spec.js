@@ -48,6 +48,7 @@ function makeMockFrom(opts = { data: [], error: null }) {
     select: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
     neq: vi.fn().mockReturnThis(),
+    gt: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     insert: vi.fn().mockReturnThis(),
     upsert: vi.fn().mockReturnThis(),
@@ -463,7 +464,11 @@ describe('sdGetPresence', () => {
 
     expect(client.from).toHaveBeenCalledWith('workspace_presences');
     expect(chain.select).toHaveBeenCalled();
+    // must NOT select the non-existent display_name column (that returns 400)
+    expect(chain.select).not.toHaveBeenCalledWith(expect.stringContaining('display_name'));
     expect(chain.eq).toHaveBeenCalledWith('project_id', 'proj_abc');
+    // 90s TTL filter applied server-side
+    expect(chain.gt).toHaveBeenCalledWith('last_seen_at', expect.any(String));
     expect(result).toEqual(mockPresence);
   });
 

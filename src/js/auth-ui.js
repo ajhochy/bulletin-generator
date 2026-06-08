@@ -131,7 +131,19 @@ async function _fetchIdentityWithSession(session) {
     throw err;
   }
   const data = await res.json();
-  return data.user || session.user || null;
+  // /api/me returns workspace_id / role / user_id at the TOP LEVEL (server mode),
+  // not under a `user` key. Surface workspace_id onto the identity object so
+  // electron-mode renderer writes (supabase-data.js) can populate the row's
+  // workspace_id for RLS WITH CHECK (is_workspace_member). Without this the
+  // renderer has no workspace_id → presence/save upserts 403.
+  const base = data.user || session.user || null;
+  if (base && typeof base === 'object') {
+    return Object.assign({}, base, {
+      workspace_id: data.workspace_id ?? base.workspace_id ?? null,
+      role: data.role ?? base.role ?? null,
+    });
+  }
+  return base;
 }
 
 function _isDesktopMode() {
