@@ -37,6 +37,36 @@ let _publicConfig = {
 function isDesktopMode() { return _publicConfig.appMode === 'desktop'; }
 function isServerMode()  { return _publicConfig.appMode === 'server';  }
 
+// ── Owner display labels (electron mode) ────────────────────────────────────
+// In electron mode the project list comes from supabase-data (no profiles JOIN),
+// so owner_display_name isn't populated. Resolve it from the workspace members
+// list (sdGetMembers) + the current user (whom sdGetMembers excludes).
+function buildOwnerLabelMap(membersRaw) {
+  const map = {};
+  (Array.isArray(membersRaw) ? membersRaw : []).forEach(m => {
+    const p = (m && m.profiles) || {};
+    const label = p.display_name || p.email || '';
+    if (m && m.user_id && label) map[String(m.user_id)] = label;
+  });
+  const u = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+  const uid = u && (u.id || u.user_id);
+  if (uid && !map[String(uid)]) {
+    map[String(uid)] = (u.user_metadata && u.user_metadata.full_name) || u.email || '';
+  }
+  return map;
+}
+
+// Attach owner_display_name to projects from the cached owner-label map (no-op
+// for rows that already carry an owner name, e.g. server mode).
+function attachOwnerLabels(projectsArr) {
+  const map = globalThis._bgOwnerLabels || {};
+  return (Array.isArray(projectsArr) ? projectsArr : []).map(p => {
+    if (!p || p.owner_display_name || p.owner_email) return p;
+    const label = map[String(p.owner_user_id)];
+    return label ? Object.assign({}, p, { owner_display_name: label }) : p;
+  });
+}
+
 async function loadAllFromServer() {
   try {
     // ── Electron path: read data directly from Supabase via supabase-data.js ──
@@ -45,7 +75,7 @@ async function loadAllFromServer() {
     if (_electronMode) {
       // Fetch projects, announcements, songs, settings, and templates from Supabase.
       // bootstrap still comes from the server (needed for _publicConfig / PCO config).
-      const [projectsRaw, annsRaw, songsRaw, settingsRaw, templatesRaw, bootstrap, vrDataResp] =
+      const [projectsRaw, annsRaw, songsRaw, settingsRaw, templatesRaw, bootstrap, vrDataResp, membersRaw] =
         await Promise.all([
           sdGetProjects().catch(() => []),
           sdGetAnnouncements().catch(() => []),
@@ -54,10 +84,16 @@ async function loadAllFromServer() {
           sdGetTemplates().catch(() => []),
           apiFetch('/api/bootstrap').catch(() => ({ settings: {}, config: {} })),
           apiFetch('/api/volunteer-roles').catch(() => []),
+          (typeof sdGetMembers === 'function' ? sdGetMembers().catch(() => []) : Promise.resolve([])),
         ]);
 
+      // Build a workspace-member display map (user_id → name/email) so the file
+      // list can show the project owner. sdGetMembers excludes the caller, so
+      // buildOwnerLabelMap adds the current user. Cached on globalThis for the
+      // background files-refresh poll to reuse (see attachOwnerLabels).
+      globalThis._bgOwnerLabels = buildOwnerLabelMap(membersRaw);
       // Projects: supabase returns rows directly (not wrapped in {projects:[...]})
-      setProjects(Array.isArray(projectsRaw) ? projectsRaw : []);
+      setProjects(attachOwnerLabels(Array.isArray(projectsRaw) ? projectsRaw : []));
       setTemplates(Array.isArray(templatesRaw) ? templatesRaw : []);
 
       // Settings: workspace_settings row has a `settings` JSONB column

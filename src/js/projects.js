@@ -776,6 +776,7 @@ function startFilesAutoRefresh() {
       let freshProjects;
       if (_electronMode) {
         freshProjects = await sdGetProjects();
+        if (typeof attachOwnerLabels === 'function') freshProjects = attachOwnerLabels(freshProjects);
       } else {
         const res = await apiFetch('/api/projects');
         freshProjects = res.projects || [];

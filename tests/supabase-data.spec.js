@@ -82,7 +82,7 @@ function makeMockClient(
 
 describe('sdGetProjects', () => {
   it('calls projects.select with the correct columns and returns data', async () => {
-    const mockProjects = [{ id: 'proj_abc', name: 'Test', visibility: 'workspace' }];
+    const mockProjects = [{ id: 'proj_abc', name: 'Test', visibility: 'workspace', updated_at: '2026-06-08T00:00:00Z', created_at: '2026-06-01T00:00:00Z' }];
     const chain = makeMockFrom({ data: mockProjects, error: null });
     const client = { from: vi.fn(() => chain), rpc: vi.fn() };
 
@@ -96,7 +96,8 @@ describe('sdGetProjects', () => {
     const projectsSelectArg = chain.select.mock.calls[0][0];
     expect(projectsSelectArg).not.toMatch(/\bstate\b/);
     expect(chain.order).toHaveBeenCalledWith('updated_at', expect.objectContaining({ ascending: false }));
-    expect(result).toEqual(mockProjects);
+    // camelCase timestamps mapped on for the file-list "updated <time>" meta.
+    expect(result[0]).toMatchObject({ id: 'proj_abc', name: 'Test', updatedAt: '2026-06-08T00:00:00Z', createdAt: '2026-06-01T00:00:00Z' });
   });
 
   it('throws when supabase returns an error', async () => {

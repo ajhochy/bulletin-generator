@@ -174,7 +174,14 @@ export async function sdGetProjects({ client } = {}) {
     )
     .order('updated_at', { ascending: false });
   _throwIfError(result, 'sdGetProjects');
-  return result.data;
+  // The renderer's file list reads camelCase updatedAt/createdAt (the shape
+  // server.py's _pg_row_to_project emits). Map the raw snake_case columns so the
+  // "updated <time>" meta line renders. (Owner display name is attached
+  // separately from the workspace members list — see loadAllFromServer.)
+  return (result.data || []).map(r => Object.assign({}, r, {
+    updatedAt: r.updated_at || null,
+    createdAt: r.created_at || null,
+  }));
 }
 
 /**
