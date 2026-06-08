@@ -140,10 +140,16 @@ function _throwIfError(result, context = '') {
  */
 export async function sdGetProjects({ client } = {}) {
   const sb = client || _resolveClient();
+  // METADATA ONLY — the `state` JSONB embeds base64 cover/logo images (tens of
+  // MB per project). The file list + the 30s hand-off poll only need metadata;
+  // pulling `state` here meant re-downloading every project's images on every
+  // poll (~27 MB). The full state is fetched on demand by sdGetProject(id) when
+  // a project is actually opened/exported (loadProjectById / restoreOnStartup /
+  // buildProjectPdfBlob already guard on `!project.state`).
   const result = await sb
     .from('projects')
     .select(
-      'id, name, owner_user_id, visibility, state, revision, ' +
+      'id, name, owner_user_id, visibility, revision, ' +
       'created_at, updated_at, created_by_user_id, updated_by_user_id',
     )
     .order('updated_at', { ascending: false });

@@ -90,6 +90,11 @@ describe('sdGetProjects', () => {
 
     expect(client.from).toHaveBeenCalledWith('projects');
     expect(chain.select).toHaveBeenCalled();
+    // metadata-only: must NOT pull the heavy `state` JSONB (base64 images) in the
+    // list/poll query — that caused ~27MB re-fetches every 30s. State is fetched
+    // on demand by sdGetProject when a project is opened/exported.
+    const projectsSelectArg = chain.select.mock.calls[0][0];
+    expect(projectsSelectArg).not.toMatch(/\bstate\b/);
     expect(chain.order).toHaveBeenCalledWith('updated_at', expect.objectContaining({ ascending: false }));
     expect(result).toEqual(mockProjects);
   });

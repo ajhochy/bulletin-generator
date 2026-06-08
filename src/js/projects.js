@@ -1129,8 +1129,22 @@ async function generateAndDownloadPdf(pagesHtml, filename) {
 }
 
 async function buildProjectPdfBlob(id) {
-  const project = projectById(id);
+  let project = projectById(id);
   if (!project) return null;
+
+  // The file list holds metadata only (no `state`); fetch the full state on
+  // demand for export of a non-active project.
+  if (!project.state) {
+    try {
+      const _em = typeof isElectronMode === 'function' && isElectronMode();
+      if (_em) {
+        project = await sdGetProject(id);
+      } else {
+        const res = await apiFetch('/api/projects/' + id);
+        project = res.project || project;
+      }
+    } catch (_) { /* fall through with whatever we have */ }
+  }
 
   const prevState = collectCurrentProjectState();
   const prevStaffLogoUrl = staffLogoUrl;
