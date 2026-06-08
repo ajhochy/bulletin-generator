@@ -266,6 +266,7 @@ function initFormattingControls() {
   optVolunteers.addEventListener('change',    () => { renderPreview(); scheduleProjectPersist(); });
   optVolunteerRoles.addEventListener('change',() => { renderPreview(); scheduleProjectPersist(); });
   optStaff.addEventListener('change',         () => { renderPreview(); scheduleProjectPersist(); });
+  optNextWeekOffering.addEventListener('change', () => { renderPreview(); scheduleProjectPersist(); });
 
   document.getElementById('fmt-save-btn').addEventListener('click', () => {
     saveTypeFormats();
