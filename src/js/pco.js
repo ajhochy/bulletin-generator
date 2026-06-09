@@ -969,10 +969,10 @@ async function pcoFetchAndApplyNextWeekOffering(stId, planId, planSortDate) {
   try {
     if (optNextWeekOffering && !optNextWeekOffering.checked) return; // feature toggled off
     const offeringNorm = normTitle('OFFERING');
-    const offeringItem = items.find(it =>
+    const hasOffering = items.some(it =>
       it.type === 'section' && normTitle(it.title) === offeringNorm
     );
-    if (!offeringItem) return; // no OFFERING item this week — skip silently
+    if (!hasOffering) return; // no OFFERING item this week — skip the network call
 
     // Next upcoming plan = first plan with sort_date strictly after this one.
     const futurePlans = await pcoGet(
@@ -992,6 +992,15 @@ async function pcoFetchAndApplyNextWeekOffering(stId, planId, planSortDate) {
     const cause = deriveNextWeekOfferingCauseCore(offeringNote ? offeringNote.body : '');
     if (!cause) return; // no derivable cause — leave detail untouched (silent skip)
 
+    // Re-resolve the OFFERING item against the LIVE items[] array — during the
+    // awaits above the import flow can replace items[] (enrich + song-review
+    // apply, or the re-sync merge), which would orphan a reference captured
+    // earlier and silently drop the line. This is why a fresh import showed
+    // nothing while a re-sync (which runs after items are finalized) worked.
+    const offeringItem = items.find(it =>
+      it.type === 'section' && normTitle(it.title) === offeringNorm
+    );
+    if (!offeringItem) return;
     offeringItem.detail = applyNextWeekOfferingLineCore(offeringItem.detail, cause);
     renderItemList();
     renderPreview();
