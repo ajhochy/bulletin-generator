@@ -79,6 +79,7 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## In progress
 
+- **next-week-offering manual smoke pending** (branch `fix/next-week-offering`, draft PR to open). Verified PASS automated (130 vitest incl. 7 new contract tests c1–c7, vite build, served-bundle checkbox/wiring smoke). Manual criteria c8–c11 (contract `not_tested`) need live PCO: (1) import a plan whose next week has an OFFERING note → "Next week's offering is for **<cause>**" appears once on this week's OFFERING item; (2) re-sync → no duplicate; (3) uncheck the Document Options "Auto-add next week's offering line" box → suppressed on next import/re-sync, persists across reload; (4) force a next-plan fetch failure → import still completes.
 - Manual smoke for issue 023 pending — requires live Supabase session + two users:
   1. Owner opens workspace project → no readonly-banner, autosave fires.
   2. Non-owner opens same project → readonly-banner appears, edits suppressed, Duplicate creates private copy.
@@ -104,6 +105,7 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## Next step
 
+0. **Open draft PR for `fix/next-week-offering`** (next-week-offering feature) and hand off for manual PCO smoke (c8–c11 above). Do not merge.
 1. **Open draft PR** for `feat/desktop-anon-key-rls` (covers #224, #225, #279, #280, #294 and all prior work on this branch). Update PR #293 description to include #294.
 2. **Manual smoke handoff for #279/#280/#294** — trigger a build, crash the app, relaunch; confirm (a) stale-sidecar reap clears port without "Exit code 1" dialog, (b) cold-start is noticeably faster with onedir, (c) PCO import and Google Calendar work in the packaged Electron build (requires `SUPABASE_URL` + `SUPABASE_ANON_KEY` bundled and a Supabase JWT forwarded from renderer).
 3. **277-F** — after PR #293 merged + Electron smoke passes: remove `DATABASE_URL` from `release-electron.yml`, flip `APP_MODE=electron` in the Electron sidecar spawn, verify sidecar boots cleanly without DATABASE_URL. This closes the 🔴 extractable-creds risk.
@@ -113,6 +115,37 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
    - Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
 
 ## Recent coding-agent runs
+
+### 2026-06-08 — next-week-offering follow-ups (branch `fix/next-week-offering`)
+- **Import-path stale-ref fix (commit `1643bcd`):** `pcoFetchAndApplyNextWeekOffering` captured the OFFERING item ref before its `await pcoGet` calls; the import flow replaces `items[]` during the awaits → orphaned ref → line dropped on fresh import (only appeared after a re-sync). Fixed: cheap `items.some()` presence check up front, then re-find the live OFFERING item after the awaits before mutating. **User-confirmed PASS on live import.**
+- **Bold this-week's offering cause (this commit):** new pure `boldFirstLine(text)` in `pco-core.js` (wrap first non-empty line in `**…**`, idempotent, no-op for blank) + exposed via `main.js` bridge. Wired in `applyPcoData` after `mapPlanNotesToItems`: bolds the OFFERING item's first line (the charity/cause) so it renders bold like the next-week line. Gated by the same toggle, now relabeled **"Auto-format offering (bold cause + next week's line)"** in `index.html`. 3 vitest tests (c12). On re-sync the merge restores the user's saved detail, so manual un-bolding is preserved.
+- Verification: `npm test` → 133 passed/1 skipped; `npm run build` green; served-bundle smoke (boldFirstLineCore wired + idempotent, checkbox relabeled/default-on).
+
+### 2026-06-08 — next-week-offering (branch `fix/next-week-offering`)
+- Feature: on PCO import + re-sync, auto-append `Next week's offering is for **<cause>**` to this week's OFFERING section item.detail, where `<cause>` = first non-empty line of the NEXT upcoming plan's OFFERING note (bold markers stripped). Idempotent, best-effort, preserves manual edits, gated per-project by an `opt-next-week-offering` checkbox (default ON) in Document Options.
+- Files modified:
+  - `src/js/modules/pco-core.js` — new pure exports `NEXT_WEEK_OFFERING_PREFIX`, `deriveNextWeekOfferingCause(noteBody)` (first non-empty line, strip `*`/`**`/`***`, '' for blank/non-string), `applyNextWeekOfferingLine(detail, cause)` (strip any existing managed line, then append; empty cause = remove-only/no-op; preserves body above).
+  - `src/js/main.js` — import both new core fns and expose on `globalThis` as `deriveNextWeekOfferingCauseCore` / `applyNextWeekOfferingLineCore` (legacy-script bridge pattern).
+  - `src/js/pco.js` — new best-effort async `pcoFetchAndApplyNextWeekOffering(stId, planId, planSortDate)`: gate on `optNextWeekOffering`, find OFFERING section item, fetch first future plan with `sort_date > current` (reuses the serving query), read its OFFERING note via `normalizePlanNotes`, derive cause, apply line, re-render. Wired at 3 sites: import (after `pcoFetchAndApplyServing`), no-changes resync path, and resync diff dialog via a new unconditional `offeringCallback` param to `showResyncDiffDialog` (independent of the volunteer checkbox).
+  - `src/js/state.js` — `optNextWeekOffering` DOM ref.
+  - `index.html` — `opt-next-week-offering` checkbox (checked) in the Options dropdown.
+  - `src/js/projects.js` — collect (`!!optNextWeekOffering.checked`), restore in both `applyProjectState` blocks (`!== false`, default ON), reset to true in `clearEditorForNewProject`.
+  - `src/js/formatting.js` — change listener (renderPreview + persist), matching the other `opt-*` toggles.
+  - `tests/pco-core.spec.js` — 7 contract tests (c1–c7).
+  - `docs/ai/contracts/issue-next-week-offering.json` — acceptance contract (11 criteria; 7 unit, 4 manual c8–c11).
+- Checks run (coding-agent stage):
+  - `node --check` on all 6 changed JS files → PASS.
+  - `npx vitest run tests/pco-core.spec.js` → 9 passed (2 pre-existing + 7 new). Red-before-green confirmed (7 failed pre-implementation).
+  - Full `npm test` + `npm run build` → pending verification-gate.
+- Decisions made:
+  - Per-project `opt-*` checkbox (not a global `settings.autoNextWeekOffering` getter) — matches existing Document Options pattern, no exported settings accessor exists, reads cleanly at import time. User-approved (default ON, toggle in Document Options).
+  - Cause rule = first non-empty line (user decision), not first-bolded-token.
+  - Offering refresh decoupled from the volunteer checkbox via a dedicated `offeringCallback`, since `serveCallback` only fires when the volunteer box is checked.
+  - On empty/underivable cause the function silently skips (leaves detail untouched) per "silently skip" requirement, rather than stripping a stale line.
+- Deviations from spec: contract tests live in `tests/pco-core.spec.js` (repo vitest convention), not `tests/contract/` (acceptance-contract default) — AGENTS.md convention takes precedence.
+- Concerns:
+  - c8–c11 are manual-smoke only (live PCO OAuth + a plan whose next week has an OFFERING note): confirm line appears once on import, no duplicate on re-sync, gate suppresses when unchecked, best-effort survives a forced next-plan fetch failure.
+  - `worship-booklet.html` legacy standalone file not updated (not part of the modular build; pre-existing known gap).
 
 ### 2026-06-08 — issue-294-electron-supabase-rest-settings
 - Files modified:

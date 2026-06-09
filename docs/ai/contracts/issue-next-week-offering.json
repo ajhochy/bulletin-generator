@@ -1,0 +1,106 @@
+{
+  "issue": "next-week-offering",
+  "generated": "2026-06-08",
+  "stack": "javascript",
+  "summary": "On PCO import and re-sync, append/replace a 'Next week's offering is for **<cause>**' line on this week's OFFERING section item.detail, where <cause> is the first non-empty line of the NEXT upcoming plan's OFFERING note. Idempotent, best-effort, preserves manual edits, gated per-project by the opt-next-week-offering checkbox (default ON) in Document Options.",
+  "criteria": [
+    {
+      "criterion_id": "issue-next-week-offering-c1",
+      "text": "deriveNextWeekOfferingCause(noteBody) returns the first non-empty line of the note, trimmed (leading blank lines skipped).",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c1: derives first non-empty line",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c2",
+      "text": "deriveNextWeekOfferingCause strips surrounding markdown bold markers (e.g. **Faith Promise** -> Faith Promise) from the derived first line.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c2: strips bold markers",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c3",
+      "text": "deriveNextWeekOfferingCause returns '' for blank, whitespace-only, null, or undefined note bodies.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c3: blank note yields empty cause",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c4",
+      "text": "applyNextWeekOfferingLine(detail, cause) appends \"Next week's offering is for **<cause>**\" on its own line at the end when no such line exists.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c4: appends line when absent",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c5",
+      "text": "applyNextWeekOfferingLine is idempotent: re-running with the same cause does not duplicate the line; running with a new cause replaces the existing 'Next week's offering is for ...' line in place.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c5: idempotent replace, never duplicates",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c6",
+      "text": "applyNextWeekOfferingLine preserves the existing offering body text above the managed trailing line (manual edits are not clobbered).",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c6: preserves existing body",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c7",
+      "text": "applyNextWeekOfferingLine(detail, '') (empty/falsy cause) returns the detail unchanged and removes any previously-managed next-week line (no dangling 'for ****').",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c7: empty cause is a no-op / clears stale line",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c8",
+      "text": "On import and on re-sync, the wiring fetches the next upcoming plan (first plan with sort_date > current) and its notes, derives the cause from the OFFERING-category note, and applies it to this week's OFFERING section item.detail; the line appears exactly once after a re-sync.",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Requires live PCO OAuth + a real plan whose next week has an OFFERING note; the import/resync wiring touches the DOM, network (pcoGet), and global items[] with no unit seam. Manual smoke: import a plan, confirm line appears once; re-sync, confirm no duplicate."
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c9",
+      "text": "Any failure fetching the next plan or its notes is swallowed and does NOT break the import (mirrors the best-effort try/catch in pcoFetchAndApplyServing).",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Best-effort network failure path; no unit seam around pcoGet in the import flow. Manual/inspection: induce a network failure on the next-plan fetch and confirm the import still completes."
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c10",
+      "text": "No next plan, no next-OFFERING note, or no OFFERING item in this week's plan -> the feature silently skips (no line added, no error).",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Skip paths are exercised by the pure functions (empty cause -> no-op, c7) but the end-to-end skip depends on the live wiring. Pure-function half is covered by c3/c7; the integration half is manual."
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c12",
+      "text": "boldFirstLine(text) wraps the first non-empty line in markdown bold (**...**), idempotent (no double-bold), preserves the rest of the body, and is a no-op for blank/non-string. Wired into applyPcoData so THIS week's OFFERING charity/cause renders bold like the next-week line, gated by the same opt-next-week-offering toggle.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c12: bolds the first non-empty line",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-next-week-offering-c11",
+      "text": "A per-project checkbox 'opt-next-week-offering' exists in the Document Options dropdown, defaults to ON, persists in project state, and when unchecked suppresses the auto-append on import/re-sync.",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "DOM checkbox + project-state persistence + gating, following the existing opt-* pattern (state.js ref, projects.js collect/apply default !== false, formatting.js re-render). No JS module seam; manual smoke confirms presence, default-on, persistence, and gate behavior."
+    }
+  ],
+  "not_tested": [
+    "issue-next-week-offering-c8",
+    "issue-next-week-offering-c9",
+    "issue-next-week-offering-c10",
+    "issue-next-week-offering-c11"
+  ]
+}

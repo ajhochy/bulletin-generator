@@ -290,6 +290,7 @@ const optAnnouncements     = document.getElementById('opt-announcements');
 const optVolunteers        = document.getElementById('opt-volunteers');
 const optVolunteerRoles    = document.getElementById('opt-volunteer-roles');
 const optStaff             = document.getElementById('opt-staff');
+const optNextWeekOffering  = document.getElementById('opt-next-week-offering');
 const pageCountDisplay     = document.getElementById('page-count-display');
 const itemList             = document.getElementById('item-list');
 const addItemBtn           = document.getElementById('add-item-btn');

@@ -185,6 +185,7 @@ function collectCurrentProjectState() {
     optVolunteers:    !!optVolunteers.checked,
     optVolunteerRoles:!!optVolunteerRoles.checked,
     optStaff:         !!optStaff.checked,
+    optNextWeekOffering: !!optNextWeekOffering.checked,
     welcomeHeading: welcomeHeading || '',
     welcomeItems: welcomeItems.slice(),
     announcements: annData.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore })),
@@ -229,6 +230,7 @@ function applyProjectState(state) {
   optVolunteers.checked    = safe.optVolunteers !== false;
   optVolunteerRoles.checked= safe.optVolunteerRoles !== false;
   optStaff.checked         = safe.optStaff !== false;
+  optNextWeekOffering.checked = safe.optNextWeekOffering !== false;
   setItems(Array.isArray(safe.items) ? cloneItems(safe.items) : []);
   renderItemList();
   applyCoverImage(safe.coverImageUrl || null, '(saved image)');
@@ -622,6 +624,7 @@ function clearEditorForNewProject() {
   optVolunteers.checked    = true;
   optVolunteerRoles.checked= true;
   optStaff.checked         = true;
+  optNextWeekOffering.checked = true;
   // Seed announcements and welcome items from the most recently dated saved project
   const datedProjects = projects
     .filter(p => p.state?.announcements && p.state?.svcDate)
@@ -949,6 +952,7 @@ function applyProjectStateForExport(state) {
   optVolunteers.checked = safe.optVolunteers !== false;
   optVolunteerRoles.checked = safe.optVolunteerRoles !== false;
   optStaff.checked = safe.optStaff !== false;
+  optNextWeekOffering.checked = safe.optNextWeekOffering !== false;
   setItems(Array.isArray(safe.items) ? cloneItems(safe.items) : []);
   setAnnData(Array.isArray(safe.announcements)
     ? safe.announcements.map(a => ({ title: a.title || '', body: a.body || '', url: a.url || '', _breakBefore: !!a._breakBefore, _noBreakBefore: !!a._noBreakBefore }))

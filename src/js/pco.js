@@ -130,6 +130,8 @@ document.getElementById('pco-import-btn').addEventListener('click', async () => 
     // Fetch serving schedule in background (non-blocking)
     pcoFetchAndApplyServing(stId, planId,
       planResp.data.attributes.sort_date, planResp.data.attributes.dates);
+    // Append next week's offering cause (best-effort, non-blocking)
+    pcoFetchAndApplyNextWeekOffering(stId, planId, planResp.data.attributes.sort_date);
   } catch (err) {
     pcoSetMsg('pco-import-msg', err.message, 'error');
   } finally {
@@ -210,6 +212,18 @@ function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingP
   if (notesResp) {
     const normalizedNotes = normalizePlanNotes(notesResp);
     mapPlanNotesToItems(items, normalizedNotes);
+    // Bold the first line (the charity/cause) of THIS week's OFFERING item,
+    // mirroring how the next-week cause renders bold. Gated by the same
+    // Document Options toggle. Applied to the freshly-filled detail; on re-sync
+    // the merge below restores the user's saved detail, so manual un-bolding is
+    // preserved. Idempotent via boldFirstLine.
+    if (!optNextWeekOffering || optNextWeekOffering.checked) {
+      const offNorm = normTitle('OFFERING');
+      const offItem = items.find(it =>
+        it.type === 'section' && normTitle(it.title) === offNorm
+      );
+      if (offItem && offItem.detail) offItem.detail = boldFirstLineCore(offItem.detail);
+    }
   }
 
   // Re-sync merge: for items that existed before, restore all user edits.
@@ -293,6 +307,9 @@ function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingP
           servingParams.stId, servingParams.planId,
           servingParams.sortDate, servingParams.date
         );
+        pcoFetchAndApplyNextWeekOffering(
+          servingParams.stId, servingParams.planId, servingParams.sortDate
+        );
       }
       return;
     }
@@ -303,8 +320,15 @@ function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingP
           servingParams.sortDate, servingParams.date
         )
       : null;
+    // Independent of the volunteer checkbox — the offering line should refresh on
+    // every applied re-sync, so it is invoked unconditionally from the dialog.
+    const offeringCallback = servingParams
+      ? () => pcoFetchAndApplyNextWeekOffering(
+          servingParams.stId, servingParams.planId, servingParams.sortDate
+        )
+      : null;
 
-    showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback);
+    showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback, offeringCallback);
     return;
   }
 
@@ -948,6 +972,57 @@ async function pcoFetchAndApplyServing(stId, planId, planSortDate, planDate) {
   }
 }
 
+// Best-effort: append/replace "Next week's offering is for **<cause>**" on this
+// week's OFFERING section item, deriving <cause> from the first non-empty line of
+// the NEXT upcoming plan's OFFERING note. Gated by the per-project
+// opt-next-week-offering toggle (default on). Idempotent (replaces any existing
+// managed line) and fully swallowed on error so it never breaks the import.
+async function pcoFetchAndApplyNextWeekOffering(stId, planId, planSortDate) {
+  try {
+    if (optNextWeekOffering && !optNextWeekOffering.checked) return; // feature toggled off
+    const offeringNorm = normTitle('OFFERING');
+    const hasOffering = items.some(it =>
+      it.type === 'section' && normTitle(it.title) === offeringNorm
+    );
+    if (!hasOffering) return; // no OFFERING item this week — skip the network call
+
+    // Next upcoming plan = first plan with sort_date strictly after this one.
+    const futurePlans = await pcoGet(
+      `/service_types/${stId}/plans?filter=future&order=sort_date&per_page=25`
+    );
+    const nextPlan = (futurePlans.data || []).find(p =>
+      p.id !== planId && (p.attributes.sort_date || '') > (planSortDate || '')
+    );
+    if (!nextPlan) return; // no next plan — skip
+
+    const notesResp = await pcoGet(
+      `/service_types/${stId}/plans/${nextPlan.id}/notes`
+    );
+    const offeringNote = normalizePlanNotes(notesResp).find(n =>
+      n.normalizedTitle === offeringNorm
+    );
+    const cause = deriveNextWeekOfferingCauseCore(offeringNote ? offeringNote.body : '');
+    if (!cause) return; // no derivable cause — leave detail untouched (silent skip)
+
+    // Re-resolve the OFFERING item against the LIVE items[] array — during the
+    // awaits above the import flow can replace items[] (enrich + song-review
+    // apply, or the re-sync merge), which would orphan a reference captured
+    // earlier and silently drop the line. This is why a fresh import showed
+    // nothing while a re-sync (which runs after items are finalized) worked.
+    const offeringItem = items.find(it =>
+      it.type === 'section' && normTitle(it.title) === offeringNorm
+    );
+    if (!offeringItem) return;
+    offeringItem.detail = applyNextWeekOfferingLineCore(offeringItem.detail, cause);
+    renderItemList();
+    renderPreview();
+    scheduleProjectPersist();
+  } catch (e) {
+    // best-effort — must never break the import/resync flow
+    console.warn("Could not apply next week's offering:", e);
+  }
+}
+
 function pcoSaveLastImport(serviceTypeId, planId, planLabel) {
   localStorage.setItem(PCO_LAST_IMPORT_KEY, JSON.stringify({ serviceTypeId, planId, planLabel }));
 }
@@ -1238,7 +1313,9 @@ function showRefreshConflictsDialog(conflicts, pendingWithNotes = [], pendingUnm
 // Shows all inconsistencies between the current project and the live PCO plan.
 // Called only on resync (isResync=true in applyPcoData), not on initial import.
 // serveCallback: () => void called from Apply if the volunteer checkbox is checked.
-function showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback) {
+// offeringCallback: () => void called from Apply unconditionally (next week's
+// offering line refreshes on every applied re-sync, independent of volunteers).
+function showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingUnmatched, serveCallback, offeringCallback) {
   const body = document.getElementById('irm-body');
   body.innerHTML = '';
 
@@ -1482,6 +1559,11 @@ function showResyncDiffDialog(diff, refreshConflicts, pendingWithNotes, pendingU
 
     // Volunteer schedule (call async serving fetch if checkbox checked)
     if (applyServing && serveCallback) serveCallback();
+
+    // Next week's offering — refresh unconditionally (best-effort, independent
+    // of the volunteer checkbox). Runs after conflict resolution so it operates
+    // on the OFFERING item's final detail.
+    if (offeringCallback) offeringCallback();
 
     // Song review (existing)
     irmApplyWithNotes(pendingWithNotes, withNotesSels);
