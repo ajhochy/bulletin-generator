@@ -212,6 +212,18 @@ function applyPcoData(planResp, itemsResp, notesResp, isResync = false, servingP
   if (notesResp) {
     const normalizedNotes = normalizePlanNotes(notesResp);
     mapPlanNotesToItems(items, normalizedNotes);
+    // Bold the first line (the charity/cause) of THIS week's OFFERING item,
+    // mirroring how the next-week cause renders bold. Gated by the same
+    // Document Options toggle. Applied to the freshly-filled detail; on re-sync
+    // the merge below restores the user's saved detail, so manual un-bolding is
+    // preserved. Idempotent via boldFirstLine.
+    if (!optNextWeekOffering || optNextWeekOffering.checked) {
+      const offNorm = normTitle('OFFERING');
+      const offItem = items.find(it =>
+        it.type === 'section' && normTitle(it.title) === offNorm
+      );
+      if (offItem && offItem.detail) offItem.detail = boldFirstLineCore(offItem.detail);
+    }
   }
 
   // Re-sync merge: for items that existed before, restore all user edits.

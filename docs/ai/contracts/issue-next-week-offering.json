@@ -82,6 +82,14 @@
       "reason": "Skip paths are exercised by the pure functions (empty cause -> no-op, c7) but the end-to-end skip depends on the live wiring. Pure-function half is covered by c3/c7; the integration half is manual."
     },
     {
+      "criterion_id": "issue-next-week-offering-c12",
+      "text": "boldFirstLine(text) wraps the first non-empty line in markdown bold (**...**), idempotent (no double-bold), preserves the rest of the body, and is a no-op for blank/non-string. Wired into applyPcoData so THIS week's OFFERING charity/cause renders bold like the next-week line, gated by the same opt-next-week-offering toggle.",
+      "mode": "unit",
+      "test_file": "tests/pco-core.spec.js",
+      "test_id": "issue-next-week-offering-c12: bolds the first non-empty line",
+      "status": "pending"
+    },
+    {
       "criterion_id": "issue-next-week-offering-c11",
       "text": "A per-project checkbox 'opt-next-week-offering' exists in the Document Options dropdown, defaults to ON, persists in project state, and when unchecked suppresses the auto-append on import/re-sync.",
       "mode": "manual",

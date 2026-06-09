@@ -116,6 +116,11 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## Recent coding-agent runs
 
+### 2026-06-08 — next-week-offering follow-ups (branch `fix/next-week-offering`)
+- **Import-path stale-ref fix (commit `1643bcd`):** `pcoFetchAndApplyNextWeekOffering` captured the OFFERING item ref before its `await pcoGet` calls; the import flow replaces `items[]` during the awaits → orphaned ref → line dropped on fresh import (only appeared after a re-sync). Fixed: cheap `items.some()` presence check up front, then re-find the live OFFERING item after the awaits before mutating. **User-confirmed PASS on live import.**
+- **Bold this-week's offering cause (this commit):** new pure `boldFirstLine(text)` in `pco-core.js` (wrap first non-empty line in `**…**`, idempotent, no-op for blank) + exposed via `main.js` bridge. Wired in `applyPcoData` after `mapPlanNotesToItems`: bolds the OFFERING item's first line (the charity/cause) so it renders bold like the next-week line. Gated by the same toggle, now relabeled **"Auto-format offering (bold cause + next week's line)"** in `index.html`. 3 vitest tests (c12). On re-sync the merge restores the user's saved detail, so manual un-bolding is preserved.
+- Verification: `npm test` → 133 passed/1 skipped; `npm run build` green; served-bundle smoke (boldFirstLineCore wired + idempotent, checkbox relabeled/default-on).
+
 ### 2026-06-08 — next-week-offering (branch `fix/next-week-offering`)
 - Feature: on PCO import + re-sync, auto-append `Next week's offering is for **<cause>**` to this week's OFFERING section item.detail, where `<cause>` = first non-empty line of the NEXT upcoming plan's OFFERING note (bold markers stripped). Idempotent, best-effort, preserves manual edits, gated per-project by an `opt-next-week-offering` checkbox (default ON) in Document Options.
 - Files modified:

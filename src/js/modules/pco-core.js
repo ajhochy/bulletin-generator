@@ -53,3 +53,23 @@ export function applyNextWeekOfferingLine(detail, cause) {
   const line = `${NEXT_WEEK_OFFERING_PREFIX} **${c}**`;
   return cleaned ? `${cleaned}\n${line}` : line;
 }
+
+// Wrap the first non-empty line of a detail block in markdown bold (`**…**`),
+// so this week's offering charity/cause renders bold like the next-week line.
+// Idempotent (a line already wrapped in `**…**` is left untouched) and a no-op
+// for blank / non-string input. The rest of the body is preserved verbatim.
+export function boldFirstLine(text) {
+  const base = String(text == null ? '' : text);
+  const lines = base.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    if (/^\*\*[\s\S]*\*\*$/.test(trimmed)) return base; // already bold — idempotent
+    const inner = trimmed.replace(/^\*{1,3}/, '').replace(/\*{1,3}$/, '').trim();
+    if (!inner) return base;
+    const leading = lines[i].match(/^\s*/)[0];
+    lines[i] = `${leading}**${inner}**`;
+    return lines.join('\n');
+  }
+  return base;
+}

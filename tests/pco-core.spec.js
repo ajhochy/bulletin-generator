@@ -3,6 +3,7 @@ import {
   mapPcoItemType,
   deriveNextWeekOfferingCause,
   applyNextWeekOfferingLine,
+  boldFirstLine,
 } from '../src/js/modules/pco-core.js';
 
 describe('PCO item mapping', () => {
@@ -87,5 +88,28 @@ describe('applyNextWeekOfferingLine', () => {
     const withLine = applyNextWeekOfferingLine('Body.', 'Faith Promise');
     expect(applyNextWeekOfferingLine(withLine, '')).toBe('Body.');
     expect(applyNextWeekOfferingLine(withLine, '')).not.toContain('Next week');
+  });
+});
+
+describe('boldFirstLine', () => {
+  it('issue-next-week-offering-c12: bolds the first non-empty line', () => {
+    expect(boldFirstLine('GEMS International\n"Girls Everywhere…" equips women.'))
+      .toBe('**GEMS International**\n"Girls Everywhere…" equips women.');
+    // leading blank lines are skipped; the rest of the body is preserved verbatim
+    expect(boldFirstLine('\n\nFaith Promise\nmore detail'))
+      .toBe('\n\n**Faith Promise**\nmore detail');
+  });
+
+  it('issue-next-week-offering-c12: idempotent — does not double-bold', () => {
+    expect(boldFirstLine('**GEMS International**\ndesc')).toBe('**GEMS International**\ndesc');
+    expect(boldFirstLine(boldFirstLine('GEMS International\ndesc')))
+      .toBe('**GEMS International**\ndesc');
+  });
+
+  it('issue-next-week-offering-c12: blank / non-string returns unchanged', () => {
+    expect(boldFirstLine('')).toBe('');
+    expect(boldFirstLine('   \n  ')).toBe('   \n  ');
+    expect(boldFirstLine(null)).toBe('');
+    expect(boldFirstLine(undefined)).toBe('');
   });
 });

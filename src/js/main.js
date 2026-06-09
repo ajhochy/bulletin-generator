@@ -52,6 +52,7 @@ import {
   mapPcoItemType as mapPcoItemTypeCore,
   deriveNextWeekOfferingCause as deriveNextWeekOfferingCauseCore,
   applyNextWeekOfferingLine as applyNextWeekOfferingLineCore,
+  boldFirstLine as boldFirstLineCore,
 } from './modules/pco-core.js';
 
 // Expose supabase-data.js functions on globalThis so the legacy renderer
@@ -106,6 +107,7 @@ Object.assign(globalThis, {
   mapPcoItemTypeCore,
   deriveNextWeekOfferingCauseCore,
   applyNextWeekOfferingLineCore,
+  boldFirstLineCore,
 });
 
 export const LEGACY_SCRIPT_PATHS = [
