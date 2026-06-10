@@ -1,6 +1,15 @@
 # Project State
 
-_Last updated: 2026-06-08 (Electron login deadlock fixed + 277-F landed on `feat/desktop-anon-key-rls`; verification PASS — 123 vitest, vite build, CI green; live Electron smoke PASS)_
+_Last updated: 2026-06-10 (e2e-live lane triaged + fixed: first-ever green CI run)_
+
+## Latest: nightly E2E Live lane fixed (2026-06-10, branch `fix/e2e-live-pco-refresh-creds`)
+
+The scheduled `e2e-live.yml` lane had NEVER passed in CI (4/4 failures June 7–10). Two stacked root causes, both fixed:
+
+1. **PCO tokens absent from Supabase `workspace_settings`** — the 2026-06-09 Synology-wins cutover re-sync REPLACES the settings blob and `_extract_settings` strips OAuth tokens by design, disconnecting PCO/Google for the workspace. → User reconnected PCO via the app 2026-06-10 (tokens verified present in DB). **Runbook rule: every future re-sync requires reconnecting PCO + Google afterwards.**
+2. **CI couldn't refresh expired access tokens** — PCO access tokens live ~2h, so a daily run always sees a stale one; `e2e-live.yml` set no `PCO_CLIENT_ID`/`PCO_CLIENT_SECRET`, so `_refresh_pco_token()` bailed → proxy 401 → "Error loading" service types. → Fixed (commit `2544473`): both secrets (already on the repo) added to the job env.
+
+**Verification PASS:** `workflow_dispatch` of `e2e-live.yml` on the fix branch — run [27311493301](https://github.com/ajhochy/bulletin-generator/actions/runs/27311493301), 3/3 live tests green (`gh run watch --exit-status` exit 0). Branch awaits manual merge to `main` (scheduled runs use main's workflow file, so the nightly stays red until merged). Follow-up candidates: sweep `_testKey`/`_screenshots` e2e pollution from the production settings row; Google likely also disconnected by the re-sync (no live test covers it).
 
 ## Current focus
 
