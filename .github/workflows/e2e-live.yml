@@ -26,6 +26,10 @@ jobs:
           DATABASE_URL: ${{ secrets.E2E_DATABASE_URL }}
           E2E_LIVE_EMAIL: ${{ secrets.E2E_LIVE_EMAIL }}
           E2E_LIVE_PASSWORD: ${{ secrets.E2E_LIVE_PASSWORD }}
+          # PCO access tokens expire in ~2h; without these the server cannot
+          # refresh and every scheduled run hits a stale token (proxy 401).
+          PCO_CLIENT_ID: ${{ secrets.PCO_CLIENT_ID }}
+          PCO_CLIENT_SECRET: ${{ secrets.PCO_CLIENT_SECRET }}
         run: npx playwright test --project=live
       - uses: actions/upload-artifact@v7
         if: always()
