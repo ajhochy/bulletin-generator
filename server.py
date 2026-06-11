@@ -424,6 +424,26 @@ def _save_settings(data: dict, storage=None) -> dict:
     return (storage or get_storage(DATA_DIR)).save_settings(data)
 
 
+# The ``_`` prefix is a reserved namespace in workspace_settings: it is used
+# only by e2e/test scaffolding (e.g. ``_testKey``, ``_screenshots``), never by
+# the product. Client settings writes that carry such keys must never persist
+# them — otherwise an e2e run signed in to a real workspace pollutes the
+# production settings row (issue #299). The sweep script
+# (scripts/sweep_settings_test_keys.py) cleans up rows already polluted by
+# pre-guard runs; this guard prevents recurrence.
+def _is_reserved_settings_key(key) -> bool:
+    """True if *key* belongs to the reserved (``_``-prefixed) test namespace."""
+    return isinstance(key, str) and key.startswith("_")
+
+
+def _strip_reserved_settings_keys(partial: dict) -> dict:
+    """Return *partial* with any reserved (``_``-prefixed) keys removed.
+
+    Pure (does not mutate the input). Applied to inbound /api/settings writes
+    so test-only keys can never reach workspace_settings."""
+    return {k: v for k, v in partial.items() if not _is_reserved_settings_key(k)}
+
+
 class _SupabaseRestSettings:
     """Read/write ``workspace_settings`` via the Supabase REST API using the
     caller's JWT + the publishable anon key.
@@ -2132,6 +2152,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self._send_json({"error": "body must be an object"}, 400)
             return
         store = self._storage_for_user(user)
+        # Reserved (_-prefixed) keys are a test-only namespace and must never
+        # persist into workspace_settings (issue #299). Strip them before merge.
+        partial = _strip_reserved_settings_keys(partial)
         # Merge the partial update with existing settings.
         existing = store.get_settings()
         for key, value in partial.items():

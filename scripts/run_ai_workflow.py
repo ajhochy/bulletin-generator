@@ -34,6 +34,7 @@ CI_PYTEST_TARGETS = [
     "tests/test_revision_snapshots.py",
     "tests/test_port_bind.py",
     "tests/test_supabase_rest_settings.py",
+    "tests/contract/test_issue_299.py",
 ]
 
 MANUAL_SMOKE_DOC = "docs/testing/manual-smoke.md"

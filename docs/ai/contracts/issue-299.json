@@ -1,0 +1,46 @@
+{
+  "issue": 299,
+  "generated": "2026-06-11",
+  "stack": "python",
+  "criteria": [
+    {
+      "criterion_id": "issue-299-c1",
+      "text": "Prevent recurrence: a settings write carrying a reserved (_-prefixed) test key must not land in production workspace_settings. The /api/settings POST handler strips/rejects _-prefixed keys.",
+      "mode": "unit",
+      "test_file": "tests/contract/test_issue_299.py",
+      "test_id": "TestPreventionGuard",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-299-c2",
+      "text": "Identify which keys are stray test keys: the sweep detects exactly the _-prefixed keys (e.g. _testKey, _screenshots) in a settings blob and leaves legitimate keys alone.",
+      "mode": "unit",
+      "test_file": "tests/contract/test_issue_299.py",
+      "test_id": "TestSweepDetection",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-299-c3",
+      "text": "Delete the stray keys from the production row: cleaning a settings blob removes every _-prefixed key while preserving all other keys; dry-run does not mutate.",
+      "mode": "unit",
+      "test_file": "tests/contract/test_issue_299.py",
+      "test_id": "TestSweepCleaning",
+      "status": "pending"
+    },
+    {
+      "criterion_id": "issue-299-c4",
+      "text": "SELECT jsonb_object_keys(settings) FROM workspace_settings shows no _-prefixed test keys (after the sweep executes against production).",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Requires executing the destructive sweep against the production Supabase workspace_settings row. Per task CAUTION, only the DRY-RUN is run in this PR; execution is a documented manual step. Verify after a human runs `python scripts/sweep_settings_test_keys.py --execute` against production."
+    },
+    {
+      "criterion_id": "issue-299-c5",
+      "text": "A full live-lane run leaves the production settings row byte-identical (excluding legitimately refreshed OAuth tokens).",
+      "mode": "manual",
+      "status": "UNVERIFIED",
+      "reason": "Requires running the @live Playwright lane against the production workspace and diffing the workspace_settings row before/after. Not automatable in this PR without writing to production. Verify via a workflow_dispatch of e2e-live.yml plus a before/after jsonb_object_keys diff."
+    }
+  ],
+  "not_tested": ["issue-299-c4", "issue-299-c5"]
+}

@@ -48,6 +48,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], storageState: 'tests/e2e/.auth/core.json' },
     },
     {
+      // @live specs run against the REAL production workspace (signed in as
+      // e2e-live@e2e.bulletin.test, a viewer in Visalia CRC). They MUST be
+      // read-only: never import a plan, never persist settings/projects.
+      // /api/settings is merge-style, so any settings write lands in the
+      // production row. The server strips _-prefixed keys defensively
+      // (issue #299), but the convention is "live specs touch no production
+      // data". See tests/e2e/README.md.
       name: 'live',
       grep: /@live/,
       dependencies: ['live-setup'],
