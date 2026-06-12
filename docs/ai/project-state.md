@@ -1,8 +1,17 @@
 # Project State
 
-_Last updated: 2026-06-10 (e2e-live lane triaged + fixed: first-ever green CI run)_
+_Last updated: 2026-06-11 (issue #299 — e2e settings pollution sweep + prevention guard, verified)_
 
-## Latest: nightly E2E Live lane fixed (2026-06-10, branch `fix/e2e-live-pco-refresh-creds`)
+## Latest: #299 e2e settings pollution swept (dry-run) + recurrence prevented (2026-06-11, branch `fix/issue-299-e2e-settings-pollution-sweep`)
+
+E2E runs that signed in to the production Visalia CRC workspace had merged `_testKey`/`_screenshots` into its `workspace_settings` row via the merge-style `POST /api/settings`. Two safeguards landed (verification-gate PASS):
+
+1. **Prevention (server-side guard).** `server.py` `_strip_reserved_settings_keys()` (pure) is applied in `_handle_post_settings` before the merge — any `_`-prefixed key (reserved test namespace) is dropped, so no client/spec write can persist a test key into `workspace_settings` again. Backed by the live-lane read-only convention now documented in `tests/e2e/README.md` + a comment on the `live` Playwright project.
+2. **Cleanup (sweep script).** `scripts/sweep_settings_test_keys.py` — dry-run-by-default (mirrors `migrate_to_supabase.py`), `--execute` opts in, connects via `db.admin_transaction()`. **DRY-RUN captured (read-only):** workspace `614505d2-0f12-4c00-afb1-9077a0dc94fe` holds exactly `_screenshots` + `_testKey`; "Would remove 2 stray key(s) across 1 workspace(s)."
+
+**Verification PASS:** contract tests `tests/contract/test_issue_299.py` 7 passed (red→green), `checks --level pr` PASS (173 pytest CI subset, 133 vitest/1 skipped, vite build). Contract `docs/ai/contracts/issue-299.json` — c1–c3 automated/green, c4 (post-sweep prod `jsonb_object_keys` clean) + c5 (live-lane byte-identical row) are manual. **🟡 The destructive `--execute` was NOT run against production** (task CAUTION) — it is a documented manual step in the draft PR. Run `APP_MODE=server python scripts/sweep_settings_test_keys.py --execute` (from repo root, `.env` loaded) to actually remove the 2 keys, then re-check c4/c5. #299 stays OPEN until execution.
+
+## Earlier: nightly E2E Live lane fixed (2026-06-10, branch `fix/e2e-live-pco-refresh-creds`)
 
 The scheduled `e2e-live.yml` lane had NEVER passed in CI (4/4 failures June 7–10). Two stacked root causes, both fixed:
 
@@ -117,6 +126,7 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
 
 ## Next step
 
+0. **#299 — execute the production sweep (MANUAL, destructive).** The draft PR for `fix/issue-299-e2e-settings-pollution-sweep` is open with the sweep script + prevention guard verified. Dry-run confirms 2 stray keys in the Visalia CRC row. To finish: from the repo root with `.env` loaded, run `APP_MODE=server python scripts/sweep_settings_test_keys.py --execute`, then verify c4 (`SELECT jsonb_object_keys(settings)` shows no `_` keys) and optionally c5 (workflow_dispatch e2e-live.yml, diff the row). Then close #299. The PR is intentionally non-closing until then.
 1. **Open draft PR** for `feat/desktop-anon-key-rls` (covers #224, #225, #279, #280, #294 and all prior work on this branch). Update PR #293 description to include #294.
 2. **Manual smoke handoff for #279/#280/#294** — trigger a build, crash the app, relaunch; confirm (a) stale-sidecar reap clears port without "Exit code 1" dialog, (b) cold-start is noticeably faster with onedir, (c) PCO import and Google Calendar work in the packaged Electron build (requires `SUPABASE_URL` + `SUPABASE_ANON_KEY` bundled and a Supabase JWT forwarded from renderer).
 3. **277-F** — after PR #293 merged + Electron smoke passes: remove `DATABASE_URL` from `release-electron.yml`, flip `APP_MODE=electron` in the Electron sidecar spawn, verify sidecar boots cleanly without DATABASE_URL. This closes the 🔴 extractable-creds risk.
@@ -126,6 +136,23 @@ The Playwright E2E suite (core lane) now runs as a PR gate on every PR (`e2e-cor
    - Data migration dry-run: `python scripts/migrate_to_supabase.py --source /Volumes/docker/bulletingenerator/app/data`
 
 ## Recent coding-agent runs
+
+### 2026-06-11 — issue #299 e2e settings pollution sweep + prevention (branch `fix/issue-299-e2e-settings-pollution-sweep`)
+- Files modified:
+  - `server.py` — new pure helpers `_is_reserved_settings_key` / `_strip_reserved_settings_keys` (after `_save_settings`); `_handle_post_settings` now strips `_`-prefixed reserved keys before the merge so no e2e write can persist a test key into `workspace_settings`.
+  - `scripts/sweep_settings_test_keys.py` — NEW. Dry-run-by-default sweep (mirrors `migrate_to_supabase.py`): pure `find_test_keys()` / `clean_settings()`, `sweep(execute)` over all `workspace_settings` rows via `db.admin_transaction()`; `--execute` writes the cleaned blob. Repo root pushed onto `sys.path` for the deferred `from db import`.
+  - `tests/contract/test_issue_299.py` — NEW. 7 contract tests (c1 prevention guard via real `_handle_post_settings`; c2 detection; c3 cleaning + dry-run no-mutate). Red-before-green confirmed (5 failed pre-impl).
+  - `docs/ai/contracts/issue-299.json` — acceptance contract (5 criteria: 3 unit, c4/c5 manual).
+  - `tests/e2e/README.md` — NEW. Documents the live-lane read-only convention + the #299 prevention/cleanup safeguards.
+  - `playwright.config.ts` — comment on the `live` project pointing at the read-only convention.
+  - `.github/workflows/ci.yml` + `scripts/run_ai_workflow.py` — wired `tests/contract/test_issue_299.py` into the `python` CI job + `CI_PYTEST_TARGETS`.
+- Checks run:
+  - Contract tests: `APP_MODE=server .venv/bin/python -m pytest tests/contract/test_issue_299.py -v` → 7 passed (5 failed pre-impl).
+  - `scripts/run_ai_workflow.py checks --level pr` → PASS (173 pytest CI subset, 133 vitest/1 skipped, vite build).
+  - **DRY-RUN against production** (read-only): workspace `614505d2-0f12-4c00-afb1-9077a0dc94fe` has exactly `_screenshots`, `_testKey`; "Would remove 2 stray key(s) across 1 workspace(s)." No writes performed.
+- Decisions made: `_`-prefix = reserved test namespace; prevention is a server-side strip (defense-in-depth) + read-only convention; cleanup is a dry-run-default script. See `docs/ai/decisions.md` 2026-06-11.
+- Deviations from spec: none. Contract test lives in `tests/contract/` (acceptance-contract default) — repo had no prior `tests/contract/` dir; pytest collects it fine.
+- Concerns: **The destructive `--execute` was NOT run against production** (task CAUTION) — left as a manual PR step. c4 (post-sweep prod `jsonb_object_keys` clean) and c5 (live-lane byte-identical row) are manual, require executing/running against prod.
 
 ### 2026-06-08 — next-week-offering follow-ups (branch `fix/next-week-offering`)
 - **Import-path stale-ref fix (commit `1643bcd`):** `pcoFetchAndApplyNextWeekOffering` captured the OFFERING item ref before its `await pcoGet` calls; the import flow replaces `items[]` during the awaits → orphaned ref → line dropped on fresh import (only appeared after a re-sync). Fixed: cheap `items.some()` presence check up front, then re-find the live OFFERING item after the awaits before mutating. **User-confirmed PASS on live import.**
