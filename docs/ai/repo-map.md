@@ -67,3 +67,37 @@ Runtime JSON (NOT committed): `projects.json`, `settings.json`, `announcements.j
 ## Generated / ignored
 
 `dist/`, `build/`, `__pycache__/`, `data/*.json` (not `.example.json`), `.env`, `desktop_config.py`.
+
+## Hot files (auto-generated — snapshot)
+
+Churn snapshot folded from the vault repo-map (2026-06-18). Grep here first.
+
+**Most frequently changed**
+
+- `server.py` — 55 changes
+- `src/js/preview.js` — 34
+- `src/js/projects.js` — 31
+- `src/js/pco.js` — 26
+- `index.html` — 24
+- `src/js/calendar.js` — 24
+- `worship-booklet.html` — 20 (legacy standalone — not the active build)
+- `src/js/state.js` — 16
+- `bulletin-generator.spec` — 13
+- `src/js/app.js` — 11
+- `src/js/editor.js` — 11
+- `src/js/api.js` — 10
+
+**Largest source files**
+
+- `data/projects.json` — 8551 KB (user data, base64 images)
+- `data/song_database.json` — 359 KB
+- `worship-booklet.html` — 358 KB
+- `src/js/templates.js` — 114 KB
+- `server.py` — 94 KB
+- `src/js/preview.js` — 78 KB
+- `src/js/pco.js` — 64 KB
+- `index.html` — 53 KB
+- `src/js/projects.js` — 50 KB
+- `src/js/calendar.js` — 41 KB
+
+**Open GitHub issues (next to resolve)** — #296 harden electron-mode e2e (HIGH), #272 multi-tenant QA (PARTIAL), #295 renderer-side revision snapshot, #288 new-member 403 race, #298 re-sync strips OAuth tokens, #299 prod sweep (pending), #144/#145 ProPresenter export Phase 3/4 (deferred). The vault repo-map's older #198–#227 collab-v1 list is historical (those issues are implemented/closed under the Supabase migration).
