@@ -39,3 +39,6 @@ Operating contract for AI agents working in this repo. Pair with `CLAUDE.md` (th
 - After any non-trivial change, update `docs/ai/project-state.md`.
 - After an architectural decision (deployment mode shift, new dependency, new data file, schema change), append to `docs/ai/decisions.md`.
 - Keep memory factual and concise. If you don't know a fact, mark it `Unknown` rather than inventing.
+
+## Worktree hygiene
+Once a branch's work is committed and pushed to a PR, remove its worktree immediately (`git worktree remove <path> && git worktree prune`) and squash-delete the local branch. Never leave worktrees checked out after PR creation; idle worktrees keep compiling, watching, and eating disk. One active worktree per task, gone when the PR opens.

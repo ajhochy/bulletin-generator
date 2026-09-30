@@ -216,3 +216,6 @@ pyinstaller bulletin-generator.spec
 - **409 errors**: `apiFetch()` sets `e.status` on thrown errors — check `err.status === 409`, not string matching.
 - **Calendar empty vs auth failure**: `fetch_google_cal_events()` returns `None` on 401/403, `[]` on legitimately empty. Only retry token refresh on `None`.
 - **rumps** is required for desktop menu bar — must be in PyInstaller spec and requirements.
+
+## Worktree hygiene
+Once a branch's work is committed and pushed to a PR, remove its worktree immediately (`git worktree remove <path> && git worktree prune`) and squash-delete the local branch. Never leave worktrees checked out after PR creation; idle worktrees keep compiling, watching, and eating disk. One active worktree per task, gone when the PR opens.
