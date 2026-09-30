@@ -1,3 +1,7 @@
+---
+type: project
+---
+
 # Current Plan
 
 _Last updated: 2026-06-06_
