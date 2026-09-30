@@ -93,9 +93,15 @@ cleanly. From the repo root:
 set -a && source .env && set +a
 
 .venv/bin/python scripts/migrate_to_supabase.py \
-  --source /Volumes/docker/bulletingenerator \
+  --source /Volumes/docker/bulletingenerator/app/data \
   --dry-run
 ```
+
+> ⚠️ **Source path correction (2026-06-09).** The live data is at
+> `/Volumes/docker/bulletingenerator/app/data/` (the path the container
+> bind-mounts: `./app/data:/app/data`). The repo-root
+> `/Volumes/docker/bulletingenerator/*.json` files are empty `[]`/`{}` stubs
+> and must NOT be used as the source — doing so migrates zero records.
 
 Expected output includes row counts:
 - `projects`: the number of project objects in `projects.json`
@@ -184,7 +190,7 @@ re-running is safe.
 set -a && source .env && set +a
 
 .venv/bin/python scripts/migrate_to_supabase.py \
-  --source /Volumes/docker/bulletingenerator \
+  --source /Volumes/docker/bulletingenerator/app/data \
   --execute
 ```
 
@@ -193,6 +199,31 @@ and `songs`. The `workspace_settings` row is merged (not replaced).
 OAuth tokens (`pcoAccessToken`, `googleAccessToken`, etc.) are excluded
 from the migration — users must reconnect PCO and Google Calendar after
 cutover.
+
+> **Re-sync after the workspace has drifted (Synology must WIN).**
+> `migrate_to_supabase.py` is **insert-only** (`ON CONFLICT DO NOTHING`) and
+> keys projects by a derived UUID5, so it cannot overwrite rows the live
+> Electron app created under raw `proj_*` ids. When Supabase has drifted from
+> Synology and Synology must win, use **`scripts/resync_synology_to_supabase.py`**
+> instead. It backs up Supabase first, replaces the workspace's projects from
+> Synology (keyed by raw `proj_*` id, with an explicit keep-list for
+> app-created projects), unions songs/announcements/templates (Synology wins,
+> nothing lost), replaces `workspace_settings`, and assigns a real
+> `owner_user_id` so the imported projects are editable under RLS. Dry-run is
+> the default; `--execute` runs in one transaction. See `decisions.md`
+> 2026-06-09. First done 2026-06-09 (37 Synology projects, owner = AJ).
+
+> **Ownership transfer follow-up.** Imported projects are owned by AJ
+> (`74b48104-…`) at import time because the destination user's `auth.users` row
+> may not exist yet. After the secretary (`info@visaliacrc.com`) signs into the
+> app once with Google, transfer ownership:
+>
+> ```sql
+> UPDATE projects SET owner_user_id = '<secretary-uuid>', updated_by_user_id = '<secretary-uuid>'
+> WHERE workspace_id = '614505d2-0f12-4c00-afb1-9077a0dc94fe'
+>   AND owner_user_id = '74b48104-31b5-4100-9dc1-45935404e916';
+> ```
+> (Add her as a `workspace_members` editor/owner first.)
 
 ### Step 6 — Verify row counts in Supabase
 

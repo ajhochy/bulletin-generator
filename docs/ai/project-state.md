@@ -10,6 +10,7 @@ Branch `fix/issue-299-e2e-settings-pollution-sweep` (working tree clean). Draft 
 
 ## In progress
 
+- **Cutover re-sync + Electron OAuth `will-redirect` fix (folded 2026-09-29 from `workflow/cutover-resync-2026-06-09`, tip `47a765a`).** Adds `scripts/resync_synology_to_supabase.py` (Synology-wins upsert; dry-run default), corrects the `cutover-plan.md` `--source` path, and intercepts the `bulletingen://auth-callback` deep link on `will-redirect` as well as `will-navigate` (v1.12.14). Not yet on `main` before this consolidation; open issue #298 (re-sync strips PCO/Google OAuth tokens) follows from it. Details: `docs/ai/runs/2026-06-09-cutover-resync-and-electron-oauth-fix.md`, decision `docs/ai/decisions/2026-06-09-cutover-re-sync-synology-json-supabase-synology-wins-new-upsert.md`.
 - **#299 production sweep (MANUAL, destructive).** Prevention guard + dry-run sweep verified; dry-run confirmed 2 stray keys (`_screenshots`, `_testKey`) in the Visalia CRC workspace row. Finish by running `APP_MODE=server python scripts/sweep_settings_test_keys.py --execute` from repo root with `.env` loaded, then verify c4/c5.
 - **next-week-offering residual manual checks** (shipped v1.12.13): toggle-off suppression + best-effort next-plan fetch failure still unsmoked (low risk; unit-covered).
 - Manual smoke gaps carried from prior runs: issue 023 presence read-only (needs 2 live users), OAuth connect-path workspace scoping (needs 2 workspaces), packaged Electron #279/#280 (stale-sidecar reap + onedir cold-start need a packaged build).
