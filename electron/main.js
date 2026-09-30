@@ -327,15 +327,26 @@ function createWindow() {
   // Intercept the bulletingen:// deep-link redirect that Supabase sends after
   // OAuth completes.  We can't load it as a URL, but we can extract the tokens
   // and forward them to the renderer via IPC, then reload the app page.
-  mainWindow.webContents.on('will-navigate', (event, url) => {
-    if (url.startsWith('bulletingen://')) {
+  //
+  // We must listen for BOTH 'will-navigate' AND 'will-redirect':
+  //   * 'will-navigate' fires for client-side / cached-consent flows (e.g. a
+  //     user whose Google consent is already granted).
+  //   * 'will-redirect' fires when Google completes auth via a server-side 302
+  //     to the redirect_to URL — which is the common first-time / account-picker
+  //     path. Without this listener, the first-time bulletingen:// hand-off is
+  //     never caught: the window tries to load a custom-protocol URL it can't
+  //     render and the account click appears to "do nothing".
+  const interceptDeepLink = (event, url) => {
+    if (url && url.startsWith('bulletingen://')) {
       event.preventDefault();
       handleDeepLink(url);
       mainWindow.loadURL(APP_URL_DISPLAY);
     }
     // All other navigations (Google OAuth, Supabase callback, localhost) are
     // allowed — the BrowserWindow handles the full OAuth flow internally.
-  });
+  };
+  mainWindow.webContents.on('will-navigate', interceptDeepLink);
+  mainWindow.webContents.on('will-redirect', interceptDeepLink);
 
   // Open window.open / target=_blank links in the OS browser (e.g. help docs).
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {

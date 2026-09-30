@@ -1,0 +1,8 @@
+Issue #245 - Load /api/volunteer-roles in src/js/api.js loadAllFromServer
+
+Verification commands run:
+  grep -q "apiFetch('/api/volunteer-roles')" src/js/api.js → PASS
+  grep -q 'setVrData(' src/js/api.js → PASS
+
+Commit: 051c39e
+Branch: Volunteer-Roles-Page

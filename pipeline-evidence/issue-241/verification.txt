@@ -1,0 +1,13 @@
+=== Verification for Issue #241 ===
+
+--- grep checks ---
+PASS: let vrData found
+PASS: setVrData found
+PASS: volunteerRoles found
+PASS: vr-add-btn found
+
+--- Full context ---
+17:function setVrData(arr)  { vrData  = Array.isArray(arr) ? arr : []; }
+46:let vrData  = []; // Volunteer roles: [{ title, body, url, _breakBefore?, _noBreakBefore? }]
+49:let bottomMerge = { oow: false, serving: false, calendar: false, volunteerRoles: false, staff: false };
+260:const vrAddBtn             = document.getElementById('vr-add-btn');
