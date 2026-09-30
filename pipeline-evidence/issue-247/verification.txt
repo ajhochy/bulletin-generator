@@ -1,0 +1,6 @@
+Verification results for issue #247
+Commit: 269166e feat(247): Add renderVolunteerRolesZone() to src/js/preview.js
+
+PASS: function renderVolunteerRolesZone exists
+PASS: volunteer_roles registered in ZONE_RENDERERS
+PASS: appendBottomSection called with 'volunteerRoles' mergeKey
