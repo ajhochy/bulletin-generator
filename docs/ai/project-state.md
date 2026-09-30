@@ -1,3 +1,7 @@
+---
+type: project
+---
+
 # Project State — bulletin-generator
 
 ## Current focus

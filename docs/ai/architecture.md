@@ -1,3 +1,7 @@
+---
+type: project
+---
+
 # Architecture
 
 See `CLAUDE.md` for the canonical, detailed reference. This file is the high-level summary for agents.

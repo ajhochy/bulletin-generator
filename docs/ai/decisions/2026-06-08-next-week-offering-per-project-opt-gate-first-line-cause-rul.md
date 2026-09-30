@@ -1,4 +1,5 @@
 ---
+index: "[[Bulletin Generator]]"
 date: 2026-06-08
 repo: bulletin-generator
 tags: [decision, bulletin-generator]

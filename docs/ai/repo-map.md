@@ -1,3 +1,7 @@
+---
+type: project
+---
+
 # Repo Map
 
 See `CLAUDE.md` "Key Files" table for the full annotated list. This file is a quick orientation index for grep targets.

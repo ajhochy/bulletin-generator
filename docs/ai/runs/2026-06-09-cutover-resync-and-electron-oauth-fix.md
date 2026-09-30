@@ -1,4 +1,5 @@
 ---
+index: "[[Bulletin Generator]]"
 date: 2026-06-09
 repo: bulletin-generator
 status: archived-history
