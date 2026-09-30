@@ -43,3 +43,15 @@ Branch `fix/issue-299-e2e-settings-pollution-sweep` (working tree clean). Draft 
 
 ---
 **Run history:** one file per run under `docs/ai/runs/` (surfaced as `ai-runs/`). This snapshot is overwritten in place.
+
+## Consolidation 2026-09-29
+
+- **Mega branch:** `mega/2026-09-29-consolidation`, draft PR https://github.com/ajhochy/bulletin-generator/pull/301. Tracking issues: https://github.com/ajhochy/bulletin-generator/issues/302 (consolidation) and https://github.com/ajhochy/bulletin-generator/issues/303 (cutover re-sync + Electron OAuth `will-redirect` fix; `v1.12.14` tag is not on `main`).
+- **Folded refs (name + tip SHA):**
+  - `backup/local-main-pre-release-251` `bc70ce79f935e7c87a90801d5da048f77545dae9` (AGENTS.md/CLAUDE.md kept as main)
+  - `stash-backup/0-2026-09-29` (from `stash@{0}`) `266e1664dd0491ccc77242cb22b3880c8fedf975`
+  - `workflow/cutover-resync-2026-06-09` local `47a765a0f58470444ed183ef42d5457026e3fce1` (origin `bc29451170517e4dcd249fa97bcd7b987a7a3ce0`)
+  - local `fix/issue-299-e2e-settings-pollution-sweep` WIP snapshot `4f5c3fe9fd8dcccee4841754b4fa47ad701f0637`
+- **Dropped refs (bundle: `/Users/ajhochhalter/Documents/.consolidation-backups/bulletin-generator-2026-09-29.bundle`):** squash-merged via PR with head == tip: `feat/issue-181-editor-toolbar` (#183), `fix/issue-189-pdf-css-vars` (#228), `fix/explicit-default-font` (#229), `fix/lightweight-projects-poll` (#255), stale `origin/{chore/bootstrap-ai-workflow-docs (#254), fix/volunteer-roles-toggle (#251), fix/volunteer-roles-render-on-startup (#252), fix/template-editor-volunteer-roles-not-selectable (#253), fix/ci-node-bump-lazy-chrome (#282), fix/e2e-presence-flake (#283)}`; superseded docs-only `fix/watchtower-config`; and every branch already an ancestor of `origin/main` (`Volunteer-Roles-Page`, `claude/*`, `docs/277-progress`, `feat/supabase-multitenant-electron`, `fix/e2e-live-pco-refresh-creds`, `fix/next-week-offering`, `issue-216`, `issue-277-A..G`, `test/*`, 20 `worktree-agent-*`).
+- **In-flight worktrees:** none (no live process in any linked worktree).
+- **Cleanup script (not run yet):** `/Users/ajhochhalter/Documents/.consolidation-backups/cleanup/bulletin-generator-2026-09-29-cleanup.sh`; manifest beside it.
